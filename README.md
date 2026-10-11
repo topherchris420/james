@@ -23,14 +23,28 @@ Try James as an unsigned Windows preview, available in portable and installer bu
 
 | Feature | Current behavior |
 | --- | --- |
-| **Local-model chat** | Pick a loaded model and start a conversation. Text and image requests use an OpenAI-compatible local endpoint. Replies are non-streaming; LM Studio and model weights are installed separately. |
+| **Local-model chat** | Pick a loaded model and start a conversation. Text and image requests use an OpenAI-compatible local endpoint (LM Studio, Ollama, or llama.cpp server). Replies are non-streaming; the model server and weights are installed separately. |
 | **Screen context** | Show James what you are looking at: capture the primary monitor, inspect the preview, then choose whether to attach it to your next question. Image requests require a vision-capable model. |
 | **Reviewed computer input** | Turn a screenshot into a proposed click, key, or text insertion, then inspect and approve each action before it reaches the foreground app. |
-| **Windows speech** | Say it as a draft, review the recognized words, and decide what to send. You can also hear the last answer or enable spoken replies with installed Windows speech components. |
+| **Talk** | A hands-free conversation: James listens, answers aloud, and listens again. Say "stop" or press Esc to end; it pauses after 15 seconds of silence. Voice can ask and listen but never approves or performs input. Listening uses Windows speech recognition, or [whisper.cpp](https://github.com/ggml-org/whisper.cpp) on macOS and Linux, entirely on your computer. |
+| **Guide me** | Stuck? One button snapshots your screen and James explains what matters and the next steps *you* can take. It never clicks or types for you. Needs a vision model. |
+| **Spoken answers** | Hear replies on Windows (installed voice), macOS (system voice) or Linux (espeak-ng or speech-dispatcher). Markdown and links are cleaned up so answers sound natural. Dictate puts one utterance in your draft for review. |
 | **R.A.I.N. Lab context** | Check in on the separate local Lab and bring recent research context into chat when you choose. The connection is read-only. |
 | **Local history** | Save conversation text and settings locally between sessions. Storage is plaintext; see [data and privacy](#data-and-privacy). |
 
-Screen capture, computer input, and speech require Windows. Other platforms report those capabilities as unsupported. James does not yet provide autonomous action loops, arbitrary shell or file tools, general MCP integrations, or multi-agent desktop coordination.
+### Platform support
+
+| Capability | Windows | macOS | Linux |
+| --- | --- | --- | --- |
+| Chat with LM Studio, Ollama or llama.cpp | ✅ | ✅ | ✅ |
+| Screen capture and Guide me | ✅ | ✅ `screencapture` (grant Screen Recording) | ✅ gnome-screenshot, spectacle, grim or ImageMagick |
+| Spoken answers | ✅ | ✅ `say` | ✅ espeak-ng or spd-say |
+| Talk and Dictate (listening) | ✅ Windows speech | ✅ whisper.cpp + SoX or ffmpeg | ✅ whisper.cpp + parec, arecord, sox or ffmpeg |
+| Reviewed clicks and typing | ✅ | Not yet — proposals shown as guidance | Not yet — proposals shown as guidance |
+
+macOS and some Linux tools can only save a capture to a file; James then uses a private, owner-only temporary folder and deletes the image immediately after reading it into memory. whisper.cpp listening works the same way for each spoken utterance.
+
+**Set up listening on macOS or Linux:** install whisper.cpp (macOS: `brew install whisper-cpp sox`; Linux: build [whisper.cpp](https://github.com/ggml-org/whisper.cpp) or use your distribution's package) and download a model such as `ggml-base.en.bin` into James's models folder. **Settings → Voice → Set up listening** shows the exact folder and a copyable download command, finds `whisper-cli` and the model automatically, and lets you point at custom paths. James records only until you pause, so silence is never transcribed. James does not yet provide autonomous action loops, arbitrary shell or file tools, general MCP integrations, or multi-agent desktop coordination.
 
 ## Get started on Windows
 
@@ -47,17 +61,20 @@ Use a recent build containing the static Windows runtime fix; older preview arti
 
 ### 2. Connect a model
 
-1. Start LM Studio, load a model, and enable its local server.
-2. In James, open **Settings** and enter the server port, usually **1234**.
+1. Start a local OpenAI-compatible model server and load a model:
+   - **LM Studio:** load a model and enable its local server (default port **1234**).
+   - **Ollama:** run `ollama serve` and `ollama pull <model>` (default port **11434**). The OpenAI-compatible endpoint is served automatically at `http://127.0.0.1:11434/v1`.
+   - **llama.cpp:** run `llama-server -m <model.gguf>` (default port **8080**); add `--mmproj <file>` for image support.
+2. In James, open **Settings** and choose the **LM Studio**, **Ollama** or **llama.cpp** preset, or type the port your server uses.
 3. Choose **Discover models**, select a loaded model, and save settings.
 4. Open **Chat**, write a question, and choose **Send** or press **Ctrl+Enter**.
 
-Choose a model with image support before sending screenshots or requesting action suggestions. Then ask away. James uses `/v1/models` and `/v1/chat/completions`; protocol tests use mock servers and do not establish real-model inference quality.
+Choose a model with image support (for example a vision-capable Ollama model) before sending screenshots or requesting action suggestions. Then ask away. James uses `/v1/models` and `/v1/chat/completions`; protocol tests use mock servers and do not establish real-model inference quality. See [data and privacy](#data-and-privacy): a loopback port alone does not prove the backend keeps prompts on-device.
 
 ### 3. Add context when you need it
 
 - **Screen:** choose **Capture primary screen**. James minimizes and waits three seconds so you can show the target application. Review the image and opt in to attaching it to your next question.
-- **Voice:** choose **Dictate**, then review the recognized text in the draft before sending. Recognition depends on your installed Windows language components, microphone permissions, and device configuration.
+- **Voice:** choose **Talk** for a spoken conversation, or **Dictate** to review recognized text in the draft before sending. Recognition depends on your microphone permissions and device configuration, plus the Windows language components or the whisper.cpp model you installed.
 - **Lab:** start the separate [R.A.I.N. Lab](https://github.com/topherchris420/lop-nur-twin) development server. In **Lab**, enter its port, normally **5173**, and choose **Connect to Lab**. Enable context attachment when needed. Follow the [Lab setup guide](docs/LAB.md) for upstream configuration.
 
 Lab connections do not authorize, start, stop, or modify research experiments. Research approvals stay in the Lab, and simulator findings retain their original evidence limits.
@@ -118,7 +135,7 @@ Model and Lab clients connect only to numeric loopback addresses, with redirects
 
 - **Conversation and settings:** stored unencrypted at `%LOCALAPPDATA%/Vers3Dynamics/James/session.json` on Windows.
 - **Action marker:** the adjacent `action-intent.json` includes the exact input, including text to insert, until you acknowledge the action.
-- **Screenshots and audio:** not saved by James. Explicit image and Lab attachments are sent to the selected model service, which may retain them.
+- **Screenshots and audio:** not kept by James. Where a system tool requires a file (macOS/Linux capture, whisper.cpp audio), it goes to a private owner-only temporary folder that is deleted immediately. Audio never leaves your computer. Explicit image and Lab attachments are sent to the selected model service, which may retain them.
 - **History clearing:** overwrites local conversation history; it is not secure erase and does not independently clear an action marker.
 
 See [storage details](docs/DESKTOP.md#storage-and-privacy) and the [security scope](SECURITY.md).

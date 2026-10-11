@@ -19,12 +19,15 @@ The native screen, input and speech operations require Windows. On other platfor
 
 ## Connect a model
 
-1. Start [LM Studio](https://lmstudio.ai/), load a model and enable its local server.
-2. Open **Settings** in James and enter the numeric port (usually **1234**).
+1. Start a local OpenAI-compatible model server and load a model:
+   - [LM Studio](https://lmstudio.ai/): load a model and enable its local server (default port **1234**).
+   - [Ollama](https://docs.ollama.com/api/openai-compatibility): run `ollama serve`, then `ollama pull <model>`. It exposes the OpenAI-compatible API at `http://127.0.0.1:11434/v1` (default port **11434**).
+   - [llama.cpp's `llama-server`](https://github.com/ggml-org/llama.cpp/tree/master/tools/server): `llama-server -m <model.gguf>` (default port **8080**; add `--mmproj` for images).
+2. Open **Settings** in James and choose the **LM Studio**, **Ollama** or **llama.cpp** preset, or enter the numeric port.
 3. Choose **Discover models**, select an actual loaded identifier, and save settings.
 4. Write a question and choose **Send**, or press Ctrl+Enter in the draft.
 
-James uses `/v1/models` and `/v1/chat/completions`. Replies are non-streaming. Model work runs off the UI thread with bounded requests. Stopping the UI operation does not guarantee that an already dispatched model request stops computing on the server. Protocol behavior is covered by mock HTTP tests; real LM Studio inference and vision quality have not been established by those tests.
+James uses `/v1/models` and `/v1/chat/completions`. Replies are non-streaming. Model work runs off the UI thread with bounded requests. Stopping the UI operation does not guarantee that an already dispatched model request stops computing on the server. Protocol behavior is covered by mock HTTP tests; real inference and vision quality have not been established by those tests.
 
 Both model and Lab connections are numeric loopback only, with redirects and environment proxies disabled. There is no automatic cloud fallback, but the selected server may itself route to a remote provider or retain requests.
 
@@ -42,9 +45,20 @@ Input acts on the foreground application. There is no guaranteed process targeti
 
 ## Voice
 
-Choose **Dictate** for one utterance lasting up to 20 seconds. Recognized text enters the editable draft; inspect it before sending. **Read last answer** uses Windows speech synthesis, and **Read new answers aloud** optionally speaks future replies. **Stop** cancels speech work.
+Choose **Talk** for a hands-free conversation: James listens, asks the model, speaks the answer and listens again. A whole-utterance "stop", "goodbye" or "that's all", Esc, **End conversation**, an error, or 15 seconds of silence ends it. Spoken requests go to the model as chat only; voice can never approve, propose for execution, or send clicks and typing. Talk adds a short instruction asking the model to answer conversationally, and Markdown, code blocks and links are cleaned up before they are read aloud.
 
-Speech uses installed Windows speech components and an available recognizer/language; microphone permissions and device configuration must permit capture. Missing components or recognition failures surface as errors. No wake-word listener, continuous voice conversation or automatic speech-to-action execution is implemented. James does not save audio. Hands-on microphone and recognition accuracy testing remains pending.
+Choose **Dictate** for one utterance. Recognized text enters the editable draft; inspect it before sending. **Read last answer** speaks the latest reply, and **Read new answers aloud** optionally speaks future replies. **Stop** cancels speech work.
+
+**Guide me** captures the screen (after the usual three-second minimize) and asks a vision model for what matters on screen and up to three next steps you can take yourself. If your draft contains a question, that question is asked instead of the default. The answer is guidance only and never becomes an action proposal.
+
+### Listening engines
+
+- **Windows** uses the installed Windows speech recognizer through System.Speech.
+- **macOS and Linux** use [whisper.cpp](https://github.com/ggml-org/whisper.cpp) entirely on this computer. A recorder (`sox` or `ffmpeg` on macOS; `parec`, `arecord`, `sox` or `ffmpeg` on Linux) streams 16 kHz mono audio to James. James's endpointer starts an utterance after 120 ms of voice above the room's noise floor and ends it after a 1.2-second pause (30 seconds maximum). Silence is never sent to whisper. The utterance is written as a WAV file into a private owner-only temporary folder, transcribed by `whisper-cli`, and deleted immediately. If one recorder cannot open the microphone, the next one is tried.
+
+**Settings → Voice** shows whether listening is ready. On macOS and Linux it finds `whisper-cli` (in system folders, or `~/whisper.cpp/build/bin`) and the preferred `ggml-*.bin` model in James's models folder (`~/Library/Application Support/James/models` on macOS, `~/.local/share/james/models` on Linux), or uses paths you enter. **Set up listening** gives copyable install and model download commands. James never downloads models itself.
+
+Microphone permissions and device configuration must permit capture. Missing components or recognition failures surface as errors. No wake-word listener or automatic speech-to-action execution is implemented. Endpointing is covered by synthetic-audio unit tests; hands-on microphone and recognition accuracy testing remains pending.
 
 ## Live R.A.I.N. Lab context
 
@@ -56,7 +70,7 @@ This is the upstream `rain-discovery-view/v1` endpoint, verified against a real 
 
 On Windows, conversation text and settings are saved as plaintext at `%LOCALAPPDATA%/Vers3Dynamics/James/session.json`; the non-Windows fallback is `~/.james/session.json` when `HOME` exists. The adjacent `action-intent.json` stores the latest reviewed action, including any text to insert, until you acknowledge it. Clearing conversation history overwrites the session history; it does not securely erase previous bytes or independently resolve an action marker.
 
-Screenshots and microphone audio are not persisted by James. Explicit screenshot and Lab attachments are sent to the selected model service, which may log them. Model answers and your sent text become conversation history. No encrypted-at-rest or secure-erase guarantee is made.
+Screenshots and microphone audio are not persisted by James. Where a system tool requires a file (macOS/Linux capture, whisper.cpp transcription), the data passes through a private owner-only temporary folder that is removed immediately after use. Explicit screenshot and Lab attachments are sent to the selected model service, which may log them. Model answers and your sent text become conversation history. No encrypted-at-rest or secure-erase guarantee is made.
 
 ## Validation still needed
 
