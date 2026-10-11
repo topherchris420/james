@@ -1,0 +1,9 @@
+/target/
+/research-private/
+*.exe
+*.asar
+*.dmg
+*.key
+*.pem
+.env
+.env.*
