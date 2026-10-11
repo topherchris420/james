@@ -1,10 +1,10 @@
 # James implementation roadmap
 
-Status: Phase 1 prepared locally. This roadmap sequences original implementation; it makes no competitive outcome claim.
+Status: Phase 1 executable core with in-memory supervised dispatch. This roadmap sequences original implementation; it makes no competitive outcome claim.
 
 | Milestone | Deliverable | Exit gate |
 | --- | --- | --- |
-| Phase 1 — research and architecture | Evidence ledger, ADRs, requirements, pure Rust authorization/lifecycle contracts, tests, comparison protocol, publication files | Local checks pass; known gaps named; no reference code/assets in repository |
+| Phase 1 — research and architecture | Evidence ledger, ADRs, requirements, pure Rust authorization/lifecycle contracts, supervisor and journal-callback gate, tests, comparison protocol, publication files | Local checks pass; known gaps named; no reference code/assets in repository |
 | Phase 2 — working desktop chat | eframe conversation/provider/timeline UI; Tokio supervision; one LM Studio or Ollama adapter; cancellable streaming; local SQLite history | Real UI → runtime → provider → store flow tested; malformed stream/disconnect/cancel fixtures; no implicit cloud fallback |
 | Phase 3 — controlled tools and recovery | Read-only workspace tool, typed registry, concrete reviews, path enforcement, durable intent/outcome journal; later staged writes | Actual tool dispatch cannot bypass policy; crash-boundary/revocation/path-race tests; unknown outcome reconciliation |
 | Phase 4 — providers and extensions | Ollama/LM Studio/llama.cpp compatibility profiles; capability discovery; versioned MCP client; supervised extension processes | Captured protocol fixtures; bounded messages/timeouts; install trust disclosure; no claimed sandbox without enforcement |

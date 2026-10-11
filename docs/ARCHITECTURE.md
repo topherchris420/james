@@ -4,7 +4,7 @@ Status: Phase 1 design, 2026-10-11. James is an original open-source Rust deskto
 
 ## Implementation boundary
 
-The Phase 1 implementation is a small `james-core` Rust policy and action-lifecycle prototype. Its scope is immutable reviewed invocations, grants bound to one in-memory action generation and run, fail-closed recovery transitions, non-copyable run-bound budgets, and action-state contracts. Host-owned durable action identities, task scheduling, resource enforcement, and journaling remain future work. See [VALIDATION.md](VALIDATION.md) for the actual checked behavior and limits.
+The Phase 1 implementation is a small `james-core` Rust policy and action-lifecycle prototype plus an in-memory [run supervisor](SUPERVISION.md). Its scope is immutable reviewed invocations, grants bound to one in-memory action generation and run, fail-closed recovery transitions, non-copyable run-bound budgets, and action-state contracts. The supervisor now assigns ephemeral action IDs, owns shared quotas, traces state changes, and requires a caller-supplied intent callback before dispatch. **Durable identity**, task scheduling, real resource enforcement, and committed journaling remain future work. See [VALIDATION.md](VALIDATION.md) for the actual checked behavior and limits.
 
 The desktop, inference adapters, SQLite store, MCP client, OS sandbox, and multi-agent runtime below are **proposed later work**. A type, interface, or passing unit test is not proof that those integrations exist or enforce their intended boundary.
 
@@ -98,7 +98,7 @@ flowchart LR
     WORKER -->|result with provenance| SUP
 ```
 
-This is the later host integration. Phase 1 implements only the in-memory policy/action/budget contracts used within the supervisor boundary.
+This is the later host integration. Phase 1 implements only in-memory policy/action/budget/supervisor contracts, not a durable host journal or executor.
 
 ```mermaid
 stateDiagram-v2

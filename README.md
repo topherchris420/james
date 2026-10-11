@@ -1,48 +1,97 @@
-# James
+<div align="center">
 
-An original, open-source Rust desktop AI assistant in development.
+# JAMES
 
-**Current milestone: Phase 1 — research, architecture, and executable core contracts.** James does not yet have a desktop interface, model integration, screen capture, voice, tools, persistence, or an agent runtime. The example simulates authorization and recovery; it performs no desktop action.
+### Intelligence proposes. You decide. James remembers what happened.
 
-## What exists
+**An open-source, human-directed desktop AI assistant, being built in Rust.**
 
-- A Korso research ledger with REA Evidence IDs, artifact hashes, and explicit coverage limits.
-- An independent architecture for a Rust-rendered desktop, local-model adapters, supervised extensions, durable recovery, and bounded agent coordination.
-- A dependency-free Rust core for immutable action review, one-use approvals, permission changes, run budgets, cancellation, and interrupted-operation reconciliation.
-- Regression tests, a contract demonstration, and a proposed comparison protocol.
+[![CI](https://github.com/topherchris420/james/actions/workflows/ci.yml/badge.svg)](https://github.com/topherchris420/james/actions/workflows/ci.yml)
+![Rust](https://img.shields.io/badge/Rust-1.85%2B-0B5D63)
+![MIT](https://img.shields.io/badge/license-MIT-0B5D63)
+![Prototype](https://img.shields.io/badge/stage-core%20prototype-555555)
 
-## Run the contracts
+</div>
 
-Use a configured Rust 1.85 or newer toolchain and the linker required by its target. The crate has no third-party dependencies.
+---
 
-```sh
+**What if a personal AI could be useful without quietly taking control?**
+
+James is an experiment in a more deliberate relationship with artificial intelligence: one where a model can propose concrete actions, the human retains authority, and the system reports what actually happened, including what it *cannot* verify.
+
+**Today, James is an executable Rust core and research project, not a usable desktop assistant.** There is no UI, model inference, voice, screen capture, MCP executor, persistent journal, or OS sandbox yet. The examples simulate approval and recovery without touching your files or desktop.
+
+## One idea, four contracts
+
+```text
+       REQUEST
+          │
+          ▼
+     AI proposes ─────► Immutable action
+                              │
+                       Human reviews
+                              │
+                      Policy + budget gate
+                              │
+                        Record intent
+                              │
+                      Trusted executor
+                              │
+                    Verify actual outcome
+                              │
+                           TIMELINE
+```
+
+1. **Consent is specific.** Approval is bound to one action instance, exact invocation, policy snapshot, and expiry. Edit the action and permission must be reconsidered.
+2. **Budgets belong to the run.** A supervisor owns the quota and uniquely identifies each proposed action. Agents cannot grant themselves extra work.
+3. **Intent precedes effect.** The supervisor checks authorization and quota before invoking an external intent-recording callback. Failed recording prevents dispatch.
+4. **Uncertainty has a state.** Interrupted side effects are not automatically retried or labeled successful. They require reconciliation.
+
+The first three are *in-memory contracts*. Real durability, user identity, path confinement, tool execution, and crash recovery still require a tested trusted host. A callback that says it persisted something is **not proof of persistence**.
+
+## Run what exists
+
+Requires Rust **1.85+** and a configured linker. `james-core` has no third-party Rust dependencies.
+
+```bash
+git clone https://github.com/topherchris420/james.git
+cd james
 cargo fmt --all -- --check
 cargo test --workspace --all-targets --locked --offline
 cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 cargo run --locked --offline --example approval_demo
+cargo run --locked --offline --example supervised_demo
 ```
 
-On Windows, `scripts/check.ps1` runs those checks. It accepts optional `-RustBin` and `-LinkerDirectory` arguments for an existing GNU toolchain. See [validation](docs/VALIDATION.md) for the exact tested configuration and limitations. The Rust 1.85 minimum is a manifest target; only the compiler recorded there has been tested locally.
+The approval demo shows a simulated interrupted action that cannot be replayed. The supervisor demo shows distinct action identity, an in-memory intent callback, and a secret-free execution timeline. **Neither example performs an actual tool call or durable write.** On Windows, [`scripts/check.ps1`](scripts/check.ps1) supports local Rust/linker overrides. Check [validation](docs/VALIDATION.md) for measured results and platform scope.
 
-## Design direction
+## What exists and what is planned
 
-The proposed desktop uses eframe/egui, with a Tokio supervisor and local SQLite journal. Model adapters initially target Ollama, LM Studio, and llama.cpp servers. Provider locality, capabilities, and data destinations will be visible; a loopback endpoint alone does not prove on-device inference. Extensions will use explicit capabilities and versioned MCP profiles. Arbitrary installed extensions remain trusted code until OS sandboxing is implemented and tested.
+| Capability | Implemented now | Planned |
+| --- | --- | --- |
+| Authorization | Immutable invocations, one-use approvals, policy revision checks | Actual keyboard-accessible review UI |
+| Execution | Shared budget, unique action IDs, state transitions, intent callback | Tokio supervisor + durable intent/outcome store |
+| Recovery | Cancellation, unknown-outcome and reconciliation states | Crash-tested persistent reconstruction |
+| Models | None | Explicit Ollama, LM Studio, llama.cpp adapters |
+| Desktop | None | Rust-rendered eframe/egui UI |
+| Tools | None | Constrained read-only workspace tools, staged writes, versioned MCP |
+| Coordination | None | Bounded workers with shared limits and provenance |
 
-James's original interface will center on conversations, explicit context selection, concrete action review, and an execution timeline. Model proposals cannot grant themselves authority. An interrupted external action has an unknown outcome until reconciled.
+**Local-first** is an engineering target, not a privacy guarantee already established. An inference server on `localhost` may still delegate to the cloud; future integrations must distinguish endpoint location from actual model location.
 
-## Project documents
+## Explore the research
 
-- [Research and evidence](docs/RESEARCH.md)
-- [Architecture decisions](docs/ARCHITECTURE.md)
-- [Requirements and acceptance criteria](docs/REQUIREMENTS.md)
-- [Implementation roadmap](docs/ROADMAP.md)
-- [Benchmark protocol](docs/BENCHMARKS.md)
-- [Validation results](docs/VALIDATION.md)
-- [Source provenance](PROVENANCE.md)
-- [Contribution guide](CONTRIBUTING.md)
-- [Security scope](SECURITY.md)
-- [Publication checklist](docs/PUBLISHING.md)
+- [Supervised execution](docs/SUPERVISION.md): the new core contract, ordering, invariants, and remaining safety work.
+- [Architecture](docs/ARCHITECTURE.md): the boundaries among Rust UI, trusted supervisor, providers, tools, and journal.
+- [Requirements](docs/REQUIREMENTS.md) and [roadmap](docs/ROADMAP.md): acceptance gates, not aspirational feature checkmarks.
+- [Research and evidence](docs/RESEARCH.md): bounded public-product/REA findings with explicit unknowns.
+- [Benchmark plan](docs/BENCHMARKS.md): how future claims of quality could be tested.
+- [Security scope](SECURITY.md), [contributing](CONTRIBUTING.md), and [source provenance](PROVENANCE.md): how to build and review responsibly.
 
-Korso is a research reference, not a dependency. James contains no Korso code, assets, prompts, or interfaces. No comparative benchmark has been run, and no superiority claim is made. The Phase 1 source repository is [topherchris420/james](https://github.com/topherchris420/james); there is no usable desktop release yet.
+## Built in the open
 
-Licensed under [MIT](LICENSE). The license applies to James's original files; reference artifacts remain outside this repository.
+James is an original project from **[Vers3Dynamics](https://vers3dynamics.com/)**. Public Korso product research informed independent requirements. No Korso code, assets, UI, or recovered prompts are shipped here. This is not a formally separated clean-room claim; details live in [PROVENANCE.md](PROVENANCE.md).
+
+**License:** [MIT](LICENSE). No downloadable desktop release exists yet.
+
+> A useful assistant should make the human more capable, not make the human less informed.

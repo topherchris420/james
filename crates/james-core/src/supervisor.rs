@@ -174,7 +174,6 @@ impl RunSupervisor {
             record_intent(id, action.invocation())
                 .map_err(|()| SupervisorError::JournalRejected)?;
         }
-        self.get_mut(id)?;
         let action = self
             .actions
             .get_mut(&id)
