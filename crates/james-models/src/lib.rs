@@ -201,13 +201,18 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let worker = thread::spawn(move || {
             let (mut socket, _) = listener.accept().unwrap();
-            socket.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
             // Consume the full request before replying. Closing with unread
             // bytes can reset the connection on Windows, making tests flaky.
             let mut reader = BufReader::new(socket.try_clone().unwrap());
             let mut line = String::new();
             reader.read_line(&mut line).unwrap();
-            assert!(line.starts_with("GET /v1/models ") || line.starts_with("POST /v1/chat/completions "));
+            assert!(
+                line.starts_with("GET /v1/models ")
+                    || line.starts_with("POST /v1/chat/completions ")
+            );
             let mut body_size = 0_usize;
             loop {
                 line.clear();
