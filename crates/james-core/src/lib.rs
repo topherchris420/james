@@ -2,6 +2,8 @@
 //! The trusted host must validate arguments, classify effects, enforce scopes,
 //! persist intent before dispatch, and reconcile outcomes after a crash.
 
+pub mod supervisor;
+
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 
@@ -234,7 +236,9 @@ impl Budget {
         Ok(())
     }
 
-    fn reserve_dispatch(&mut self, run_id: u64, now_ms: u64) -> Result<(), Error> {
+    /// Check capacity without charging it. A journal adapter can use this
+    /// before writing a durable intent and recheck at dispatch.
+    pub fn can_reserve_dispatch(&self, run_id: u64, now_ms: u64) -> Result<(), Error> {
         if run_id != self.run_id {
             return Err(Error::RunMismatch);
         }
@@ -244,9 +248,15 @@ impl Budget {
             .checked_add(1)
             .ok_or(Error::CounterOverflow)?;
         if next > self.max_dispatches {
-            return Err(Error::BudgetExceeded);
+            Err(Error::BudgetExceeded)
+        } else {
+            Ok(())
         }
-        self.dispatches = next;
+    }
+
+    fn reserve_dispatch(&mut self, run_id: u64, now_ms: u64) -> Result<(), Error> {
+        self.can_reserve_dispatch(run_id, now_ms)?;
+        self.dispatches += 1;
         Ok(())
     }
 
@@ -329,6 +339,29 @@ impl Action {
         }
         self.state = State::Denied;
         Ok(())
+    }
+
+    /// Read-only admission check before the host journals an intent. This is
+    /// not authorization to execute: call mark_dispatched again after the
+    /// durable record exists, and before the actual side effect.
+    pub fn can_dispatch(&self, policy: Policy, budget: &Budget, now_ms: u64) -> Result<(), Error> {
+        if self.state != State::Ready {
+            return Err(Error::InvalidTransition);
+        }
+        if Some(policy) != self.prepared_policy {
+            return Err(Error::PolicyChanged);
+        }
+        match policy.decide(&self.invocation) {
+            Decision::Deny => return Err(Error::Denied),
+            Decision::Ask => {
+                let approval = self.approval.as_ref().ok_or(Error::ApprovalMismatch)?;
+                if now_ms >= approval.expires_at_ms {
+                    return Err(Error::ApprovalExpired);
+                }
+            }
+            Decision::AllowRead => {}
+        }
+        budget.can_reserve_dispatch(self.invocation.run_id, now_ms)
     }
 
     /// Validates and consumes authorization immediately before dispatch.

@@ -10,8 +10,8 @@ Status: original Phase 1 specification, 2026-10-11. Proposed acceptance criteria
 | J04 | Honest provider locality | Distinguish endpoint location from inference locality; no silent provider/cloud fallback | Proposed |
 | J05 | Immutable action review | Changed run, tool, arguments, scope, destination, or action generation cannot use prior consent | In-memory contract tested |
 | J06 | Immediate revocation and expiry | Reject dispatch after expiry, changed policy, denial, or pre-dispatch cancellation | In-memory contract tested |
-| J07 | Bounded work | Enforce run-owned dispatch/token/deadline ceilings; later add model-call/depth/worker limits | Partial contract tested |
-| J08 | Honest recovery | Restart invalidates consent; unresolved side effects cannot auto-retry; durable journal reconstructs state | In-memory transitions tested; durability proposed |
+| J07 | Bounded work | Enforce run-owned dispatch/token/deadline ceilings; later add model-call/depth/worker limits | Shared in-memory run budget implemented; host limits proposed |
+| J08 | Honest recovery | Restart invalidates consent; unresolved side effects cannot auto-retry; durable journal reconstructs state | In-memory transitions and intent callback implemented; durability proposed |
 | J09 | Supervised coordination | Dependency-aware worker graph with scoped context, cancellation, conflict resolution, and provenance | Proposed |
 | J10 | Extensibility | Versioned provider/tool APIs and MCP fixtures; arbitrary subprocess trust visible | Proposed |
 | J11 | Explainable execution | Show concrete action, destination, permission, observed result, errors, and uncertainty | Proposed UI |
