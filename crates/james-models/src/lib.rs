@@ -192,7 +192,7 @@ pub fn parse_chat(body: &str) -> Result<String, ApiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Read, Write};
+    use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
     use std::thread;
 
@@ -201,14 +201,37 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let worker = thread::spawn(move || {
             let (mut socket, _) = listener.accept().unwrap();
-            let mut incoming = [0_u8; 8192];
-            let count = socket.read(&mut incoming).unwrap();
-            assert!(count > 0);
+            socket.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            // Consume the full request before replying. Closing with unread
+            // bytes can reset the connection on Windows, making tests flaky.
+            let mut reader = BufReader::new(socket.try_clone().unwrap());
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            assert!(line.starts_with("GET /v1/models ") || line.starts_with("POST /v1/chat/completions "));
+            let mut body_size = 0_usize;
+            loop {
+                line.clear();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" || line == "\n" {
+                    break;
+                }
+                if let Some(value) = line.strip_prefix("Content-Length: ") {
+                    body_size = value.trim().parse().unwrap();
+                } else if let Some(value) = line.strip_prefix("content-length: ") {
+                    body_size = value.trim().parse().unwrap();
+                }
+            }
+            if body_size > 0 {
+                assert!(body_size <= 262_144);
+                let mut request_body = vec![0_u8; body_size];
+                reader.read_exact(&mut request_body).unwrap();
+            }
             let response = format!(
                 "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
             socket.write_all(response.as_bytes()).unwrap();
+            socket.flush().unwrap();
         });
         (LocalClient::new(port).unwrap(), worker)
     }
