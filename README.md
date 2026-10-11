@@ -11,7 +11,7 @@
 ![MIT](https://img.shields.io/badge/license-MIT-0B5D63)
 ![Prototype](https://img.shields.io/badge/stage-core%20prototype-555555)
 
-[Meet James in R.A.I.N. Lab](https://github.com/topherchris420/lop-nur-twin#the-rain-lab) ·
+[Meet James in R.A.I.N. Lab](https://github.com/topherchris420/lop-nur-twin#a-lab-behind-a-door) ·
 [Explore the Rust core](crates/james-core) ·
 [See the roadmap](docs/ROADMAP.md)
 
