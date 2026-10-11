@@ -6,12 +6,12 @@ param(
     [ValidateSet('LMStudio', 'Ollama', 'LlamaCpp', 'OpenAICompatible')]
     [string]$Provider = 'LMStudio',
     [ValidateRange(1, 65535)]
-    [int]$Port = 0,
+    [int]$Port = 1234,
     [string]$Model = ''
 )
 
 $ErrorActionPreference = 'Stop'
-if ($Port -eq 0) {
+if (-not $PSBoundParameters.ContainsKey('Port')) {
     $Port = switch ($Provider) {
         'Ollama' { 11434 }
         'LlamaCpp' { 8080 }
