@@ -1,6 +1,6 @@
 # James implementation roadmap
 
-Status: Phase 1 executable core with in-memory supervised dispatch. This roadmap sequences original implementation; it makes no competitive outcome claim.
+Status: Phase 1 core complete as a prototype; Phase 2 **in progress** with a native desktop window, localhost LM Studio model discovery/chat, local plaintext history, and a Windows workflow artifact. Streaming, durable history, real Lab integration and end-to-end authority remain unimplemented.
 
 | Milestone | Deliverable | Exit gate |
 | --- | --- | --- |
@@ -14,11 +14,11 @@ Status: Phase 1 executable core with in-memory supervised dispatch. This roadmap
 
 ## Phase 2 implementation order
 
-1. Create a minimal Rust window and typed command/event channels. Keep I/O off the UI thread.
+1. **Implemented first slice:** minimal eframe window and a worker-to-UI channel, with model HTTP I/O off the UI thread.
 2. Build the provider adapter against recorded synthetic responses before touching a user's server. Test fragmented streams, malformed frames, context errors, timeouts, and cancellation.
-3. Add explicit provider settings and a connection test. Do not load/unload models or change the user's inference service silently.
-4. Complete a real typed conversation with streaming and a verifiable terminal result.
-5. Add SQLite migrations and history. Restart during a stream and show incomplete work honestly.
+3. **Partially implemented:** explicit local port and model settings, model discovery and mock HTTP tests. Do not load/unload models or change inference services silently.
+4. **Partially implemented:** typed text conversation and terminal HTTP result exist. Add incremental streaming and cancellation.
+5. **Partial local history:** plaintext JSON session file exists. Replace it with SQLite migrations and crash-aware incomplete-run tracking.
 6. Verify keyboard/assistive-technology review, scaling, long conversations, and UI responsiveness. Record actual platform support.
 
-Phase 1 tests establish contracts for later integration. They do not remove Phase 2–7 exit gates or constitute a functioning desktop product.
+The new Windows portable build is a developer preview, not a signed release. Core contract tests and GUI HTTP mocks do not remove Phase 2–7 exit gates. The desktop currently cannot authorize or execute tools.

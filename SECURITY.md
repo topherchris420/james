@@ -1,6 +1,6 @@
 # Security scope
 
-James is a Phase 1 research and contract prototype. It has no network listener, provider credential storage, extension loader, or desktop tool executor. The current crate is not an OS security sandbox and does not validate filesystem paths or execute permissions against real operating-system resources.
+James includes a Phase 1 authorization prototype and a native desktop text-chat preview. The desktop has an outbound localhost HTTP adapter but no network listener, provider credential storage, extension loader, or desktop tool executor. The current crate is not an OS security sandbox and does not validate filesystem paths or execute permissions against real operating-system resources.
 
 `Approval::after_user_review` is a trusted-host API, not proof that a human clicked a dialog. Effect classification, path canonicalization, clock integrity, unique durable action identity, run-budget ownership, tool results, and external reconciliation belong to the future host/runtime. Host code can construct a new action or budget; the crate does not constrain arbitrary Rust callers.
 
@@ -14,3 +14,10 @@ No production version is supported. The repository owner, [topherchris420](https
 The new `RunSupervisor` generates action IDs, owns the budget, and calls an externally supplied intent recorder before dispatch. Its read-only admission check prevents failed policy or quota checks from invoking the recorder; a failing recorder leaves the budget and approval unconsumed. **No durable recorder is implemented here.** The in-memory example is not crash-safe. The low-level `Action::mark_dispatched` method can still be called directly by arbitrary host code.
 
 For a real tool adapter, write crash-durable, idempotent records keyed by action ID, persist actual outcomes, and reconstruct unresolved work conservatively. A mock returning success does not satisfy these requirements. The event timeline includes only IDs and states, but even this metadata needs an actual retention policy. See [supervision](docs/SUPERVISION.md).
+
+
+## Desktop chat preview
+
+The `james-models` adapter constructs HTTP URLs only for numeric ports on `127.0.0.1`, bounds message and response sizes, uses timeouts, and makes no cloud fallback. It does **not** authenticate the server process or prove the model's inference is local. Use a trusted local LM Studio instance.
+
+Desktop conversations and model choice are stored as plaintext JSON in the user's local application data directory. That is not encryption, durable transactional storage, or protected deletion. The desktop uses a research-identity system prompt but does not ingest Lab research or authorize model-proposed tool calls. The `james-core` permissions and approval tokens do not yet protect a real desktop execution path.

@@ -1,6 +1,6 @@
-# Phase 1 validation
+# Implementation validation
 
-Date: 2026-10-11. Scope: `james-core`, its tests, demonstrations, repository preparation, and hosted CI. No desktop or comparative benchmark was run.
+Date: 2026-10-11. Scope: `james-core`, the new LM Studio adapter, the desktop build and CI. No human desktop usability study or comparative benchmark was run.
 
 ## Original local tested configuration
 
@@ -57,3 +57,13 @@ The paths describe this tested machine, not required directory names for other u
 ## Not established
 
 No real screen capture, inference, UI, MCP, filesystem confinement, durable crash recovery, extension isolation, credential storage, agent coordination, local-only network guarantee, or relative performance was tested. Native Windows ARM/MSVC, macOS, Linux, and Rust 1.85 remain untested on the original local host. Hosted CI has now passed on Windows, macOS, and Ubuntu using both stable and Rust 1.85.0; hosted CI is not equivalent to hands-on desktop-runtime validation.
+
+
+## Desktop preview validation (2026-10-11)
+
+- **Core:** [six-configuration workflow run 38148904460](https://github.com/topherchris420/james/actions/runs/38148904460) passed the dependency-aware `james-core` tests and strict Clippy on Ubuntu, Windows and macOS, using Rust stable and 1.85.0.
+- **Desktop:** [workflow run 38148904458](https://github.com/topherchris420/james/actions/runs/38148904458) passed formatting, `james-models` and `james-desktop` compilation/tests, and strict Clippy on Ubuntu and Windows. The Windows job built the optimized executable and uploaded the `James-Windows-x64` artifact (approximately 2.4 MB compressed).
+- **Six provider unit tests:** deterministic model-list parsing; chat parsing and malformed-result rejection; local HTTP model discovery; local HTTP text completion; non-success HTTP rejection; invalid configuration and message-size rejection. The mock server runs on random loopback ports only.
+- **Not yet verified:** a human-operated Windows GUI session using an actual LM Studio/Qwen model; voice, streaming and cancellation; signed installers; OS sandboxing; accessibility; Lab integration; durable action execution. Compilation and mock HTTP tests do not establish these outcomes.
+
+The addition of third-party GUI and HTTP dependencies means a fresh checkout needs Cargo registry access even when only testing the dependency-free `james-core` package within the shared workspace. The original offline test record describes the pre-desktop workspace only. The current CI runs core tests with `--locked` and online dependency resolution, while desktop builds use stable Rust and the checked-in lockfile.
