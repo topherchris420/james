@@ -27,16 +27,15 @@ jobs:
       - name: Build portable Windows executable
         if: matrix.os == 'windows-latest'
         run: cargo +stable build -p james-desktop --release --locked --target x86_64-pc-windows-msvc
-      - name: Install pinned installer compiler
+      - name: Download and verify pinned portable installer compiler
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          choco install innosetup --version=6.4.3 --allow-downgrade --yes --no-progress
-          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+          ./scripts/get-inno.ps1
       - name: Build per-user Windows installer
         if: matrix.os == 'windows-latest'
         shell: pwsh
-        run: ./scripts/build-installer.ps1 -SkipBuild
+        run: ./scripts/build-installer.ps1 -SkipBuild -IsccPath './target/tools/inno-6.4.3/tools/ISCC.exe'
       - name: Publish portable James executable
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4

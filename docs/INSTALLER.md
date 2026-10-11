@@ -29,11 +29,17 @@ is not triggered by pull requests or a manual workflow run.
 
 Prerequisites: Windows, Rust stable with the `x86_64-pc-windows-msvc` target,
 Visual Studio C++ Build Tools, and [Inno Setup 6](https://jrsoftware.org/isinfo.php).
-CI uses Inno Setup 6.4.3. From the repository root:
+CI downloads the portable `Tools.InnoSetup` 6.4.3 NuGet package with
+`scripts/get-inno.ps1`, verifies its pinned SHA-256 checksum and the compiler's
+Authenticode publisher certificate, and never installs it system-wide. From the
+repository root:
 
 ```powershell
 rustup target add x86_64-pc-windows-msvc
 ./scripts/build-installer.ps1
+# Or download a verified portable compiler without installing it:
+./scripts/get-inno.ps1
+./scripts/build-installer.ps1 -IsccPath './target/tools/inno-6.4.3/tools/ISCC.exe'
 # For a nonstandard compiler location:
 ./scripts/build-installer.ps1 -IsccPath 'D:\Tools\Inno Setup 6\ISCC.exe'
 ```
