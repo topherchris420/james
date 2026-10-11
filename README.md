@@ -2,7 +2,7 @@
 
 # James
 
-### A local AI desktop companion for research, conversation, and reviewed actions.
+### A local AI companion for research, conversation, and actions you approve.
 
 [![Core CI](https://github.com/topherchris420/james/actions/workflows/ci.yml/badge.svg)](https://github.com/topherchris420/james/actions/workflows/ci.yml)
 [![Desktop CI](https://github.com/topherchris420/james/actions/workflows/desktop.yml/badge.svg)](https://github.com/topherchris420/james/actions/workflows/desktop.yml)
@@ -13,21 +13,21 @@
 
 </div>
 
-James is an open-source Rust desktop assistant that connects to your local model server. Chat with a loaded model, ask about a screenshot, dictate a draft, or bring current R.A.I.N. Lab research context into a conversation. When you want to act on the desktop, James presents one concrete input for your review and requires **Allow once** before dispatch.
+Bring a local model, a question, and the context you choose. James is an open-source Rust desktop companion for chatting with your model, asking about a screenshot, dictating a draft, or bringing R.A.I.N. Lab research into a conversation. Ready to act? James shows you the specific click, key, or text first. Nothing is sent to the desktop until you choose **Allow once**.
 
 > Intelligence may propose. Evidence must be checked. Authority stays with the human.
 
-**Current status: v0.3 Windows preview.** The desktop and integrations are implemented, with unsigned portable and installer builds. Real-model text and vision quality, speech accuracy, accessibility, and clean-machine install/upgrade/uninstall validation remain outstanding. See the [validation record](docs/VALIDATION.md) for what has actually been checked.
+Try James as an unsigned Windows preview, available in portable and installer builds. Real-model text and vision quality, speech accuracy, accessibility, and clean-machine install/upgrade/uninstall validation remain to be checked. See the [validation record](docs/VALIDATION.md) for what has actually been checked.
 
 ## What you can do
 
 | Feature | Current behavior |
 | --- | --- |
-| **Local-model chat** | Discover loaded models and send text or image requests through an OpenAI-compatible local endpoint. Replies are non-streaming; LM Studio and model weights are installed separately. |
-| **Screen context** | Capture the primary monitor, inspect the preview, and explicitly attach it to your next question. Image requests require a vision-capable model. |
-| **Reviewed computer input** | Prepare one click, supported key, or printable-text insertion, or ask a vision model to suggest one action. Each input requires its own approval. |
-| **Windows speech** | Dictate one utterance into an editable draft, read the last answer aloud, or enable spoken replies using installed Windows speech components. |
-| **R.A.I.N. Lab context** | Connect to the separate local Lab discovery API, view its current state, and optionally attach recent research context. The connection is read-only. |
+| **Local-model chat** | Pick a loaded model and start a conversation. Text and image requests use an OpenAI-compatible local endpoint. Replies are non-streaming; LM Studio and model weights are installed separately. |
+| **Screen context** | Show James what you are looking at: capture the primary monitor, inspect the preview, then choose whether to attach it to your next question. Image requests require a vision-capable model. |
+| **Reviewed computer input** | Turn a screenshot into a proposed click, key, or text insertion, then inspect and approve each action before it reaches the foreground app. |
+| **Windows speech** | Say it as a draft, review the recognized words, and decide what to send. You can also hear the last answer or enable spoken replies with installed Windows speech components. |
+| **R.A.I.N. Lab context** | Check in on the separate local Lab and bring recent research context into chat when you choose. The connection is read-only. |
 | **Local history** | Save conversation text and settings locally between sessions. Storage is plaintext; see [data and privacy](#data-and-privacy). |
 
 Screen capture, computer input, and speech require Windows. Other platforms report those capabilities as unsupported. James does not yet provide autonomous action loops, arbitrary shell or file tools, general MCP integrations, or multi-agent desktop coordination.
@@ -36,7 +36,7 @@ Screen capture, computer input, and speech require Windows. Other platforms repo
 
 ### 1. Download and launch
 
-Open the [desktop build workflow](https://github.com/topherchris420/james/actions/workflows/desktop.yml), select a successful run of `main`, and download an artifact from its **Artifacts** section. GitHub may require sign-in; artifacts expire after 30 days.
+Ready to try James? Open the [desktop build workflow](https://github.com/topherchris420/james/actions/workflows/desktop.yml), choose a successful run of `main`, and download a build from its **Artifacts** section. GitHub may require sign-in; artifacts expire after 30 days.
 
 | Artifact | How to use it |
 | --- | --- |
@@ -52,7 +52,7 @@ Use a recent build containing the static Windows runtime fix; older preview arti
 3. Choose **Discover models**, select a loaded model, and save settings.
 4. Open **Chat**, write a question, and choose **Send** or press **Ctrl+Enter**.
 
-Choose a model with image support before sending screenshots or requesting action suggestions. James uses `/v1/models` and `/v1/chat/completions`; protocol tests use mock servers and do not establish real-model inference quality.
+Choose a model with image support before sending screenshots or requesting action suggestions. Then ask away. James uses `/v1/models` and `/v1/chat/completions`; protocol tests use mock servers and do not establish real-model inference quality.
 
 ### 3. Add context when you need it
 
