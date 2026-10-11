@@ -344,12 +344,7 @@ impl Action {
     /// Read-only admission check before the host journals an intent. This is
     /// not authorization to execute: call mark_dispatched again after the
     /// durable record exists, and before the actual side effect.
-    pub fn can_dispatch(
-        &self,
-        policy: Policy,
-        budget: &Budget,
-        now_ms: u64,
-    ) -> Result<(), Error> {
+    pub fn can_dispatch(&self, policy: Policy, budget: &Budget, now_ms: u64) -> Result<(), Error> {
         if self.state != State::Ready {
             return Err(Error::InvalidTransition);
         }

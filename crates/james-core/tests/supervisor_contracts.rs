@@ -34,8 +34,8 @@ fn unique_ids_and_a_single_budget_for_identical_actions() {
 
     for id in [first, second] {
         assert_eq!(run.prepare(id, policy()).unwrap(), State::AwaitingApproval);
-        let consent = Approval::after_user_review(run.action(id).unwrap(), policy(), 0, 90)
-            .unwrap();
+        let consent =
+            Approval::after_user_review(run.action(id).unwrap(), policy(), 0, 90).unwrap();
         run.approve(id, consent, 1).unwrap();
     }
 
@@ -56,7 +56,10 @@ fn unique_ids_and_a_single_budget_for_identical_actions() {
         }),
         Err(SupervisorError::Core(Error::BudgetExceeded))
     );
-    assert!(!attempted, "do not journal a dispatch that cannot fit in budget");
+    assert!(
+        !attempted,
+        "do not journal a dispatch that cannot fit in budget"
+    );
     assert_eq!(run.action(second).unwrap().state(), State::Ready);
 }
 
@@ -103,7 +106,10 @@ fn expired_or_changed_permissions_never_reach_journal() {
     );
     assert!(!recorded);
 
-    let changed = Policy { revision: 2, ..policy() };
+    let changed = Policy {
+        revision: 2,
+        ..policy()
+    };
     assert_eq!(
         run.dispatch_with_journal(id, changed, 10, |_, _| {
             recorded = true;
@@ -121,9 +127,13 @@ fn journaled_interruption_requires_explicit_reconciliation() {
     run.prepare(id, policy()).unwrap();
     let consent = Approval::after_user_review(run.action(id).unwrap(), policy(), 0, 90).unwrap();
     run.approve(id, consent, 1).unwrap();
-    run.dispatch_with_journal(id, policy(), 2, |_, _| Ok(())).unwrap();
+    run.dispatch_with_journal(id, policy(), 2, |_, _| Ok(()))
+        .unwrap();
     run.cancel(id).unwrap();
-    assert_eq!(run.action(id).unwrap().state(), State::CancellationRequested);
+    assert_eq!(
+        run.action(id).unwrap().state(),
+        State::CancellationRequested
+    );
     run.recover_after_restart(id).unwrap();
     assert_eq!(run.action(id).unwrap().state(), State::NeedsReconciliation);
 
@@ -150,7 +160,10 @@ fn wrong_run_unknown_action_and_secret_free_timeline() {
     assert_eq!(state, State::AwaitingApproval);
     run.deny(id).unwrap();
     assert_eq!(
-        run.events().iter().map(|event| event.state).collect::<Vec<_>>(),
+        run.events()
+            .iter()
+            .map(|event| event.state)
+            .collect::<Vec<_>>(),
         vec![State::Proposed, State::AwaitingApproval, State::Denied]
     );
     assert_eq!(run.events()[0].sequence, 1);
@@ -179,6 +192,9 @@ fn cancellation_before_dispatch_never_calls_recorder() {
 fn token_usage_is_charged_once_by_the_owner() {
     let mut run = RunSupervisor::new(7, 2, 4, 100).unwrap();
     run.charge_tokens(3, 1).unwrap();
-    assert_eq!(run.charge_tokens(2, 2), Err(SupervisorError::Core(Error::BudgetExceeded)));
+    assert_eq!(
+        run.charge_tokens(2, 2),
+        Err(SupervisorError::Core(Error::BudgetExceeded))
+    );
     assert_eq!(run.usage(), (0, 3));
 }

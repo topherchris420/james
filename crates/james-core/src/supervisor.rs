@@ -117,11 +117,7 @@ impl RunSupervisor {
         self.budget.usage()
     }
 
-    pub fn charge_tokens(
-        &mut self,
-        tokens: u64,
-        now_ms: u64,
-    ) -> Result<(), SupervisorError> {
+    pub fn charge_tokens(&mut self, tokens: u64, now_ms: u64) -> Result<(), SupervisorError> {
         self.budget.charge_tokens(self.run_id, tokens, now_ms)?;
         Ok(())
     }
@@ -170,13 +166,19 @@ impl RunSupervisor {
     ) -> Result<(), SupervisorError> {
         self.check_event_capacity()?;
         {
-            let action = self.actions.get(&id).ok_or(SupervisorError::UnknownAction)?;
+            let action = self
+                .actions
+                .get(&id)
+                .ok_or(SupervisorError::UnknownAction)?;
             action.can_dispatch(policy, &self.budget, now_ms)?;
             record_intent(id, action.invocation())
                 .map_err(|()| SupervisorError::JournalRejected)?;
         }
         self.get_mut(id)?;
-        let action = self.actions.get_mut(&id).ok_or(SupervisorError::UnknownAction)?;
+        let action = self
+            .actions
+            .get_mut(&id)
+            .ok_or(SupervisorError::UnknownAction)?;
         action.mark_dispatched(policy, &mut self.budget, now_ms)?;
         self.record(id, State::Running);
         Ok(())
@@ -218,11 +220,7 @@ impl RunSupervisor {
         Ok(())
     }
 
-    pub fn reconcile(
-        &mut self,
-        id: ActionId,
-        succeeded: bool,
-    ) -> Result<(), SupervisorError> {
+    pub fn reconcile(&mut self, id: ActionId, succeeded: bool) -> Result<(), SupervisorError> {
         self.check_event_capacity()?;
         let action = self.get_mut(id)?;
         action.reconcile(succeeded)?;
@@ -232,7 +230,9 @@ impl RunSupervisor {
     }
 
     fn get_mut(&mut self, id: ActionId) -> Result<&mut Action, SupervisorError> {
-        self.actions.get_mut(&id).ok_or(SupervisorError::UnknownAction)
+        self.actions
+            .get_mut(&id)
+            .ok_or(SupervisorError::UnknownAction)
     }
 
     fn check_event_capacity(&self) -> Result<(), SupervisorError> {
