@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # pinned
@@ -24,6 +24,34 @@ jobs:
         run: cargo +stable test --workspace --all-targets --locked
       - name: Strict Clippy
         run: cargo +stable clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build experimental Linux/macOS desktop binary
+        if: matrix.os != 'windows-latest'
+        run: cargo +stable build -p james-desktop --release --locked
+      - name: Package experimental Linux/macOS portable build
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          platform="$(uname -s)"
+          architecture="$(uname -m)"
+          product="James-${platform}-${architecture}"
+          mkdir -p "dist/${product}"
+          cp target/release/james "dist/${product}/james"
+          cp LICENSE "dist/${product}/LICENSE"
+          cp docs/PLATFORM_SUPPORT.md "dist/${product}/PLATFORM_SUPPORT.md"
+          chmod +x "dist/${product}/james"
+          tar -czf "dist/${product}.tar.gz" -C dist "${product}"
+          (cd dist && shasum -a 256 "${product}.tar.gz" > "${product}.tar.gz.sha256")
+      - name: Upload Linux/macOS experimental binaries
+        if: matrix.os != 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: James-${{ runner.os }}-${{ runner.arch }}-preview
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30
       - name: Build portable Windows executable
         if: matrix.os == 'windows-latest'
         run: cargo +stable build -p james-desktop --release --locked --target x86_64-pc-windows-msvc
@@ -82,7 +110,12 @@ jobs:
         with:
           name: James-Windows-x64
           path: artifacts
-      - name: Verify installer checksum
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: James-*-preview
+          path: artifacts
+          merge-multiple: true
+      - name: Verify installer and portable archive checksums
         working-directory: artifacts
         run: sha256sum --check ./*.sha256
       - name: Publish explicitly tagged release

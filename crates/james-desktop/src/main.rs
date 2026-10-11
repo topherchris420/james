@@ -4,7 +4,7 @@ mod review;
 mod timing;
 use eframe::egui::{self, Color32, RichText};
 use james_lab::{LabClient, ResearchContext};
-use james_models::{ChatMessage, LocalClient};
+use james_models::{ChatMessage, LocalClient, LocalProvider};
 use james_platform::{Action, Cancellation, Key, ReviewedAction, Screenshot};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -22,6 +22,7 @@ const MAX_SAVED_MESSAGES: usize = 80;
 #[serde(default)]
 struct SavedSession {
     port: u16,
+    provider: LocalProvider,
     model: String,
     messages: Vec<ChatMessage>,
     lab_port: u16,
@@ -30,6 +31,7 @@ impl Default for SavedSession {
     fn default() -> Self {
         Self {
             port: 1234,
+            provider: LocalProvider::LmStudio,
             model: String::new(),
             messages: Vec::new(),
             lab_port: 5173,
@@ -100,6 +102,7 @@ struct Scheduled {
 }
 struct JamesApp {
     port: String,
+    provider: LocalProvider,
     model: String,
     available_models: Vec<String>,
     messages: Vec<ChatMessage>,
@@ -134,6 +137,7 @@ impl Default for JamesApp {
             review::needs_reconciliation(&session.with_file_name("action-intent.json"));
         Self {
             port: saved.port.to_string(),
+            provider: saved.provider,
             model: saved.model,
             available_models: Vec::new(),
             messages: saved
@@ -149,7 +153,7 @@ impl Default for JamesApp {
                 .rev()
                 .collect(),
             draft: String::new(),
-            status: "Connect LM Studio in Settings to begin.".into(),
+            status: "Choose a local model provider in Settings to begin.".into(),
             worker: None,
             session,
             page: Page::Chat,
@@ -189,7 +193,8 @@ impl JamesApp {
             .rev()
             .collect();
         let saved = SavedSession {
-            port: numeric_port(&self.port).unwrap_or(1234),
+            port: numeric_port(&self.port).unwrap_or(self.provider.default_port()),
+            provider: self.provider,
             model: self.model.clone(),
             messages: self.messages.clone(),
             lab_port: numeric_port(&self.lab_port).unwrap_or(5173),
@@ -250,13 +255,16 @@ impl JamesApp {
     fn discover(&mut self) {
         match numeric_port(&self.port) {
             Err(e) => self.status = e,
-            Ok(port) => self.launch_model("Discovering local models...", move |_| {
-                WorkerResult::Models(
-                    LocalClient::new(port)
-                        .and_then(|c| c.models())
-                        .map_err(|e| e.to_string()),
-                )
-            }),
+            Ok(port) => {
+                let provider = self.provider;
+                self.launch_model("Discovering local models...", move |_| {
+                    WorkerResult::Models(
+                        LocalClient::for_provider(provider, port)
+                            .and_then(|c| c.models())
+                            .map_err(|e| e.to_string()),
+                    )
+                });
+            }
         }
     }
     fn send(&mut self, plan: bool) {
@@ -270,6 +278,7 @@ impl JamesApp {
                 return;
             }
         };
+        let provider = self.provider;
         let model = self.model.trim().to_owned();
         if model.is_empty() {
             self.status = "Choose a loaded model in Settings first.".into();
@@ -346,7 +355,7 @@ impl JamesApp {
             },
             move |_| {
                 WorkerResult::Chat(
-                    LocalClient::new(port)
+                    LocalClient::for_provider(provider, port)
                         .and_then(|c| c.chat_with_image(&model, &context, png.as_deref()))
                         .map_err(|e| e.to_string()),
                     plan,
@@ -570,6 +579,10 @@ impl JamesApp {
     fn screen_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.heading("Screen context");
         ui.label("Capture the primary monitor on request. James minimizes for 3 seconds so you can show the target app.");
+        if !cfg!(target_os = "windows") {
+            ui.colored_label(Color32::YELLOW, "Screen capture is not yet supported on this platform. James can still provide local text chat and read-only Lab research.");
+            return;
+        }
         if ui
             .add_enabled(!self.busy(), egui::Button::new("Capture primary screen"))
             .clicked()
@@ -639,6 +652,10 @@ impl JamesApp {
     fn action_ui(&mut self, ui: &mut egui::Ui) {
         ui.heading("Computer control");
         ui.label("Each click, key, or text insertion is reviewed separately. Approve only while the target is ready; clicking or pressing Enter can submit or delete data.");
+        if !cfg!(target_os = "windows") {
+            ui.colored_label(Color32::YELLOW, "Automatic computer input is currently Windows-only. You can still chat with your local model and inspect Lab research. Native macOS/Linux input requires a separately validated adapter.");
+            return;
+        }
         if self.recovery_needed {
             ui.colored_label(Color32::YELLOW, "Inspect the last action in the target app before continuing. An interrupted action may have an uncertain outcome; James never replays it.");
             if ui
@@ -835,7 +852,25 @@ impl JamesApp {
     }
     fn settings_ui(&mut self, ui: &mut egui::Ui) {
         ui.heading("Local model");
-        ui.label("Load a model in LM Studio and enable its local server. Images require a vision-capable model.");
+        ui.label("Choose an inference provider running on your own computer. Load a model and start that provider's local server.");
+        let previous = self.provider;
+        egui::ComboBox::from_label("Provider")
+            .selected_text(self.provider.label())
+            .show_ui(ui, |ui| {
+                for provider in LocalProvider::ALL {
+                    ui.selectable_value(&mut self.provider, provider, provider.label());
+                }
+            });
+        if self.provider != previous {
+            self.port = self.provider.default_port().to_string();
+            self.model.clear();
+            self.available_models.clear();
+            self.status = format!(
+                "Selected {}. Start its local server, then discover models.",
+                self.provider.label()
+            );
+            self.save_session();
+        }
         ui.horizontal(|ui| {
             ui.label("127.0.0.1 port");
             ui.text_edit_singleline(&mut self.port);
@@ -846,6 +881,7 @@ impl JamesApp {
         {
             self.discover();
         }
+        ui.small("Only numeric loopback ports are supported. No automatic cloud connection or authentication. Images require a compatible vision model.");
         ui.label("Model ID");
         ui.text_edit_singleline(&mut self.model);
         egui::ComboBox::from_id_salt("models")
@@ -861,7 +897,7 @@ impl JamesApp {
         ui.separator();
         ui.heading("Voice");
         ui.checkbox(&mut self.speak_replies, "Read new answers aloud");
-        ui.label("Dictation uses the installed Windows speech recognizer. An utterance lasts up to 20 seconds and goes into the draft for review. Audio is never saved by James.");
+        ui.label("Dictation and spoken replies currently require Windows speech services. On other systems these controls are disabled. Dictation enters an editable draft, never an automatic action.");
         ui.separator();
         ui.heading("Privacy & storage");
         ui.label("Conversation text and settings are saved unencrypted on this computer. Screen images are sent only when attached. The selected localhost server may have its own logging or cloud routing.");
@@ -998,7 +1034,10 @@ impl eframe::App for JamesApp {
                     self.send(true);
                 }
                 if ui
-                    .add_enabled(enabled, egui::Button::new("Dictate"))
+                    .add_enabled(
+                        enabled && cfg!(target_os = "windows"),
+                        egui::Button::new("Dictate"),
+                    )
                     .clicked()
                 {
                     self.launch(
@@ -1013,7 +1052,9 @@ impl eframe::App for JamesApp {
                 }
                 if ui
                     .add_enabled(
-                        enabled && self.messages.iter().any(|m| m.role == "assistant"),
+                        enabled
+                            && cfg!(target_os = "windows")
+                            && self.messages.iter().any(|m| m.role == "assistant"),
                         egui::Button::new("Read last answer"),
                     )
                     .clicked()
@@ -1064,7 +1105,7 @@ impl eframe::App for JamesApp {
                 match self.page {
                     Page::Chat => {
                         ui.heading("Conversation"); ui.small("Model output is not verified scientific evidence."); ui.separator();
-                        if self.messages.is_empty() { ui.add_space(35.0); ui.label(RichText::new("A laboratory without walls.").size(23.0)); ui.label("Connect LM Studio in Settings. Capture a screen or connect the Lab whenever you need context."); }
+                        if self.messages.is_empty() { ui.add_space(35.0); ui.label(RichText::new("A laboratory without walls.").size(23.0)); ui.label("Choose a local model provider in Settings. On Windows, you can capture a screen; R.A.I.N. Lab is an optional read-only connection."); }
                         for m in &self.messages { ui.add_space(12.0); ui.label(RichText::new(if m.role == "user" { "YOU" } else { "JAMES" }).color(TEAL).strong()); ui.label(&m.content); ui.separator(); }
                     }
                     Page::Screen => self.screen_ui(ui, ctx), Page::Actions => self.action_ui(ui), Page::Lab => self.lab_ui(ui), Page::Settings => self.settings_ui(ui),
@@ -1097,12 +1138,29 @@ mod tests {
         let saved: SavedSession =
             serde_json::from_str(r#"{"port":1234,"model":"local","messages":[]}"#).unwrap();
         assert_eq!(saved.lab_port, 5173);
+        assert_eq!(saved.provider, LocalProvider::LmStudio);
         assert!(
             !serde_json::to_string(&saved)
                 .unwrap()
                 .contains("screenshot")
         );
     }
+    #[test]
+    fn alternate_provider_settings_round_trip_without_changing_history() {
+        let saved = SavedSession {
+            provider: LocalProvider::Ollama,
+            port: 11434,
+            model: "qwen:latest".into(),
+            messages: vec![ChatMessage::new("user", "A question")],
+            ..SavedSession::default()
+        };
+        let encoded = serde_json::to_string(&saved).unwrap();
+        let loaded: SavedSession = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(loaded.provider, LocalProvider::Ollama);
+        assert_eq!(loaded.port, 11434);
+        assert_eq!(loaded.messages, saved.messages);
+    }
+
     #[test]
     fn endpoints_are_numeric_loopback_ports() {
         for bad in ["0", "65536", "https://host", "1234/path"] {
