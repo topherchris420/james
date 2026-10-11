@@ -1,0 +1,36 @@
+name: James desktop
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # pinned
+        with:
+          persist-credentials: false
+      - name: Rust stable
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - name: Formatting
+        run: cargo +stable fmt --all -- --check
+      - name: Model and desktop tests
+        run: cargo +stable test -p james-models -p james-desktop --all-targets --locked
+      - name: Strict Clippy
+        run: cargo +stable clippy -p james-models -p james-desktop --all-targets --locked -- -D warnings
+      - name: Build portable Windows executable
+        if: matrix.os == 'windows-latest'
+        run: cargo +stable build -p james-desktop --release --locked
+      - name: Publish portable James executable
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: James-Windows-x64
+          path: target/release/james.exe
+          if-no-files-found: error
+          retention-days: 30
