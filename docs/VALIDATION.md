@@ -1,8 +1,8 @@
 # Phase 1 validation
 
-Date: 2026-10-11. Scope: `james-core`, its tests, demonstration, and repository preparation. No desktop or comparative benchmark was run.
+Date: 2026-10-11. Scope: `james-core`, its tests, demonstrations, repository preparation, and hosted CI. No desktop or comparative benchmark was run.
 
-## Tested configuration
+## Original local tested configuration
 
 - Host: Windows ARM; Rust test binaries ran using the Windows x64 environment.
 - Compiler: rustc 1.99.0, commit `b940084d7eb6a299eb4bfeb8e34901bc051e7ac4`, host target `x86_64-pc-windows-gnu`, LLVM 23.1.1.
@@ -11,7 +11,7 @@ Date: 2026-10-11. Scope: `james-core`, its tests, demonstration, and repository 
 
 The initial host-native MSVC attempt could not find `link.exe`. A GNU attempt without the self-contained option could not locate `libgcc_eh`. The final configured GNU run passed. These environment failures are not reported as passed attempts. The missing GNU Clippy component was added through rustup before the final strict check.
 
-## Completed checks
+## Original local checks (initial commit)
 
 | Check | Result |
 | --- | --- |
@@ -26,7 +26,23 @@ The example performs no real operation. Its simulated approval is not an actual 
 
 Regression tests exercise exact invocation matching, separate-action approval transfer rejection, outstanding-token invalidation after recovery, policy changes including a missed revision increment, expiry at review and dispatch, denied tools, illegal transitions, single-action replay rejection, run-bound budget accounting, token overflow, deadlines, pre-dispatch cancellation, cancellation intent versus confirmed result, and interrupted-operation reconciliation.
 
-Approvals are bound to one in-memory action generation. Budgets are non-copyable and run-bound, but the trusted supervisor must still own exactly one budget and a durable registry of unique actions. Constructing new objects is not globally prevented by this crate. Time is supplied by the trusted host using one monotonic clock.
+Approvals are bound to one in-memory action generation. Budgets are non-copyable and run-bound. The new in-memory `RunSupervisor` owns one budget and generates unique ephemeral IDs, but a real host still needs a durable registry and recovery implementation. Constructing new objects is not globally prevented by this crate. Time is supplied by the trusted host using one monotonic clock.
+
+## Hosted CI validation after supervision upgrade
+
+[GitHub Actions run 38147117780](https://github.com/topherchris420/james/actions/runs/38147117780) completed successfully on 2026-10-11.
+
+| Runner | Rust 1.85.0 | Rust stable |
+| --- | --- | --- |
+| Ubuntu | Passed | Passed |
+| Windows | Passed | Passed |
+| macOS | Passed | Passed |
+
+Each matrix job ran locked/offline tests, strict Clippy, and the original no-I/O approval demonstration. Stable jobs additionally ran rustfmt verification. The enhanced source includes the original 26 regression tests and **7 additional supervisor regression tests**; the second demonstration was added and compiled as an example target.
+
+New test scenarios cover action ID uniqueness, one shared budget, failed intent recording, policy/consent expiry, no journal callback for unauthorized dispatch, interrupted effects requiring reconciliation, cancellation, and token usage limits.
+
+The source's first supervised-execution CI run failed **formatting only**; the formatting-only fix then passed all six combinations. This is a transparent development history, not a performance benchmark. The in-memory recorder remains a mock, not durable storage.
 
 ## Reproduce the Windows check
 
@@ -40,4 +56,4 @@ The paths describe this tested machine, not required directory names for other u
 
 ## Not established
 
-No real screen capture, inference, UI, MCP, filesystem confinement, durable crash recovery, extension isolation, credential storage, agent coordination, local-only network guarantee, or relative performance was tested. Native Windows ARM/MSVC, macOS, Linux, and the Rust 1.85 minimum remain untested locally. The CI workflow is prepared for stable and 1.85.0 across three OS runners; it has not executed remotely.
+No real screen capture, inference, UI, MCP, filesystem confinement, durable crash recovery, extension isolation, credential storage, agent coordination, local-only network guarantee, or relative performance was tested. Native Windows ARM/MSVC, macOS, Linux, and Rust 1.85 remain untested on the original local host. Hosted CI has now passed on Windows, macOS, and Ubuntu using both stable and Rust 1.85.0; hosted CI is not equivalent to hands-on desktop-runtime validation.
