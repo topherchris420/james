@@ -993,10 +993,9 @@ impl eframe::App for JamesApp {
                         egui::Button::new("Read last answer"),
                     )
                     .clicked()
+                    && let Some(m) = self.messages.iter().rev().find(|m| m.role == "assistant")
                 {
-                    if let Some(m) = self.messages.iter().rev().find(|m| m.role == "assistant") {
-                        self.speak(m.content.clone());
-                    }
+                    self.speak(m.content.clone());
                 }
                 if ui
                     .add_enabled(
