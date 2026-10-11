@@ -11,7 +11,7 @@
 [![MIT license](https://img.shields.io/badge/license-MIT-0B5D63)](LICENSE)
 [![Windows preview](https://img.shields.io/badge/release-Windows%20preview-555555)](docs/VALIDATION.md)
 
-[**Get James for Windows**](https://github.com/topherchris420/james/actions/workflows/desktop.yml) · [**Quick start**](#start-here) · [**Meet R.A.I.N. Lab**](https://github.com/topherchris420/lop-nur-twin) · [**See what is verified**](docs/VALIDATION.md)
+[**Preview builds**](https://github.com/topherchris420/james/actions/workflows/desktop.yml) · [**Quick start**](#start-here) · [**Platform support**](docs/PLATFORM_SUPPORT.md) · [**Release gates**](docs/RELEASE_READINESS.md) · [**Meet R.A.I.N. Lab**](https://github.com/topherchris420/lop-nur-twin)
 
 </div>
 
@@ -27,14 +27,14 @@ It is also the intended **desktop-facing counterpart to James in [R.A.I.N. Lab](
 
 ## At a glance
 
-| | Today, in v0.3 |
+| | v0.3 cross-platform foundation |
 | --- | --- |
-| **What it is** | A working, unsigned **Windows x64 preview**, plus Rust source and tests |
-| **Inference** | Connects to an OpenAI-compatible server on `127.0.0.1`, such as LM Studio; **you supply the model** |
+| **What it is** | An unsigned **Windows x64 preview**, with experimental CI archives for the Linux/macOS runner architectures. Native macOS/Linux desktop effects are not implemented |
+| **Inference** | Select LM Studio, Ollama (native API), llama.cpp server, or an OpenAI-compatible local server on `127.0.0.1`; **you provide and load the model** |
 | **Desktop context** | Explicit primary-screen capture, optional image attachment, speech recognition, and read-aloud on Windows |
 | **Computer control** | **One reviewed action at a time**: click, allowlisted key, or printable text; no automatic action chain |
 | **Research connection** | Read-only access to R.A.I.N. Lab's actual local status and discovery APIs |
-| **Verified** | Core and desktop CI pass; Windows portable and installer artifacts build successfully |
+| **Validation** | Previously verified Windows x64 preview build; new provider and cross-platform changes require passing CI and real-device acceptance tests |
 | **Not yet proven** | Real-model response quality, end-user usability, accessibility, clean-machine installer lifecycle, reliable targeting of a specific app |
 
 **This is a developer preview, not a production-ready autonomous desktop agent.** GitHub Actions tests and build artifacts are evidence of functioning code paths, not proof of flawless real-world use. For the exact test record, see [VALIDATION.md](docs/VALIDATION.md).
@@ -83,7 +83,7 @@ A single, understandable loop connects the pieces:
 
 ### 1. Ask a local model
 
-Bring a loaded model through LM Studio's OpenAI-compatible local API. James discovers available model IDs and supports text chat. Replies are currently **non-streaming**. Server compatibility is tested using HTTP fixtures; real-model quality is not yet benchmarked.
+Choose your installed local provider in Settings, discover the model IDs reported by its server, and chat with a loaded model. LM Studio, llama.cpp and custom compatible runtimes use `/v1/models` and `/v1/chat/completions`; Ollama uses its native `/api/tags` and `/api/chat` routes. Replies are currently **non-streaming**. Model listings do not establish vision or tool capability. The compatibility tests use local HTTP fixtures, not a benchmark of real-model quality. See [PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md).
 
 ### 2. Make your screen part of the conversation
 
@@ -110,8 +110,8 @@ Connect to the separately running R.A.I.N. Lab and optionally attach a bounded s
 3. Download either:
    - **`James-Windows-x64-installer`:** extract the artifact ZIP and run the versioned `*-setup.exe` inside it for a per-user install.
    - **`James-Windows-x64`:** extract and launch `james.exe` without an installer.
-4. Start **LM Studio**, load an appropriate model, and enable its local server.
-5. In James, open **Settings**, enter the local server port (usually **1234**), choose **Discover models**, then select a loaded model.
+4. Start a local provider: **LM Studio** (usually port **1234**), **Ollama** (11434), or a compatible **llama.cpp** server (often 8080), with an appropriate model loaded.
+5. In James, open **Settings**, select that provider, enter its local server port, choose **Discover models**, then select its actual model identifier.
 6. Open **Chat** and send your first message with **Send** or **Ctrl+Enter**.
 
 **Before installing:** these builds are **unsigned Windows x64 previews**. They contain neither LM Studio nor model weights, and GitHub workflow artifacts may require sign-in and expire after 30 days. Installation, upgrade, and uninstall have **not** been tested on a clean Windows machine. Read the [installer guide](docs/INSTALLER.md) before distributing a build.
@@ -126,7 +126,7 @@ cd james
 cargo run -p james-desktop --locked
 ```
 
-James uses `/v1/models` and `/v1/chat/completions` against a numeric loopback endpoint. If you want to inspect the authorization contract without any actual desktop input:
+James supports OpenAI-compatible `/v1` endpoints and Ollama's native `/api` routes against numeric loopback only. You can check an already-running LM Studio instance on your **own** computer using `pwsh -File scripts/test-local-provider.ps1 -Provider LMStudio`; add `-Model '<listed model ID>'` to perform one real text-inference request. If you want to inspect the authorization contract without any actual desktop input:
 
 ```bash
 cargo run -p james-core --locked --example approval_demo
@@ -186,7 +186,7 @@ The actual API contracts, version requirements, size limits, and research proven
 | Rust crate | Responsibility |
 | --- | --- |
 | [`james-core`](crates/james-core) | One-use approvals, policy checks, budgets, cancellation, supervised action contracts |
-| [`james-models`](crates/james-models) | Local server discovery, bounded text and image completion requests |
+| [`james-models`](crates/james-models) | Loopback provider selection, bounded OpenAI-compatible/Ollama text and optional image requests |
 | [`james-platform`](crates/james-platform) | Windows screen capture, speech, and constrained desktop input |
 | [`james-lab`](crates/james-lab) | Read-only status and recent research from R.A.I.N. Lab |
 | [`james-desktop`](crates/james-desktop) | Native `eframe`/`egui` UI, settings, local session state, review workflow |
@@ -203,7 +203,7 @@ cargo test --workspace --all-targets --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-CI builds and tests the desktop on Windows and Ubuntu; the separate core matrix also covers macOS. Passing compilation on a platform does not establish that Windows-only helpers function there.
+Desktop CI now targets Windows, Ubuntu and macOS, with experimental portable Unix archives when the respective host build succeeds. The separate core matrix also covers macOS. **CI compilation does not establish a usable installation, native screen/input/voice support, or an actual-device test.** See the [platform matrix](docs/PLATFORM_SUPPORT.md) and [acceptance protocol](docs/ACCEPTANCE_TESTS.md).
 
 ## Privacy is a behavior, not a badge
 
@@ -222,7 +222,7 @@ James's highest-value work is **reliability and proof**, before autonomy:
 | Order | Work | Evidence required |
 | --- | --- | --- |
 | **01** | Real LM Studio text, vision, and harmless-action evaluation | Reproducible end-to-end session with failures recorded |
-| **02** | Streaming responses and model-request cancellation | Malformed/disconnected stream fixtures and cancellation checks |
+| **02** | Streaming responses and network-level cancellation | Malformed/disconnected stream fixtures and cancellation checks |
 | **03** | SQLite history and a crash-tested action journal | Restart, interruption, rollback, and replay-suppression tests |
 | **04** | Window-specific targeting and better accessibility | Real application focus, scaling, and assistive-technology tests |
 | **05** | Clean-machine installer verification, signed builds, short visual demo | Install/upgrade/uninstall matrix and an authentic recorded walkthrough |
