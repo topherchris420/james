@@ -1,5 +1,23 @@
 # Implementation validation
 
+## README screenshot session (2026-10-11)
+
+The two README screenshots come from a real run of the desktop app, not mockups.
+
+- **Build and display:** `cargo build -p james-desktop --locked` (debug) at commit `307f2b2` on a 4-vCPU Linux x64 cloud VM with no GPU. The app ran under Xvfb at 2240×1640 with `WINIT_X11_SCALE_FACTOR=2` and Mesa software OpenGL (`LIBGL_ALWAYS_SOFTWARE=1`, `LP_NUM_THREADS=1`). It first panicked at startup because `libxkbcommon-x11.so` was missing; installing the `libxkbcommon-x11-0` package fixed it.
+- **Model server:** llama-cpp-python 0.3.36 (`python -m llama_cpp.server`, which wraps llama.cpp) on `127.0.0.1:8080`, serving `Qwen2.5-3B-Instruct` Q4_K_M from the official Qwen GGUF repository with `--n_threads 3`.
+- **Flow:** in **Settings**, the *llama.cpp server* provider on port 8080 → **Discover models** returned `qwen2.5-3b-instruct` → selected and saved → **Conversation**. Three questions were typed into the composer with `xdotool` and sent with **Send**. The replies shown are the model's unedited output, which James saved to its session file.
+- **Not exercised:** screen capture, Guide me, voice, computer input and the Lab connection.
+
+What the session found:
+
+1. **90-second read timeout.** With `Qwen2.5-1.5B-Instruct` generating about 2.4 tokens/s, a reply of about 260 tokens took 100 s and James reported `timed out reading response`. The error appeared in the status line and the question stayed in the history, which is correct behavior. Slow CPU-only machines can still hit this limit.
+2. **CPU contention.** When llama.cpp used all four threads, the software-rendered UI's repaints during a pending request cut generation from 18.8 to about 2 tokens/s. Three threads restored it to 9.9 tokens/s (1.5B) and about 6 tokens/s (3B). This is a property of this no-GPU test host, not a measured desktop result.
+3. **Small models answered poorly.** `Qwen2.5-0.5B-Instruct` answered "Yes" when asked whether a simulator finding is real-world evidence. `Qwen2.5-1.5B-Instruct` once claimed that *it* retains authority over its actions. Those transcripts were not used. Only the 3B transcript appears in the README. This reinforces the README's point that model claims carry no authority; the code enforces approval.
+4. **Missing glyph.** The 🎙 on the **Talk** button renders as an empty box with the bundled egui fonts on Linux.
+
+This is a single observed session, not a benchmark of model quality.
+
 ## v0.3 integration pass (2026-10-11)
 
 ### Delayed-action expiry regression fix
