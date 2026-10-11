@@ -1,13 +1,13 @@
 [workspace]
-members = ["crates/james-core"]
+members = ["crates/james-core", "crates/james-models", "crates/james-desktop"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
-description = "Original Rust contracts for the James desktop AI assistant"
+description = "James, the R.A.I.N. Lab research assistant and Rust desktop companion"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

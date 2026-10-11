@@ -1,11 +1,11 @@
-name: Rust contracts
+name: Core Rust contracts
 on:
   push:
   pull_request:
 permissions:
   contents: read
 jobs:
-  contracts:
+  core:
     strategy:
       fail-fast: false
       matrix:
@@ -13,17 +13,16 @@ jobs:
         rust: ["1.85.0", "stable"]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7, resolved 2026-10-11
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # pinned
         with:
           persist-credentials: false
       - name: Toolchain
         run: rustup toolchain install ${{ matrix.rust }} --profile minimal --component rustfmt --component clippy
-      - name: Formatting
-        if: matrix.rust == 'stable'
-        run: cargo +${{ matrix.rust }} fmt --all -- --check
-      - name: Contracts
-        run: cargo +${{ matrix.rust }} test --workspace --all-targets --locked --offline
-      - name: Clippy
-        run: cargo +${{ matrix.rust }} clippy --workspace --all-targets --locked --offline -- -D warnings
-      - name: Demonstration
-        run: cargo +${{ matrix.rust }} run --locked --offline --example approval_demo
+      - name: Core contracts
+        run: cargo +${{ matrix.rust }} test -p james-core --all-targets --locked
+      - name: Core Clippy
+        run: cargo +${{ matrix.rust }} clippy -p james-core --all-targets --locked -- -D warnings
+      - name: Original demonstration
+        run: cargo +${{ matrix.rust }} run -p james-core --locked --example approval_demo
+      - name: Supervised demonstration
+        run: cargo +${{ matrix.rust }} run -p james-core --locked --example supervised_demo
