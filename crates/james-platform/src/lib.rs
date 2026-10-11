@@ -121,7 +121,9 @@ pub fn capture_screen(cancel: &Cancellation) -> Result<Screenshot, Error> {
     let value = run(
         include_str!("capture.ps1"),
         &serde_json::json!({}),
-        Duration::from_secs(20),
+        // Cold Windows PowerShell/Add-Type startup can exceed 20 seconds while
+        // the host is busy. Cancellation remains responsive during this bound.
+        Duration::from_secs(60),
         cancel,
     )?;
     let response: Response =

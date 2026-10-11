@@ -6,7 +6,8 @@ speech playback and microphone recognition. Use a new handle per operation.
 
 * `capture_screen` captures only the primary monitor, returning PNG bytes and
   pixel dimensions in memory. Capture must be initiated by the user. No file or
-  clipboard is used. Protected windows and secure desktops may be blank.
+  clipboard is used. Protected windows and secure desktops may be blank. A
+  cancellable 60-second deadline includes cold Windows helper/compiler startup.
 * `dictate` recognizes one utterance using Windows System.Speech, with a 1–60
   second requested listening timeout and a further 10-second process startup
   allowance. It requires an installed Windows desktop speech recognizer, microphone,
