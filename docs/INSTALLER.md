@@ -6,6 +6,11 @@ Start menu. No administrator prompt, Rust toolchain, or terminal is needed to us
 the installed app. An optional desktop shortcut is available. Windows may warn
 about this unsigned preview; code signing is not configured yet.
 
+The MSVC x64 build statically links the C runtime through `.cargo/config.toml`.
+CI checks the executable's imported DLLs before packaging so a separately installed
+Visual C++ redistributable is not required. Do not override the configured Rust
+flags when producing the distribution.
+
 The installer contains James and its license, not LM Studio or model weights.
 Install and start your local AI server separately, load a suitable model, and
 configure its endpoint in James. Installation does not enable microphone,
@@ -21,7 +26,7 @@ require sign-in to download workflow artifacts, which expire after 30 days.
 
 Pushing an explicit `v<version>` tag publishes a GitHub release with the installer,
 checksum, and portable executable. The tag must match the Cargo workspace version
-(for example, `v0.2.0`). Preview tags containing `-` are marked as prereleases.
+(for example, `v0.3.0`). Preview tags containing `-` are marked as prereleases.
 Only the release job has permission to write release assets. Release publishing
 is not triggered by pull requests or a manual workflow run.
 

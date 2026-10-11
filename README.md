@@ -32,7 +32,7 @@ The model and Lab clients use numeric loopback addresses with no automatic cloud
 
 ## Launch James
 
-The [successful preview build](https://github.com/topherchris420/james/actions/runs/38153765315) provides `James-Windows-x64` (portable) and `James-Windows-x64-installer` (setup plus checksum). For newer preview builds, use a successful run of the [desktop workflow](https://github.com/topherchris420/james/actions/workflows/desktop.yml). A tagged v0.3 release has not been published. GitHub may require sign-in to download artifacts.
+Use the latest successful run of the [desktop workflow](https://github.com/topherchris420/james/actions/workflows/desktop.yml) to download `James-Windows-x64` (portable) or `James-Windows-x64-installer` (setup plus checksum). Choose a build containing the static Windows runtime fix; older preview artifacts require the Visual C++ runtime. A tagged v0.3 release has not been published. GitHub may require sign-in to download artifacts.
 
 Run `James-<version>-windows-x64-setup.exe` and choose **Install**, or extract the portable artifact and open `james.exe`. Setup installs for the current user and creates a Start menu entry. It does not bundle LM Studio, model weights or R.A.I.N. Lab. See [installer setup and validation](docs/INSTALLER.md).
 

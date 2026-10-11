@@ -27,6 +27,19 @@ jobs:
       - name: Build portable Windows executable
         if: matrix.os == 'windows-latest'
         run: cargo +stable build -p james-desktop --release --locked --target x86_64-pc-windows-msvc
+      - name: Verify no Visual C++ runtime installation is required
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $dumpbin = Get-ChildItem "$vs/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $dumpbin) { throw 'Visual Studio dependency inspector was not found.' }
+          $imports = & $dumpbin.FullName /dependents target/x86_64-pc-windows-msvc/release/james.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Executable dependency inspection failed.' }
+          $imports
+          if (($imports -join "`n") -match '(?im)^\s*(vcruntime|msvcp|msvcr|ucrtbase)[^\s]*\.dll\s*$') {
+            throw 'Distribution requires a separately installed Visual C++ runtime.'
+          }
       - name: Download and verify pinned portable installer compiler
         if: matrix.os == 'windows-latest'
         shell: pwsh

@@ -12,6 +12,7 @@ The records below this section describe earlier milestones. Current v0.3 adds na
 - At commit `1433a22dac97f102eda18bd321f62a5949038cd1`, [desktop CI](https://github.com/topherchris420/james/actions/runs/38152527843) passed all 56 workspace tests, formatting and strict Clippy on Windows and Ubuntu. Windows also completed the optimized MSVC executable build. Packaging then failed because Chocolatey did not provide the pinned compiler; the portable verified compiler replaces that dependency. The separate six-job core Rust compatibility matrix also passed.
 - The local Rust 1.99.0 GNU workspace check and debug desktop build succeeded. The native window was launched and its Settings, Screen, Computer control and Lab panels inspected. Attempting to review a key without a capture was correctly blocked. This was a navigation and guard check, not an executed input action or usability study.
 - No LM Studio server was available on local port 1234. Model/vision protocol tests passed using mock HTTP servers; real inference, screenshot interpretation and proposal quality were not exercised. No microphone accuracy claim is made.
+- Inspection of the first optimized executable found `VCRUNTIME140.dll` among its imports. The final Windows distribution configuration uses static CRT linkage and CI now rejects a separate VC runtime dependency before packaging. Earlier preview artifacts predate this packaging correction.
 
 ### Earlier milestone history
 
