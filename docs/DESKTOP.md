@@ -19,15 +19,16 @@ The native screen, input and speech operations require Windows. On other platfor
 
 ## Connect a model
 
-1. Start a local OpenAI-compatible model server and load a model:
+1. Start a local model server and load a model:
    - [LM Studio](https://lmstudio.ai/): load a model and enable its local server (default port **1234**).
-   - [Ollama](https://docs.ollama.com/api/openai-compatibility): run `ollama serve`, then `ollama pull <model>`. It exposes the OpenAI-compatible API at `http://127.0.0.1:11434/v1` (default port **11434**).
+   - [Ollama](https://docs.ollama.com/api/introduction): run `ollama serve`, then `ollama pull <model>` (default port **11434**).
    - [llama.cpp's `llama-server`](https://github.com/ggml-org/llama.cpp/tree/master/tools/server): `llama-server -m <model.gguf>` (default port **8080**; add `--mmproj` for images).
-2. Open **Settings** in James and choose the **LM Studio**, **Ollama** or **llama.cpp** preset, or enter the numeric port.
+   - Any other OpenAI-compatible server on a numeric loopback port.
+2. Open **Settings** in James and select the matching **Provider**; James fills in its default port, which you can change.
 3. Choose **Discover models**, select an actual loaded identifier, and save settings.
 4. Write a question and choose **Send**, or press Ctrl+Enter in the draft.
 
-James uses `/v1/models` and `/v1/chat/completions`. Replies are non-streaming. Model work runs off the UI thread with bounded requests. Stopping the UI operation does not guarantee that an already dispatched model request stops computing on the server. Protocol behavior is covered by mock HTTP tests; real inference and vision quality have not been established by those tests.
+LM Studio, llama.cpp and other compatible servers use `/v1/models` and `/v1/chat/completions`; Ollama uses its native `/api/tags` and `/api/chat`. Replies are non-streaming. Model work runs off the UI thread with bounded requests. Stopping the UI operation does not guarantee that an already dispatched model request stops computing on the server. Protocol behavior is covered by mock HTTP tests; real inference and vision quality have not been established by those tests.
 
 Both model and Lab connections are numeric loopback only, with redirects and environment proxies disabled. There is no automatic cloud fallback, but the selected server may itself route to a remote provider or retain requests.
 

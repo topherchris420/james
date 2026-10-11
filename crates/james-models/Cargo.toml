@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Loopback-only OpenAI-compatible model client for James (LM Studio, Ollama, llama.cpp)"
+description = "Loopback-only local model client for James (LM Studio, Ollama, llama.cpp, OpenAI-compatible)"
 publish = false
 
 [dependencies]

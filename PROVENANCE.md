@@ -19,7 +19,7 @@ The new platform helpers, model vision request serialization, review UI, Lab cli
 
 ## Voice conversation, Guide me and cross-platform helpers
 
-The Talk loop, Guide me, speech text cleanup, LM Studio/Ollama/llama.cpp presets, and the macOS/Linux capture and speech helpers were independently authored for James on 2026-10-11 from the project's own requirements and the public documentation of the system tools they call (`screencapture`, `say`, `grim`, `gnome-screenshot`, `spectacle`, ImageMagick, `espeak-ng`, `spd-say`). No reference product code, prompts, binaries or assets were used, and no new Rust dependencies were added.
+The Talk loop, Guide me, speech text cleanup, and the macOS/Linux capture and speech helpers were independently authored for James on 2026-10-11 from the project's own requirements and the public documentation of the system tools they call (`screencapture`, `say`, `grim`, `gnome-screenshot`, `spectacle`, ImageMagick, `espeak-ng`, `spd-say`). No reference product code, prompts, binaries or assets were used, and no new Rust dependencies were added.
 
 whisper.cpp listening (the endpointer, WAV encoding, transcript cleanup, recorder fallback and Settings setup) was likewise independently authored on 2026-10-11. It invokes a separately installed [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (MIT) `whisper-cli` and system audio recorders as external programs; neither whisper.cpp nor any model weights are vendored, linked or redistributed, and James does not download models.
 
