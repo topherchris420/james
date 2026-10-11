@@ -21,7 +21,9 @@
 | Ollama/llama.cpp genuine server responses | Native fixtures added; run real servers and record failures before compatibility claims |
 | Streaming and cancellation | **Not implemented** at HTTP transport level; Stop only prevents reply application |
 | SQLite recovery and encrypted credentials | **Not implemented**; keep existing session backwards compatible |
-| Native macOS/Linux screen, input and speech | **Not implemented**; explicitly disabled in UI |
+| Native macOS/Linux screen capture, speech and whisper.cpp listening | Implemented with unit tests; real-device validation (permissions, microphones, recognition quality, display servers) required |
+| Native macOS/Linux computer input | **Not implemented**; explicitly disabled in UI |
+| Voice conversation (Talk) and Guide me | Implemented; hands-on conversation, latency and guidance-quality tests with real models required |
 | User experience/accessibility | Human test with keyboard, screen reader, high contrast, DPI scaling, reduced motion, initial setup |
 | Installer upgrade/uninstall | Clean-machine tests including retained history and unresolved-action recovery |
 | PWA and mobile companion | Not implemented; independent design/security validation required |

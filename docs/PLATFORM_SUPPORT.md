@@ -6,9 +6,9 @@ Status: **developer previews, not a universal production release**. A successful
 | --- | --- | --- | --- |
 | Windows 10/11 x64 | Existing GitHub Actions executable and per-user installer, with tests | Windows-only fixed helpers; approved one action at a time | Preview; installer lifecycle and real-model integration still require hands-on verification |
 | Windows 11 ARM64 | No native ARM64 build established | x64 compatibility not validated on all devices | Unsupported as a native target; compatibility is unverified |
-| macOS (runner architecture) | macOS CI build and portable archive now configured; check actual run results | Not implemented. Chat and optional Lab are intended to remain usable | Experimental source/portable build pending test results; unsigned, unnotarized |
-| macOS Apple Silicon and Intel, independently | CI runner only establishes its *actual* architecture | Not implemented | Other architecture unverified |
-| Linux x64 | Ubuntu CI build and tarball now configured; check actual run results | Not implemented. No X11/Wayland input or portal capture adapter yet | Experimental; display server and system library dependencies vary |
+| macOS (runner architecture) | macOS CI build and portable archive now configured; check actual run results | Screen capture (`screencapture`), speech (`say`) and whisper.cpp listening implemented, not device-validated. No computer input | Experimental source/portable build pending test results; unsigned, unnotarized |
+| macOS Apple Silicon and Intel, independently | CI runner only establishes its *actual* architecture | As above | Other architecture unverified |
+| Linux x64 | Ubuntu CI build and tarball now configured; check actual run results | Screen capture (gnome-screenshot, spectacle, grim, ImageMagick), speech (espeak-ng, spd-say) and whisper.cpp listening implemented, not device-validated. No X11/Wayland input or portal capture adapter | Experimental; display server and system library dependencies vary |
 | Linux ARM64 | No native ARM64 CI or hardware validation | Not implemented | Unsupported / not validated |
 | Browser/PWA | Not implemented | Browser cannot receive unrestricted desktop control | Not available |
 | Android/iOS | Not implemented | No device control | Not available |
@@ -28,7 +28,7 @@ Model IDs and presence in a list are not proof of successful inference, tool cal
 
 ## Desktop capabilities
 
-The Rust desktop application can compile on platforms where its dependency stack is available, but Windows screen capture, speech and input helpers return `Unsupported` outside Windows. On macOS and Linux the UI explains this limitation rather than presenting functional input controls. On Windows, action execution is bound to a fresh screenshot, exact proposed action, short approval window, one-use grant and durable outstanding-action marker. It does **not** guarantee target-app focus, OS sandboxing or outcome verification. No platform bypasses OS prompts.
+The Rust desktop application can compile on platforms where its dependency stack is available. Screen capture, Guide me, spoken answers and listening (Talk, Dictate) are implemented on Windows, macOS and Linux: macOS/Linux use standard system tools resolved from fixed system directories (never a shell), and listening there runs a separately installed whisper.cpp on the device, with temporary files confined to a private folder deleted immediately. Settings reports whether listening is ready and what is missing. Computer input returns `Unsupported` outside Windows, and on macOS and Linux the UI explains this limitation rather than presenting functional input controls. These macOS/Linux capabilities are covered by unit tests and CI, not yet by real-device acceptance tests. On Windows, action execution is bound to a fresh screenshot, exact proposed action, short approval window, one-use grant and durable outstanding-action marker. It does **not** guarantee target-app focus, OS sandboxing or outcome verification. No platform bypasses OS prompts.
 
 Local session JSON is stored in `%LOCALAPPDATA%/Vers3Dynamics/James` on Windows or `~/.james` when HOME exists. Action intents contain potentially sensitive typed text until acknowledged. See [SECURITY.md](../SECURITY.md).
 

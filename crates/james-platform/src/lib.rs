@@ -1,14 +1,51 @@
-//! Opt-in Windows capabilities. All operations block: run them on a worker thread.
-//! Capture/audio are never written to disk. A cancellation handle terminates the
-//! helper process (including speech playback/recognition). Input executes exactly
-//! one reviewed action; callers must never approve actions automatically.
+//! Opt-in desktop capabilities for Windows, macOS and Linux. All operations
+//! block: run them on a worker thread. Screen images and audio are never kept;
+//! where the OS tool can only write a file, the capture passes through a private
+//! temporary file that is deleted immediately. A cancellation handle terminates
+//! the helper process (including speech playback/recognition). Input executes
+//! exactly one reviewed action; callers must never approve actions automatically.
 
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
 use std::time::Duration;
+
+#[cfg_attr(not(unix), allow(dead_code))]
+mod listen;
+#[cfg_attr(windows, path = "windows.rs")]
+#[cfg_attr(unix, path = "unix.rs")]
+#[cfg_attr(not(any(windows, unix)), path = "unsupported.rs")]
+mod sys;
+#[cfg(unix)]
+mod whisper;
+
+/// Where listening finds whisper.cpp. Empty fields mean "find automatically".
+/// Windows uses its built-in recognizer and ignores these settings.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct VoiceConfig {
+    pub whisper_program: Option<PathBuf>,
+    pub whisper_model: Option<PathBuf>,
+}
+
+/// Whether listening (Talk and Dictate) can run, with a human-readable reason.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Listening {
+    Ready(String),
+    Unavailable(String),
+}
+impl Listening {
+    pub fn is_ready(&self) -> bool {
+        matches!(self, Self::Ready(_))
+    }
+    pub fn describe(&self) -> &str {
+        match self {
+            Self::Ready(s) | Self::Unavailable(s) => s,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct Cancellation(Arc<AtomicBool>);
@@ -23,7 +60,8 @@ impl Cancellation {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
-    Unsupported,
+    /// The capability does not exist on this platform yet; the text says what does.
+    Unsupported(&'static str),
     Cancelled,
     InvalidInput(String),
     Failed(String),
@@ -32,7 +70,7 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unsupported => write!(f, "This capability requires Windows"),
+            Self::Unsupported(s) => f.write_str(s),
             Self::Cancelled => write!(f, "Operation stopped"),
             Self::TimedOut => write!(f, "Operation timed out"),
             Self::InvalidInput(s) | Self::Failed(s) => f.write_str(s),
@@ -110,49 +148,52 @@ impl ReviewedAction {
     }
 }
 
-pub fn capture_screen(cancel: &Cancellation) -> Result<Screenshot, Error> {
-    use base64::Engine;
-    #[derive(Deserialize)]
-    struct Response {
-        png: String,
-        width: u32,
-        height: u32,
-    }
-    let value = run(
-        include_str!("capture.ps1"),
-        &serde_json::json!({}),
-        // Cold Windows PowerShell/Add-Type startup can exceed 20 seconds while
-        // the host is busy. Cancellation remains responsive during this bound.
-        Duration::from_secs(60),
-        cancel,
-    )?;
-    let response: Response =
-        serde_json::from_slice(&value).map_err(|e| Error::Failed(e.to_string()))?;
-    let png = base64::engine::general_purpose::STANDARD
-        .decode(response.png)
-        .map_err(|e| Error::Failed(e.to_string()))?;
-    Ok(Screenshot {
-        png,
-        width: response.width,
-        height: response.height,
-    })
+/// Checks, without touching the microphone, whether listening can run.
+/// Only fast filesystem checks are made, so this is safe to call from a UI.
+pub fn listening(config: &VoiceConfig) -> Listening {
+    sys::listening(config)
 }
 
-/// Recognize one utterance, bounded to 1–60 seconds. Requires an installed
-/// Windows speech recognizer and microphone permission. Stop cancels the helper.
-pub fn dictate(timeout: Duration, cancel: &Cancellation) -> Result<String, Error> {
+/// True where listening uses whisper.cpp and therefore needs setup (macOS, Linux).
+pub fn uses_whisper() -> bool {
+    sys::USES_WHISPER
+}
+
+/// The folder James searches for whisper.cpp models (`ggml-*.bin`), if any.
+pub fn whisper_models_dir() -> Option<PathBuf> {
+    sys::whisper_models_dir()
+}
+
+/// Whether reviewed clicks, keys and text can be sent on this platform.
+pub fn can_control_input() -> bool {
+    sys::CAN_CONTROL_INPUT
+}
+
+/// One line describing voice support on this platform, for settings screens.
+pub fn voice_support() -> &'static str {
+    sys::VOICE_SUPPORT
+}
+
+/// Captures the primary monitor (or the whole desktop where the OS tool cannot
+/// select one) as PNG bytes. Must be initiated by the user.
+pub fn capture_screen(cancel: &Cancellation) -> Result<Screenshot, Error> {
+    sys::capture_screen(cancel)
+}
+
+/// Recognize one utterance. `timeout` (1–60 seconds) is how long to wait for
+/// speech to start; with whisper.cpp the utterance ends when the speaker pauses.
+/// Returns an empty string when nothing was said. Stop cancels the helper.
+pub fn dictate(
+    timeout: Duration,
+    config: &VoiceConfig,
+    cancel: &Cancellation,
+) -> Result<String, Error> {
     if timeout < Duration::from_secs(1) || timeout > Duration::from_secs(60) {
         return Err(Error::InvalidInput(
             "Dictation timeout must be 1–60 seconds".into(),
         ));
     }
-    let value = run(
-        include_str!("dictate.ps1"),
-        &serde_json::json!({"seconds": timeout.as_secs_f64()}),
-        timeout + Duration::from_secs(10),
-        cancel,
-    )?;
-    serde_json::from_slice(&value).map_err(|e| Error::Failed(e.to_string()))
+    sys::dictate(timeout, config, cancel)
 }
 
 pub fn speak(text: &str, cancel: &Cancellation) -> Result<(), Error> {
@@ -161,74 +202,53 @@ pub fn speak(text: &str, cancel: &Cancellation) -> Result<(), Error> {
             "Speech requires 1–8000 characters".into(),
         ));
     }
-    run(
-        include_str!("speak.ps1"),
-        &serde_json::json!({"text": text}),
-        Duration::from_secs(600),
-        cancel,
-    )
-    .map(|_| ())
+    sys::speak(text, cancel)
 }
 
 /// Executes exactly one consumed review. Revalidates the live screen dimensions.
 /// The target application must be foreground when this is invoked.
 pub fn execute(review: ReviewedAction, cancel: &Cancellation) -> Result<(), Error> {
     review.action.validate(review.width, review.height)?;
-    run(include_str!("input.ps1"), &serde_json::json!({"action": review.action, "width": review.width, "height": review.height}), Duration::from_secs(15), cancel).map(|_| ())
+    sys::execute(&review.action, review.width, review.height, cancel)
 }
 
-#[cfg(not(windows))]
-fn run(_: &str, _: &serde_json::Value, _: Duration, _: &Cancellation) -> Result<Vec<u8>, Error> {
-    Err(Error::Unsupported)
+/// Reads width and height from a PNG's IHDR chunk.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn png_size(png: &[u8]) -> Option<(u32, u32)> {
+    if png.len() < 24 || !png.starts_with(b"\x89PNG\r\n\x1a\n") || &png[12..16] != b"IHDR" {
+        return None;
+    }
+    let width = u32::from_be_bytes(png[16..20].try_into().ok()?);
+    let height = u32::from_be_bytes(png[20..24].try_into().ok()?);
+    (width > 0 && height > 0).then_some((width, height))
 }
 
-#[cfg(windows)]
-fn run(
-    script: &str,
-    input: &serde_json::Value,
+/// Runs one helper process with bounded output, a deadline and cancellation.
+/// Variable input travels only over stdin (or as discrete arguments chosen by
+/// the platform module), never through a shell.
+#[cfg(any(windows, unix))]
+fn supervise(
+    mut command: std::process::Command,
+    input: &[u8],
     timeout: Duration,
     cancel: &Cancellation,
 ) -> Result<Vec<u8>, Error> {
-    use base64::Engine;
     use std::{
         io::{Read, Write},
-        os::windows::process::CommandExt,
-        process::{Command, Stdio},
+        process::Stdio,
         time::Instant,
     };
     if cancel.is_cancelled() {
         return Err(Error::Cancelled);
     }
-    let encoded = base64::engine::general_purpose::STANDARD.encode(
-        script
-            .encode_utf16()
-            .flat_map(u16::to_le_bytes)
-            .collect::<Vec<_>>(),
-    );
-    let system_root = std::env::var_os("SystemRoot")
-        .ok_or_else(|| Error::Failed("SystemRoot is not configured".into()))?;
-    let powershell = std::path::PathBuf::from(system_root)
-        .join("System32/WindowsPowerShell/v1.0/powershell.exe");
-    if !powershell.is_absolute() {
-        return Err(Error::Failed("SystemRoot must be absolute".into()));
-    }
-    let mut child = Command::new(powershell)
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-EncodedCommand",
-            &encoded,
-        ])
-        .creation_flags(0x08000000)
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| Error::Failed(format!("Could not launch Windows capability: {e}")))?;
+        .map_err(|e| Error::Failed(format!("Could not launch desktop helper: {e}")))?;
     let mut stdin = child.stdin.take().expect("piped stdin");
-    let bytes = serde_json::to_vec(input).map_err(|e| Error::Failed(e.to_string()))?;
-    if let Err(error) = stdin.write_all(&bytes) {
+    if let Err(error) = stdin.write_all(input) {
         let _ = child.kill();
         let _ = child.wait();
         return Err(Error::Failed(error.to_string()));
@@ -282,7 +302,7 @@ fn run(
         .map_err(|e| Error::Failed(e.to_string()))?;
     if output.len() > 64 * 1024 * 1024 || error.len() > 65536 {
         return Err(Error::Failed(
-            "Windows helper output exceeded its limit".into(),
+            "Desktop helper output exceeded its limit".into(),
         ));
     }
     if !status.success() {
@@ -345,7 +365,11 @@ mod tests {
     #[test]
     fn invalid_voice_inputs_do_not_launch_helpers() {
         assert!(matches!(
-            dictate(Duration::ZERO, &Cancellation::default()),
+            dictate(
+                Duration::ZERO,
+                &VoiceConfig::default(),
+                &Cancellation::default()
+            ),
             Err(Error::InvalidInput(_))
         ));
         assert!(matches!(
@@ -353,10 +377,44 @@ mod tests {
             Err(Error::InvalidInput(_))
         ));
     }
-    #[cfg(windows)]
     #[test]
-    #[ignore = "Captures the primary display in memory; run only with user authorization"]
-    fn windows_capture_smoke() {
+    fn png_dimensions_come_from_the_header() {
+        let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
+        png.extend_from_slice(&1920_u32.to_be_bytes());
+        png.extend_from_slice(&1080_u32.to_be_bytes());
+        assert_eq!(png_size(&png), Some((1920, 1080)));
+        assert_eq!(png_size(&png[..20]), None);
+        assert_eq!(png_size(b"not a png at all, definitely not"), None);
+        let mut empty = png.clone();
+        empty[16..20].copy_from_slice(&0_u32.to_be_bytes());
+        assert_eq!(png_size(&empty), None);
+    }
+    #[test]
+    fn platform_reports_its_capabilities() {
+        assert!(!voice_support().is_empty());
+        let status = listening(&VoiceConfig::default());
+        assert!(!status.describe().is_empty());
+        if cfg!(windows) {
+            assert!(status.is_ready() && can_control_input() && !uses_whisper());
+        }
+        if cfg!(unix) {
+            assert!(uses_whisper() && whisper_models_dir().is_some_and(|d| d.is_absolute()));
+        }
+    }
+    #[test]
+    fn explicit_whisper_paths_must_exist() {
+        let config = VoiceConfig {
+            whisper_program: Some(PathBuf::from("/definitely/not/whisper-cli")),
+            whisper_model: None,
+        };
+        if uses_whisper() {
+            assert!(!listening(&config).is_ready());
+        }
+    }
+    #[cfg(any(windows, unix))]
+    #[test]
+    #[ignore = "Captures the screen in memory; run only with user authorization"]
+    fn desktop_capture_smoke() {
         let screen = capture_screen(&Cancellation::default()).expect("screen capture");
         assert!(screen.width > 0 && screen.height > 0);
         assert!(screen.png.starts_with(b"\x89PNG\r\n\x1a\n"));
@@ -370,7 +428,7 @@ mod tests {
             let stop = cancel.clone();
             let worker = std::thread::spawn(move || {
                 if dictation {
-                    dictate(Duration::from_secs(60), &cancel).map(|_| ())
+                    dictate(Duration::from_secs(60), &VoiceConfig::default(), &cancel).map(|_| ())
                 } else {
                     speak(&"Speech cancellation check. ".repeat(200), &cancel)
                 }

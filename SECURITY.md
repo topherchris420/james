@@ -6,7 +6,7 @@ James v0.3 is an unsigned desktop preview, not an OS sandbox. The desktop now in
 
 Model and Lab URLs use numeric ports on `127.0.0.1`; redirects and environment proxies are disabled. Requests and responses are bounded and timed out. A local endpoint does not authenticate its process or prove inference stays on-device. Use trusted local servers. No API keys are stored and authenticated model servers are not yet supported.
 
-Screen capture occurs only on an explicit click. The preview remains in memory; attachment to a question or action proposal is explicit. Screenshots and raw audio are not saved by James. Conversation text, including dictation and model descriptions of screen content, is plaintext in the local session file. Model-server logging has its own retention policy.
+Screen capture occurs only on an explicit click. The preview remains in memory; attachment to a question or action proposal is explicit. Screenshots and raw audio are not saved by James; on macOS and Linux, tools that need a file (screen capture, whisper.cpp) use a fresh `0700` temporary folder created with create-not-reuse semantics and removed immediately. Voice input can only become chat text; it has no path to action approval. Conversation text, including dictation and model descriptions of screen content, is plaintext in the local session file. Model-server logging has its own retention policy.
 
 Lab context comes from the actual versioned discovery endpoint, refreshes while explicitly connected, and enters prompts only when enabled and fresh. Lab and screen contents are untrusted data. Prompt instructions are not a security boundary; model output can only propose an allowlisted action for human review.
 
@@ -18,7 +18,7 @@ The executor uses `james-core` policy/approval/budget contracts and a create-new
 
 The target application is whichever is foreground at dispatch; clicks address the primary monitor. This is not process/window isolation. Focus changes, screen movement, or applications with higher privileges can affect behavior. Display dimensions are rechecked, but unchanged dimensions do not prove unchanged content. Never approve based only on the model's rationale. Input can submit, send, or delete depending on the target. Closing James cancels and waits for native helpers to terminate; already-sent input cannot be undone. Killing the process externally is not cancellation proof.
 
-Windows helpers run fixed embedded scripts through the system PowerShell path; user/model strings are JSON stdin, never interpolated executable commands. Native input requires platform API interop inside fixed helpers; the Rust workspace still forbids unsafe Rust. These helpers are not sandboxed. Desktop effects outside Windows return unsupported errors.
+Windows helpers run fixed embedded scripts through the system PowerShell path; user/model strings are JSON stdin, never interpolated executable commands. Native input requires platform API interop inside fixed helpers; the Rust workspace still forbids unsafe Rust. These helpers are not sandboxed. On macOS and Linux, helpers are system tools resolved only from fixed system directories (never the search path) and run without a shell; a whisper.cpp program or model path entered in Settings must be an absolute path to an existing file and is trusted as the user's choice. Clicks and typing outside Windows return unsupported errors.
 
 ## Reporting
 

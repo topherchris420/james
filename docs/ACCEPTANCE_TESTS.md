@@ -24,9 +24,17 @@ Only on the currently implemented Windows platform:
 3. Prepare again; allow once with focus countdown, verify the **foreground** target yourself. There is no guaranteed target lock.
 4. Verify no second action without a fresh approval; test screen staleness, cancellation before dispatch, sleep/resume and foreground focus changes.
 5. Restart with an unresolved action marker. Verify James blocks another action until manual inspection/acknowledgement.
-6. Test speech/dictation with actual microphone and permissions. Inspect draft before sending. Do not assume voice capabilities outside Windows.
+6. Test speech/dictation with actual microphone and permissions. Inspect draft before sending.
 
-On macOS/Linux confirm the UI does **not** imply automatic screen/input/speech support and text chat plus optional read-only Lab context remain accessible.
+## Voice and guidance (every platform)
+
+1. **Talk:** hold a three-turn spoken conversation. Record recognition errors, answer latency and whether spoken answers sound natural. Confirm "stop", Esc, End conversation and 15 s of silence each end the loop, and that "How do I stop the timer?" is treated as a question.
+2. Say "allow once" or "click OK" during Talk while an action proposal is pending. Confirm nothing is approved or executed.
+3. **Guide me:** in a disposable app, confirm the answer names visible labels and gives steps without producing an action proposal.
+4. **macOS/Linux listening:** with whisper.cpp absent, confirm Settings explains what to install and Talk/Dictate are disabled. Install it and a model, choose **Check listening setup**, and confirm the reported model and recorder. Record mic permission prompts, keyboard clicks or desk taps falsely starting an utterance, words clipped at the start or end, and whether any audio files remain in the temporary folder afterwards.
+5. **macOS/Linux capture:** record the Screen Recording prompt (macOS) or which Linux tool captured, and whether multi-monitor setups capture the expected display.
+
+On macOS/Linux confirm the UI does **not** imply computer input support, and that text chat plus optional read-only Lab context remain accessible.
 
 ## Reliability and safety
 

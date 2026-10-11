@@ -19,7 +19,7 @@
 
 > **Intelligence may propose. Evidence must be checked. Authority stays with the human.**
 
-James is an open-source desktop companion built in Rust by [Vers3Dynamics](https://vers3dynamics.com/). It connects to a model **you run locally**, helps you understand what is on your screen, supports Windows dictation and speech, and lets you inspect a proposed click, key press, or text insertion before choosing **Allow once**.
+James is an open-source desktop companion built in Rust by [Vers3Dynamics](https://vers3dynamics.com/). It connects to a model **you run locally**, helps you understand what is on your screen, holds spoken conversations and guides you when you are stuck, and lets you inspect a proposed click, key press, or text insertion before choosing **Allow once**.
 
 It is also the intended **desktop-facing counterpart to James in [R.A.I.N. Lab](https://github.com/topherchris420/lop-nur-twin)**, the simulated research environment. The connection is useful today but deliberately narrow: James can read the Lab's status and recent research context. It cannot start experiments, direct agents, or alter Lab state.
 
@@ -29,9 +29,10 @@ It is also the intended **desktop-facing counterpart to James in [R.A.I.N. Lab](
 
 | | v0.3 cross-platform foundation |
 | --- | --- |
-| **What it is** | An unsigned **Windows x64 preview**, with experimental CI archives for the Linux/macOS runner architectures. Native macOS/Linux desktop effects are not implemented |
+| **What it is** | An unsigned **Windows x64 preview**, with experimental CI archives for the Linux/macOS runner architectures. macOS/Linux have screen capture, speech and whisper.cpp listening (not yet device-validated); computer input is Windows-only |
 | **Inference** | Select LM Studio, Ollama (native API), llama.cpp server, or an OpenAI-compatible local server on `127.0.0.1`; **you provide and load the model** |
-| **Desktop context** | Explicit primary-screen capture, optional image attachment, speech recognition, and read-aloud on Windows |
+| **Desktop context** | Explicit primary-screen capture and optional image attachment; **Guide me** for next steps on screen |
+| **Voice** | **Talk** (hands-free conversation), Dictate and read-aloud. Windows speech recognition on Windows; local [whisper.cpp](https://github.com/ggml-org/whisper.cpp) on macOS/Linux. Voice can never approve actions |
 | **Computer control** | **One reviewed action at a time**: click, allowlisted key, or printable text; no automatic action chain |
 | **Research connection** | Read-only access to R.A.I.N. Lab's actual local status and discovery APIs |
 | **Validation** | Previously verified Windows x64 preview build; new provider and cross-platform changes require passing CI and real-device acceptance tests |
@@ -87,15 +88,24 @@ Choose your installed local provider in Settings, discover the model IDs reporte
 
 ### 2. Make your screen part of the conversation
 
-Choose **Capture primary screen**, inspect the preview, and explicitly attach it to a question. A vision-capable model is needed to interpret images. Capture is opt-in; James does not silently watch the desktop.
+Choose **Capture primary screen**, inspect the preview, and explicitly attach it to a question. A vision-capable model is needed to interpret images. Capture is opt-in; James does not silently watch the desktop. Capture works on Windows, macOS (`screencapture`; grant Screen Recording) and Linux (gnome-screenshot, spectacle, grim or ImageMagick).
+
+**Stuck?** Choose **Guide me**: James takes one snapshot and the model explains what matters on screen and up to three next steps *you* can take. Type a question first to ask something specific. Guidance never becomes an action proposal.
 
 ### 3. Review one action, then decide
 
 Use the **Actions** page to prepare a click, supported key, or printable text insertion, or ask a vision-capable model to suggest one action. You see the exact proposal and rationale before choosing **Allow once** or **Deny**. No arbitrary shell commands, general file tools, unrestricted typing macros, or multi-step autonomous loops are exposed.
 
-### 4. Speak and listen on Windows
+### 4. Talk with James
 
-Dictate into a reviewable draft, listen to the last answer, or enable spoken replies. These features use Windows speech components. Quality and microphone compatibility still need hands-on evaluation.
+Choose **Talk** for a hands-free conversation: James listens, answers aloud, and listens again until you say "stop", press Esc, or stay silent for 15 seconds. **Dictate** puts one utterance into a reviewable draft instead, and **Read last answer** or spoken replies read answers with Markdown and links cleaned up. Spoken words only ever become chat text; voice has no path to approving an action.
+
+| | Windows | macOS | Linux |
+| --- | --- | --- | --- |
+| Listening (Talk, Dictate) | Windows speech recognition | whisper.cpp + SoX or ffmpeg | whisper.cpp + parec, arecord, sox or ffmpeg |
+| Spoken answers | Installed Windows voice | `say` | espeak-ng or spd-say |
+
+On macOS and Linux, listening runs [whisper.cpp](https://github.com/ggml-org/whisper.cpp) on your computer. James records only until you pause, never sends silence to whisper, and deletes each utterance's temporary audio immediately. **Settings → Voice → Set up listening** finds `whisper-cli` and a model automatically and gives copyable commands (macOS: `brew install whisper-cpp sox`, then a ~150 MB `ggml-base.en.bin` model download). Endpointing is covered by synthetic-audio tests; recognition quality and microphone compatibility still need hands-on evaluation.
 
 ### 5. Bring laboratory research into dialogue
 
@@ -187,13 +197,13 @@ The actual API contracts, version requirements, size limits, and research proven
 | --- | --- |
 | [`james-core`](crates/james-core) | One-use approvals, policy checks, budgets, cancellation, supervised action contracts |
 | [`james-models`](crates/james-models) | Loopback provider selection, bounded OpenAI-compatible/Ollama text and optional image requests |
-| [`james-platform`](crates/james-platform) | Windows screen capture, speech, and constrained desktop input |
+| [`james-platform`](crates/james-platform) | Screen capture and speech (Windows, macOS, Linux), whisper.cpp listening (macOS, Linux), and constrained Windows desktop input |
 | [`james-lab`](crates/james-lab) | Read-only status and recent research from R.A.I.N. Lab |
 | [`james-desktop`](crates/james-desktop) | Native `eframe`/`egui` UI, settings, local session state, review workflow |
 
 The application is written in **Rust**, with fixed **PowerShell/Windows component helpers** for native platform functionality. Calling James a Rust desktop application does not mean every OS interaction is implemented solely in Rust.
 
-The workspace forbids unsafe Rust and has cross-platform core CI, but Windows-specific desktop features only work on Windows. For design rationale, see [ARCHITECTURE.md](docs/ARCHITECTURE.md). Some architecture and supervision documents retain earlier prototype milestones; use the [v0.3 validation record](docs/VALIDATION.md) for current implementation evidence.
+The workspace forbids unsafe Rust and has cross-platform core CI. macOS/Linux helpers call standard system tools resolved from fixed system directories, never through a shell; computer input remains Windows-only. For design rationale, see [ARCHITECTURE.md](docs/ARCHITECTURE.md). Some architecture and supervision documents retain earlier prototype milestones; use the [v0.3 validation record](docs/VALIDATION.md) for current implementation evidence.
 
 ### Reproduce the checks
 
@@ -208,7 +218,7 @@ Desktop CI now targets Windows, Ubuntu and macOS, with experimental portable Uni
 ## Privacy is a behavior, not a badge
 
 - **Loopback only:** model and Lab clients accept numeric local addresses; redirects, environment proxies, and automatic cloud fallback are disabled. A local service may still forward or log your data, so inspect its configuration.
-- **Explicit capture:** James does not store screenshot image files or raw microphone audio. If you choose to attach a screenshot, the selected model service receives it.
+- **Explicit capture:** James does not store screenshot image files or raw microphone audio. Where a macOS/Linux tool requires a file (screen capture, whisper.cpp audio), it uses a private owner-only temporary folder that is deleted immediately; audio never leaves your computer. If you choose to attach a screenshot, the selected model service receives it.
 - **Plaintext history:** conversation text and settings are saved unencrypted at `%LOCALAPPDATA%/Vers3Dynamics/James/session.json` on Windows.
 - **Action record:** `action-intent.json`, beside the session file, can contain the **exact text** approved for insertion and persists until acknowledgement.
 - **No secure erase:** clearing conversation history is not forensic deletion and does not independently remove unresolved action markers.
