@@ -90,7 +90,7 @@ The approval demo shows a simulated interrupted action that cannot be replayed. 
 
 ## Built in the open
 
-James is an original project from **[Vers3Dynamics](https://vers3dynamics.com/)**. Public Korso product research informed independent requirements. No Korso code, assets, UI, or recovered prompts are shipped here. This is not a formally separated clean-room claim; details live in [PROVENANCE.md](PROVENANCE.md).
+James is an original project from **[Vers3Dynamics](https://vers3dynamics.com/)**. Publicly available product research informed independent requirements. No reference products code, assets, UI, or recovered prompts are shipped here. This is not a formally separated clean-room claim; details live in [PROVENANCE.md](PROVENANCE.md).
 
 **License:** [MIT](LICENSE). No downloadable desktop release exists yet.
 
