@@ -61,7 +61,10 @@ pub enum LocalProvider {
 }
 impl LocalProvider {
     pub const ALL: [Self; 4] = [
-        Self::LmStudio, Self::Ollama, Self::LlamaCpp, Self::OpenAiCompatible
+        Self::LmStudio,
+        Self::Ollama,
+        Self::LlamaCpp,
+        Self::OpenAiCompatible,
     ];
     pub fn label(self) -> &'static str {
         match self {
@@ -124,7 +127,11 @@ impl LocalClient {
             .call()
             .map_err(map_http_error)?;
         let body = read_limited(response)?;
-        if ollama { parse_ollama_models(&body) } else { parse_models(&body) }
+        if ollama {
+            parse_ollama_models(&body)
+        } else {
+            parse_models(&body)
+        }
     }
 
     pub fn chat(&self, model: &str, messages: &[ChatMessage]) -> Result<String, ApiError> {
@@ -145,14 +152,22 @@ impl LocalClient {
         } else {
             build_request(model, messages, png)?
         };
-        let path = if ollama { "/api/chat" } else { "/v1/chat/completions" };
+        let path = if ollama {
+            "/api/chat"
+        } else {
+            "/v1/chat/completions"
+        };
         let response = Self::agent()
             .post(&self.url(path))
             .set("Content-Type", "application/json")
             .send_string(&request)
             .map_err(map_http_error)?;
         let body = read_limited(response)?;
-        if ollama { parse_ollama_chat(&body) } else { parse_chat(&body) }
+        if ollama {
+            parse_ollama_chat(&body)
+        } else {
+            parse_chat(&body)
+        }
     }
 }
 
@@ -191,8 +206,8 @@ fn build_ollama_request(
     png: Option<&[u8]>,
 ) -> Result<String, ApiError> {
     validate_request(model, messages)?;
-    let mut wire = serde_json::to_value(messages)
-        .map_err(|err| ApiError::Protocol(err.to_string()))?;
+    let mut wire =
+        serde_json::to_value(messages).map_err(|err| ApiError::Protocol(err.to_string()))?;
     if let Some(bytes) = png {
         if bytes.len() > 16 * 1024 * 1024 || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
             return Err(ApiError::InvalidConfig(
@@ -291,12 +306,16 @@ pub fn parse_models(body: &str) -> Result<Vec<String>, ApiError> {
 pub fn parse_ollama_models(body: &str) -> Result<Vec<String>, ApiError> {
     let value: Value = serde_json::from_str(body)
         .map_err(|_| ApiError::Protocol("Malformed JSON in /api/tags".into()))?;
-    let rows = value.get("models").and_then(Value::as_array)
+    let rows = value
+        .get("models")
+        .and_then(Value::as_array)
         .ok_or_else(|| ApiError::Protocol("Ollama model list did not contain models".into()))?;
-    let mut models: Vec<String> = rows.iter()
+    let mut models: Vec<String> = rows
+        .iter()
         .filter_map(|item| item.get("name").and_then(Value::as_str))
         .filter(|id| !id.is_empty() && id.len() <= 256)
-        .map(str::to_owned).collect();
+        .map(str::to_owned)
+        .collect();
     models.sort();
     models.dedup();
     Ok(models)
@@ -307,12 +326,14 @@ pub fn parse_ollama_models(body: &str) -> Result<Vec<String>, ApiError> {
 pub fn parse_ollama_chat(body: &str) -> Result<String, ApiError> {
     let value: Value = serde_json::from_str(body)
         .map_err(|_| ApiError::Protocol("Malformed JSON in Ollama chat response".into()))?;
-    let content = value.pointer("/message/content").and_then(Value::as_str)
+    let content = value
+        .pointer("/message/content")
+        .and_then(Value::as_str)
         .filter(|answer| !answer.trim().is_empty())
         .ok_or_else(|| ApiError::Protocol("Ollama returned no assistant content".into()))?;
     if content.len() > MAX_MESSAGE_BYTES {
         return Err(ApiError::Protocol(
-            "Assistant reply exceeds the 32 KiB conversation message limit".into()
+            "Assistant reply exceeds the 32 KiB conversation message limit".into(),
         ));
     }
     Ok(content.to_owned())
@@ -500,7 +521,9 @@ mod tests {
         );
         let client = LocalClient::for_provider(LocalProvider::Ollama, client.port).unwrap();
         assert_eq!(
-            client.chat("qwen2.5:7b", &[ChatMessage::new("user", "Hello")]).unwrap(),
+            client
+                .chat("qwen2.5:7b", &[ChatMessage::new("user", "Hello")])
+                .unwrap(),
             "Local answer."
         );
         worker.join().unwrap();
@@ -511,7 +534,8 @@ mod tests {
         let input = [ChatMessage::new("user", "Describe this")];
         let wire: Value = serde_json::from_str(
             &build_ollama_request("vision", &input, Some(b"\x89PNG\r\n\x1a\n")).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(wire["messages"][0]["images"][0], "iVBORw0KGgo=");
         assert_eq!(wire["stream"], false);
         assert!(build_ollama_request("vision", &input, Some(b"bad")).is_err());
