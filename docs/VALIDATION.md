@@ -1,5 +1,17 @@
 # Implementation validation
 
+## v0.3 integration pass (2026-10-11)
+
+The records below this section describe earlier milestones. Current v0.3 adds native screen and voice helpers, reviewed Windows input, the real Lab discovery client, and installer packaging. Protocol and contract checks do not establish inference quality or automatic outcome verification.
+
+- Actual Lab Vite server: read-only status and discovery verified at upstream commit `a2d7882e1317af1ea1a333c31ead033f0d87c60e`; reachable, available, idle. No experiment started.
+- Windows helpers: in-memory PNG capture and cancellation of launched speech helpers exercised. Microphone accuracy and actual target-application input remain separate hands-on checks.
+- REA public Korso page observation: bounded finding ledger in [DESKTOP-RESEARCH.md](DESKTOP-RESEARCH.md). No desktop-internals equivalence claimed.
+- Inno Setup 6.4.3 template compilation and script parameter/path validation passed. Clean-machine installation lifecycle and signing remain outstanding.
+- Workspace compilation succeeded using Rust 1.99.0 GNU on the Windows host. Full test/lint/build results are recorded below when completed.
+
+### Earlier milestone history
+
 Date: 2026-10-11. Scope: `james-core`, the new LM Studio adapter, the desktop build and CI. No human desktop usability study or comparative benchmark was run.
 
 ## Original local tested configuration

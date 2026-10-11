@@ -1,6 +1,6 @@
 # James implementation roadmap
 
-Status: Phase 1 core complete as a prototype; Phase 2 **in progress** with a native desktop window, localhost LM Studio model discovery/chat, local plaintext history, and a Windows workflow artifact. Streaming, durable history, real Lab integration and end-to-end authority remain unimplemented.
+Status: v0.3 adds an integrated native desktop, LM Studio text/vision requests, Windows screen/voice helpers, reviewed single-action input through the core policy gate, a conservative durable intent marker, the actual read-only Lab discovery connection, and unsigned per-user installer packaging. Streaming, automated outcome verification, full crash-tested transactional history, broad platform coverage, accessibility validation and signed releases remain open.
 
 | Milestone | Deliverable | Exit gate |
 | --- | --- | --- |
@@ -21,4 +21,4 @@ Status: Phase 1 core complete as a prototype; Phase 2 **in progress** with a nat
 5. **Partial local history:** plaintext JSON session file exists. Replace it with SQLite migrations and crash-aware incomplete-run tracking.
 6. Verify keyboard/assistive-technology review, scaling, long conversations, and UI responsiveness. Record actual platform support.
 
-The new Windows portable build is a developer preview, not a signed release. Core contract tests and GUI HTTP mocks do not remove Phase 2–7 exit gates. The desktop currently cannot authorize or execute tools.
+The new Windows portable build is a developer preview, not a signed release. Core contract tests and GUI HTTP mocks do not remove Phase 2–7 exit gates. The desktop now authorizes one reviewed Windows input action at a time; broader tools remain future work.

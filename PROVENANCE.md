@@ -11,3 +11,10 @@ The reference installer, extracted files, and complete REA evidence remain outsi
 Architectural recommendations about eframe, iced, Tauri, Tokio, SQLite, inference servers, and MCP are sourced to their primary documentation in [ARCHITECTURE.md](docs/ARCHITECTURE.md). Proposed components are not already integrated.
 
 Contributions must identify the origin and license of new code and assets. Keep proprietary research files outside the repository, preserve observations versus inferences, and never replace benchmark evidence with marketing claims.
+
+
+## v0.3 desktop integrations
+
+The new platform helpers, model vision request serialization, review UI, Lab client and installer were independently authored for James. REA inspected the public Korso landing page on 2026-10-11; the bounded observation and design mapping are recorded in [DESKTOP-RESEARCH.md](docs/DESKTOP-RESEARCH.md). No Korso code, assets, private API or recovered prompts are shipped. Complete page evidence is retained outside the repository.
+
+The Lab client implements the public `lop-nur-twin` repository's actual HTTP contracts (source commit and locations in [LAB.md](docs/LAB.md)). Direct Rust dependencies are eframe/egui (MIT OR Apache-2.0), image (MIT OR Apache-2.0), serde/serde_json (MIT OR Apache-2.0), base64 (MIT OR Apache-2.0), and ureq 2 (MIT OR Apache-2.0). Cargo.lock records transitive package versions; this list is not a complete transitive license audit. Fixed Windows helpers use installed Windows components. Inno Setup is a build-time compiler and is not bundled as a compiler with James. LM Studio, model weights and R.A.I.N. Lab are not bundled.

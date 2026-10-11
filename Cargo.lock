@@ -1069,25 +1069,48 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "james-core"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "james-desktop"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "eframe",
+ "image",
+ "james-core",
+ "james-lab",
  "james-models",
+ "james-platform",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "james-models"
-version = "0.2.0"
+name = "james-lab"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",
  "ureq",
+]
+
+[[package]]
+name = "james-models"
+version = "0.3.0"
+dependencies = [
+ "base64",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
+name = "james-platform"
+version = "0.3.0"
+dependencies = [
+ "base64",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

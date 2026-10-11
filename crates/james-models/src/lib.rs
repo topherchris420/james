@@ -3,6 +3,7 @@
 //! directed to a remote host by a model or a configuration string.
 //! Network locality does NOT prove that the inference backend itself is local.
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
@@ -68,6 +69,9 @@ impl LocalClient {
 
     fn agent() -> ureq::Agent {
         ureq::AgentBuilder::new()
+            .redirects(0)
+            .try_proxy_from_env(false)
+            .timeout(Duration::from_secs(90))
             .timeout_connect(Duration::from_secs(3))
             .timeout_read(Duration::from_secs(90))
             .timeout_write(Duration::from_secs(10))
@@ -84,13 +88,18 @@ impl LocalClient {
     }
 
     pub fn chat(&self, model: &str, messages: &[ChatMessage]) -> Result<String, ApiError> {
-        validate_request(model, messages)?;
-        let body = serde_json::to_string(&serde_json::json!({
-            "model": model,
-            "messages": messages,
-            "stream": false
-        }))
-        .map_err(|err| ApiError::Protocol(format!("Cannot serialize request: {err}")))?;
+        self.chat_with_image(model, messages, None)
+    }
+
+    /// Attach one explicitly selected PNG to the final user turn only.
+    /// Image bytes never enter ChatMessage or conversation persistence.
+    pub fn chat_with_image(
+        &self,
+        model: &str,
+        messages: &[ChatMessage],
+        png: Option<&[u8]>,
+    ) -> Result<String, ApiError> {
+        let body = build_request(model, messages, png)?;
         let response = Self::agent()
             .post(&self.url("/v1/chat/completions"))
             .set("Content-Type", "application/json")
@@ -99,6 +108,35 @@ impl LocalClient {
         let body = read_limited(response)?;
         parse_chat(&body)
     }
+}
+
+fn build_request(
+    model: &str,
+    messages: &[ChatMessage],
+    png: Option<&[u8]>,
+) -> Result<String, ApiError> {
+    validate_request(model, messages)?;
+    let mut wire =
+        serde_json::to_value(messages).map_err(|err| ApiError::Protocol(err.to_string()))?;
+    if let Some(bytes) = png {
+        if bytes.len() > 16 * 1024 * 1024 || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+            return Err(ApiError::InvalidConfig(
+                "Screenshot must be a PNG of at most 16 MiB".into(),
+            ));
+        }
+        let last = messages.last().expect("validated nonempty conversation");
+        if last.role != "user" {
+            return Err(ApiError::InvalidConfig(
+                "A screenshot requires a final user question".into(),
+            ));
+        }
+        wire[messages.len() - 1]["content"] = serde_json::json!([
+            {"type":"text", "text":last.content},
+            {"type":"image_url", "image_url":{"url":format!("data:image/png;base64,{}", STANDARD.encode(bytes))}}
+        ]);
+    }
+    serde_json::to_string(&serde_json::json!({"model":model,"messages":wire,"stream":false}))
+        .map_err(|err| ApiError::Protocol(format!("Cannot serialize request: {err}")))
 }
 
 fn map_http_error(error: ureq::Error) -> ApiError {
@@ -186,6 +224,11 @@ pub fn parse_chat(body: &str) -> Result<String, ApiError> {
         .ok_or_else(|| {
             ApiError::Protocol("Chat response had no assistant message content".into())
         })?;
+    if content.len() > MAX_MESSAGE_BYTES {
+        return Err(ApiError::Protocol(
+            "Assistant reply exceeds the 32 KiB conversation message limit".into(),
+        ));
+    }
     Ok(content.to_owned())
 }
 
@@ -239,6 +282,55 @@ mod tests {
             socket.flush().unwrap();
         });
         (LocalClient::new(port).unwrap(), worker)
+    }
+
+    #[test]
+    fn vision_attaches_only_to_last_user_turn_and_preserves_text_history() {
+        let messages = vec![
+            ChatMessage::new("system", "Context"),
+            ChatMessage::new("user", "What is here?"),
+        ];
+        let wire: Value = serde_json::from_str(
+            &build_request("vision", &messages, Some(b"\x89PNG\r\n\x1a\n")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(wire["messages"][0]["content"], "Context");
+        assert_eq!(wire["messages"][1]["content"][0]["text"], "What is here?");
+        assert_eq!(
+            wire["messages"][1]["content"][1]["image_url"]["url"],
+            "data:image/png;base64,iVBORw0KGgo="
+        );
+        assert_eq!(messages[1].content, "What is here?");
+        assert!(build_request("vision", &messages, Some(b"not png")).is_err());
+        assert!(
+            build_request(
+                "vision",
+                &[ChatMessage::new("assistant", "Hi")],
+                Some(b"\x89PNG\r\n\x1a\n")
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn loopback_client_refuses_redirects() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let client = LocalClient::new(listener.local_addr().unwrap().port()).unwrap();
+        let worker = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(socket.try_clone().unwrap());
+            let mut line = String::new();
+            loop {
+                line.clear();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            socket.write_all(b"HTTP/1.1 302 Found\r\nLocation: http://192.0.2.1/v1/models\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+        });
+        assert!(client.models().is_err());
+        worker.join().unwrap();
     }
 
     #[test]
