@@ -261,7 +261,7 @@ impl JamesApp {
                     WorkerResult::Models(
                         LocalClient::for_provider(provider, port)
                             .and_then(|c| c.models())
-                        .map_err(|e| e.to_string()),
+                            .map_err(|e| e.to_string()),
                     )
                 });
             }
@@ -865,7 +865,10 @@ impl JamesApp {
             self.port = self.provider.default_port().to_string();
             self.model.clear();
             self.available_models.clear();
-            self.status = format!("Selected {}. Start its local server, then discover models.", self.provider.label());
+            self.status = format!(
+                "Selected {}. Start its local server, then discover models.",
+                self.provider.label()
+            );
             self.save_session();
         }
         ui.horizontal(|ui| {
@@ -1031,7 +1034,10 @@ impl eframe::App for JamesApp {
                     self.send(true);
                 }
                 if ui
-                    .add_enabled(enabled && cfg!(target_os = "windows"), egui::Button::new("Dictate"))
+                    .add_enabled(
+                        enabled && cfg!(target_os = "windows"),
+                        egui::Button::new("Dictate"),
+                    )
                     .clicked()
                 {
                     self.launch(
@@ -1046,7 +1052,9 @@ impl eframe::App for JamesApp {
                 }
                 if ui
                     .add_enabled(
-                        enabled && cfg!(target_os = "windows") && self.messages.iter().any(|m| m.role == "assistant"),
+                        enabled
+                            && cfg!(target_os = "windows")
+                            && self.messages.iter().any(|m| m.role == "assistant"),
                         egui::Button::new("Read last answer"),
                     )
                     .clicked()
