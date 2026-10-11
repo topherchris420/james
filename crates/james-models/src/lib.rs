@@ -1,4 +1,5 @@
-//! Local-only, synchronous HTTP adapter for an OpenAI-compatible model server.
+//! Local-only HTTP adapters for selected inference providers.
+//! Only numeric loopback addresses are permitted; provider selection never exposes a port.
 //! Only 127.0.0.1 and an explicit numeric port are ever used; it cannot be
 //! directed to a remote host by a model or a configuration string.
 //! Network locality does NOT prove that the inference backend itself is local.
@@ -47,19 +48,56 @@ impl fmt::Display for ApiError {
 
 impl std::error::Error for ApiError {}
 
+/// User-selected API protocol. Other OpenAI-compatible servers use the same
+/// bounded /v1 endpoints; they must still be configured on loopback.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LocalProvider {
+    #[default]
+    LmStudio,
+    Ollama,
+    LlamaCpp,
+    OpenAiCompatible,
+}
+impl LocalProvider {
+    pub const ALL: [Self; 4] = [
+        Self::LmStudio, Self::Ollama, Self::LlamaCpp, Self::OpenAiCompatible
+    ];
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::LmStudio => "LM Studio",
+            Self::Ollama => "Ollama",
+            Self::LlamaCpp => "llama.cpp server",
+            Self::OpenAiCompatible => "Other OpenAI-compatible server",
+        }
+    }
+    pub fn default_port(self) -> u16 {
+        match self {
+            Self::LmStudio | Self::OpenAiCompatible => 1234,
+            Self::Ollama => 11434,
+            Self::LlamaCpp => 8080,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct LocalClient {
     port: u16,
+    provider: LocalProvider,
 }
 
 impl LocalClient {
     pub fn new(port: u16) -> Result<Self, ApiError> {
+        Self::for_provider(LocalProvider::LmStudio, port)
+    }
+
+    pub fn for_provider(provider: LocalProvider, port: u16) -> Result<Self, ApiError> {
         if port == 0 {
             return Err(ApiError::InvalidConfig(
-                "Choose a nonzero LM Studio port".into(),
+                "Choose a nonzero local server port".into(),
             ));
         }
-        Ok(Self { port })
+        Ok(Self { port, provider })
     }
 
     fn url(&self, path: &str) -> String {
@@ -79,12 +117,14 @@ impl LocalClient {
     }
 
     pub fn models(&self) -> Result<Vec<String>, ApiError> {
+        let ollama = self.provider == LocalProvider::Ollama;
+        let path = if ollama { "/api/tags" } else { "/v1/models" };
         let response = Self::agent()
-            .get(&self.url("/v1/models"))
+            .get(&self.url(path))
             .call()
             .map_err(map_http_error)?;
         let body = read_limited(response)?;
-        parse_models(&body)
+        if ollama { parse_ollama_models(&body) } else { parse_models(&body) }
     }
 
     pub fn chat(&self, model: &str, messages: &[ChatMessage]) -> Result<String, ApiError> {
@@ -99,14 +139,20 @@ impl LocalClient {
         messages: &[ChatMessage],
         png: Option<&[u8]>,
     ) -> Result<String, ApiError> {
-        let body = build_request(model, messages, png)?;
+        let ollama = self.provider == LocalProvider::Ollama;
+        let request = if ollama {
+            build_ollama_request(model, messages, png)?
+        } else {
+            build_request(model, messages, png)?
+        };
+        let path = if ollama { "/api/chat" } else { "/v1/chat/completions" };
         let response = Self::agent()
-            .post(&self.url("/v1/chat/completions"))
+            .post(&self.url(path))
             .set("Content-Type", "application/json")
-            .send_string(&body)
+            .send_string(&request)
             .map_err(map_http_error)?;
         let body = read_limited(response)?;
-        parse_chat(&body)
+        if ollama { parse_ollama_chat(&body) } else { parse_chat(&body) }
     }
 }
 
@@ -139,13 +185,40 @@ fn build_request(
         .map_err(|err| ApiError::Protocol(format!("Cannot serialize request: {err}")))
 }
 
+fn build_ollama_request(
+    model: &str,
+    messages: &[ChatMessage],
+    png: Option<&[u8]>,
+) -> Result<String, ApiError> {
+    validate_request(model, messages)?;
+    let mut wire = serde_json::to_value(messages)
+        .map_err(|err| ApiError::Protocol(err.to_string()))?;
+    if let Some(bytes) = png {
+        if bytes.len() > 16 * 1024 * 1024 || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+            return Err(ApiError::InvalidConfig(
+                "Screenshot must be a PNG of at most 16 MiB".into(),
+            ));
+        }
+        if messages.last().is_none_or(|last| last.role != "user") {
+            return Err(ApiError::InvalidConfig(
+                "A screenshot requires a final user question".into(),
+            ));
+        }
+        wire[messages.len() - 1]["images"] = serde_json::json!([STANDARD.encode(bytes)]);
+    }
+    serde_json::to_string(&serde_json::json!({
+        "model": model, "messages": wire, "stream": false
+    }))
+    .map_err(|err| ApiError::Protocol(format!("Cannot serialize request: {err}")))
+}
+
 fn map_http_error(error: ureq::Error) -> ApiError {
     match error {
         ureq::Error::Status(code, _) => ApiError::Transport(format!(
-            "LM Studio returned HTTP {code}. Check the selected model and server."
+            "Local model server returned HTTP {code}. Check the selected model and provider."
         )),
         ureq::Error::Transport(err) => ApiError::Transport(format!(
-            "Cannot reach LM Studio on the selected localhost port: {err}"
+            "Cannot reach the selected local model server: {err}"
         )),
     }
 }
@@ -214,6 +287,37 @@ pub fn parse_models(body: &str) -> Result<Vec<String>, ApiError> {
     Ok(models)
 }
 
+/// Ollama's native model discovery returns models[].name, not data[].id.
+pub fn parse_ollama_models(body: &str) -> Result<Vec<String>, ApiError> {
+    let value: Value = serde_json::from_str(body)
+        .map_err(|_| ApiError::Protocol("Malformed JSON in /api/tags".into()))?;
+    let rows = value.get("models").and_then(Value::as_array)
+        .ok_or_else(|| ApiError::Protocol("Ollama model list did not contain models".into()))?;
+    let mut models: Vec<String> = rows.iter()
+        .filter_map(|item| item.get("name").and_then(Value::as_str))
+        .filter(|id| !id.is_empty() && id.len() <= 256)
+        .map(str::to_owned).collect();
+    models.sort();
+    models.dedup();
+    Ok(models)
+}
+
+/// Native Ollama /api/chat result. Tool-only responses are not misrepresented
+/// as visible answers or executable actions.
+pub fn parse_ollama_chat(body: &str) -> Result<String, ApiError> {
+    let value: Value = serde_json::from_str(body)
+        .map_err(|_| ApiError::Protocol("Malformed JSON in Ollama chat response".into()))?;
+    let content = value.pointer("/message/content").and_then(Value::as_str)
+        .filter(|answer| !answer.trim().is_empty())
+        .ok_or_else(|| ApiError::Protocol("Ollama returned no assistant content".into()))?;
+    if content.len() > MAX_MESSAGE_BYTES {
+        return Err(ApiError::Protocol(
+            "Assistant reply exceeds the 32 KiB conversation message limit".into()
+        ));
+    }
+    Ok(content.to_owned())
+}
+
 pub fn parse_chat(body: &str) -> Result<String, ApiError> {
     let value: Value = serde_json::from_str(body)
         .map_err(|_| ApiError::Protocol("Malformed JSON in chat response".into()))?;
@@ -255,6 +359,8 @@ mod tests {
             assert!(
                 line.starts_with("GET /v1/models ")
                     || line.starts_with("POST /v1/chat/completions ")
+                    || line.starts_with("GET /api/tags ")
+                    || line.starts_with("POST /api/chat ")
             );
             let mut body_size = 0_usize;
             loop {
@@ -377,6 +483,48 @@ mod tests {
             .unwrap();
         assert_eq!(result, "A testable idea.");
         worker.join().unwrap();
+    }
+
+    #[test]
+    fn ollama_native_routes_and_payloads_work_with_loopback_fixture() {
+        let (client, worker) = mock(
+            r#"{"models":[{"name":"qwen2.5:7b"},{"name":"qwen2.5:7b"},{"name":"llava:latest"}]}"#,
+            "200 OK",
+        );
+        let client = LocalClient::for_provider(LocalProvider::Ollama, client.port).unwrap();
+        assert_eq!(client.models().unwrap(), vec!["llava:latest", "qwen2.5:7b"]);
+        worker.join().unwrap();
+        let (client, worker) = mock(
+            r#"{"message":{"role":"assistant","content":"Local answer."},"done":true}"#,
+            "200 OK",
+        );
+        let client = LocalClient::for_provider(LocalProvider::Ollama, client.port).unwrap();
+        assert_eq!(
+            client.chat("qwen2.5:7b", &[ChatMessage::new("user", "Hello")]).unwrap(),
+            "Local answer."
+        );
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn ollama_vision_request_is_explicit_and_bounded() {
+        let input = [ChatMessage::new("user", "Describe this")];
+        let wire: Value = serde_json::from_str(
+            &build_ollama_request("vision", &input, Some(b"\x89PNG\r\n\x1a\n")).unwrap(),
+        ).unwrap();
+        assert_eq!(wire["messages"][0]["images"][0], "iVBORw0KGgo=");
+        assert_eq!(wire["stream"], false);
+        assert!(build_ollama_request("vision", &input, Some(b"bad")).is_err());
+        assert!(parse_ollama_models(r#"{"models":null}"#).is_err());
+        assert!(parse_ollama_chat(r#"{"message":{"content":""}}"#).is_err());
+    }
+
+    #[test]
+    fn provider_defaults_are_explicit_and_local_only() {
+        assert_eq!(LocalProvider::LmStudio.default_port(), 1234);
+        assert_eq!(LocalProvider::Ollama.default_port(), 11434);
+        assert_eq!(LocalProvider::LlamaCpp.default_port(), 8080);
+        assert!(LocalClient::for_provider(LocalProvider::OpenAiCompatible, 0).is_err());
     }
 
     #[test]
