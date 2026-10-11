@@ -15,6 +15,8 @@ const MAX_REPLY_BYTES: u64 = 1_048_576;
 const MAX_MESSAGES: usize = 80;
 const MAX_MESSAGE_BYTES: usize = 32_768;
 const MAX_TOTAL_BYTES: usize = 262_144;
+const MAX_ERROR_BYTES: u64 = 4_096;
+const MAX_ERROR_DETAIL_CHARS: usize = 300;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatMessage {
@@ -229,13 +231,53 @@ fn build_ollama_request(
 
 fn map_http_error(error: ureq::Error) -> ApiError {
     match error {
-        ureq::Error::Status(code, _) => ApiError::Transport(format!(
-            "Local model server returned HTTP {code}. Check the selected model and provider."
-        )),
+        ureq::Error::Status(code, response) => {
+            let mut body = String::new();
+            // The server's explanation (e.g. a model without image support) is
+            // the actionable part; read a bounded amount and show it as data.
+            let _ = response
+                .into_reader()
+                .take(MAX_ERROR_BYTES)
+                .read_to_string(&mut body);
+            match server_error_detail(&body) {
+                Some(detail) => ApiError::Transport(format!(
+                    "Local model server returned HTTP {code}: {detail}"
+                )),
+                None => ApiError::Transport(format!(
+                    "Local model server returned HTTP {code}. Check the selected model and provider."
+                )),
+            }
+        }
         ureq::Error::Transport(err) => ApiError::Transport(format!(
             "Cannot reach the selected local model server: {err}"
         )),
     }
+}
+
+/// Extracts a short, printable message from an OpenAI-style, Ollama or LM Studio
+/// error body. LM Studio may wrap the engine's JSON error inside the outer string.
+fn server_error_detail(body: &str) -> Option<String> {
+    fn message(value: &Value) -> Option<&str> {
+        let error = value.get("error")?;
+        error
+            .as_str()
+            .or_else(|| error.get("message").and_then(Value::as_str))
+    }
+    let mut detail = message(&serde_json::from_str(body).ok()?)?.to_owned();
+    if let Some(inner) = detail
+        .find('{')
+        .and_then(|start| serde_json::from_str::<Value>(&detail[start..]).ok())
+        .and_then(|value| message(&value).map(str::to_owned))
+    {
+        detail = inner;
+    }
+    let detail: String = detail
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .take(MAX_ERROR_DETAIL_CHARS)
+        .collect();
+    let detail = detail.trim();
+    (!detail.is_empty()).then(|| detail.to_owned())
 }
 
 fn read_limited(response: ureq::Response) -> Result<String, ApiError> {
@@ -557,5 +599,35 @@ mod tests {
         let err = client.models().unwrap_err();
         assert!(err.to_string().contains("HTTP 404"));
         worker.join().unwrap();
+    }
+
+    #[test]
+    fn server_error_message_is_surfaced() {
+        let (client, worker) = mock(
+            r#"{"error":"Engine protocol predict request returned 500: {\"error\":{\"code\":500,\"message\":\"image input is not supported - hint: if this is unexpected, you may need to provide the mmproj\",\"type\":\"server_error\"}}"}"#,
+            "400 Bad Request",
+        );
+        let err = client
+            .chat("qwen-local", &[ChatMessage::new("user", "Hi")])
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            err,
+            "Local model server returned HTTP 400: image input is not supported - hint: if this is unexpected, you may need to provide the mmproj"
+        );
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn server_error_detail_is_bounded_and_printable() {
+        assert_eq!(
+            server_error_detail(r#"{"error":{"message":"Model not loaded"}}"#).as_deref(),
+            Some("Model not loaded")
+        );
+        let long = format!(r#"{{"error":"a\nb{}"}}"#, "x".repeat(1000));
+        let detail = server_error_detail(&long).unwrap();
+        assert!(detail.starts_with("a b") && detail.chars().count() == MAX_ERROR_DETAIL_CHARS);
+        assert_eq!(server_error_detail("not json"), None);
+        assert_eq!(server_error_detail(r#"{"error":"  "}"#), None);
     }
 }
