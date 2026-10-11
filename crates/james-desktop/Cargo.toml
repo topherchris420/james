@@ -11,6 +11,10 @@ name = "james"
 path = "src/main.rs"
 
 [dependencies]
+james-core = { path = "../james-core" }
+james-platform = { path = "../james-platform" }
+james-lab = { path = "../james-lab" }
+image = { version = "0.25", default-features = false, features = ["png"] }
 james-models = { path = "../james-models" }
 eframe = { version = "0.31.1", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
 serde = { version = "1.0", features = ["derive"] }

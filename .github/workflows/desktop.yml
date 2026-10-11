@@ -2,6 +2,7 @@ name: James desktop
 on:
   push:
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -19,18 +20,77 @@ jobs:
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
       - name: Formatting
         run: cargo +stable fmt --all -- --check
-      - name: Model and desktop tests
-        run: cargo +stable test -p james-models -p james-desktop --all-targets --locked
+      - name: Workspace tests
+        run: cargo +stable test --workspace --all-targets --locked
       - name: Strict Clippy
-        run: cargo +stable clippy -p james-models -p james-desktop --all-targets --locked -- -D warnings
+        run: cargo +stable clippy --workspace --all-targets --locked -- -D warnings
       - name: Build portable Windows executable
         if: matrix.os == 'windows-latest'
-        run: cargo +stable build -p james-desktop --release --locked
+        run: cargo +stable build -p james-desktop --release --locked --target x86_64-pc-windows-msvc
+      - name: Verify no Visual C++ runtime installation is required
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $dumpbin = Get-ChildItem "$vs/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $dumpbin) { throw 'Visual Studio dependency inspector was not found.' }
+          $imports = & $dumpbin.FullName /dependents target/x86_64-pc-windows-msvc/release/james.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Executable dependency inspection failed.' }
+          $imports
+          if (($imports -join "`n") -match '(?im)^\s*(vcruntime|msvcp|msvcr|ucrtbase)[^\s]*\.dll\s*$') {
+            throw 'Distribution requires a separately installed Visual C++ runtime.'
+          }
+      - name: Download and verify pinned portable installer compiler
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          ./scripts/get-inno.ps1
+      - name: Build per-user Windows installer
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: ./scripts/build-installer.ps1 -SkipBuild -IsccPath './target/tools/inno-6.4.3/tools/ISCC.exe'
       - name: Publish portable James executable
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: James-Windows-x64
-          path: target/release/james.exe
+          path: target/x86_64-pc-windows-msvc/release/james.exe
           if-no-files-found: error
           retention-days: 30
+      - name: Publish Windows installer and checksum
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: James-Windows-x64-installer
+          path: |
+            target/installer/*.exe
+            target/installer/*.sha256
+          if-no-files-found: error
+          retention-days: 30
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: desktop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: James-Windows-x64-installer
+          path: artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          name: James-Windows-x64
+          path: artifacts
+      - name: Verify installer checksum
+        working-directory: artifacts
+        run: sha256sum --check ./*.sha256
+      - name: Publish explicitly tagged release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          flags=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" artifacts/* --verify-tag --generate-notes --title "James $RELEASE_TAG" "${flags[@]}"

@@ -1,23 +1,25 @@
 # Security scope
 
-James includes a Phase 1 authorization prototype and a native desktop text-chat preview. The desktop has an outbound localhost HTTP adapter but no network listener, provider credential storage, extension loader, or desktop tool executor. The current crate is not an OS security sandbox and does not validate filesystem paths or execute permissions against real operating-system resources.
+James v0.3 is an unsigned desktop preview, not an OS sandbox. The desktop now includes local HTTP model/Lab clients, explicit screen capture, Windows voice helpers, and reviewed computer input.
 
-`Approval::after_user_review` is a trusted-host API, not proof that a human clicked a dialog. Effect classification, path canonicalization, clock integrity, unique durable action identity, run-budget ownership, tool results, and external reconciliation belong to the future host/runtime. Host code can construct a new action or budget; the crate does not constrain arbitrary Rust callers.
+## Network and context
 
-For future integrations, treat prompt injection and tool output as data. Recheck concrete grants at dispatch, prevent arbitrary credential/environment inheritance, and verify the whole UI-to-executor path. A model's statement of success is not an observed outcome. A killed process is not proof that an external side effect was cancelled.
+Model and Lab URLs use numeric ports on `127.0.0.1`; redirects and environment proxies are disabled. Requests and responses are bounded and timed out. A local endpoint does not authenticate its process or prove inference stays on-device. Use trusted local servers. No API keys are stored and authenticated model servers are not yet supported.
 
-No production version is supported. The repository owner, [topherchris420](https://github.com/topherchris420), maintains the security reporting channel. GitHub private vulnerability reporting is enabled: use [Report a vulnerability](https://github.com/topherchris420/james/security/advisories/new) to share a private reproduction. Do not post credentials or private context in public issues.
+Screen capture occurs only on an explicit click. The preview remains in memory; attachment to a question or action proposal is explicit. Screenshots and raw audio are not saved by James. Conversation text, including dictation and model descriptions of screen content, is plaintext in the local session file. Model-server logging has its own retention policy.
 
+Lab context comes from the actual versioned discovery endpoint, refreshes while explicitly connected, and enters prompts only when enabled and fresh. Lab and screen contents are untrusted data. Prompt instructions are not a security boundary; model output can only propose an allowlisted action for human review.
 
-## Run supervision and journaling
+## Computer actions
 
-The new `RunSupervisor` generates action IDs, owns the budget, and calls an externally supplied intent recorder before dispatch. Its read-only admission check prevents failed policy or quota checks from invoking the recorder; a failing recorder leaves the budget and approval unconsumed. **No durable recorder is implemented here.** The in-memory example is not crash-safe. The low-level `Action::mark_dispatched` method can still be called directly by arbitrary host code.
+The host accepts one click, allowlisted key, or printable text insertion. No command execution, shell tool, arbitrary process launch, action sequence, or automatic agent loop is exposed to the model. The desktop review displays the exact action, requires a screen captured within 60 seconds, and creates a consumed `ReviewedAction` only after Allow once. Five seconds permit target focus; Stop cancels pending work. Escape works only while James has focus, not globally.
 
-For a real tool adapter, write crash-durable, idempotent records keyed by action ID, persist actual outcomes, and reconstruct unresolved work conservatively. A mock returning success does not satisfy these requirements. The event timeline includes only IDs and states, but even this metadata needs an actual retention policy. See [supervision](docs/SUPERVISION.md).
+The executor uses `james-core` policy/approval/budget contracts and a create-new, synchronized intent marker before sending input. Existing or unreadable intent markers block input. The marker remains until the user explicitly verifies the target, including after restart or uncertain failure. No interrupted action is retried. This is a conservative single-outstanding-action gate, not a transactional journal or automated outcome verification. Storage/power-loss durability and external application semantics are not proven by unit tests.
 
+The target application is whichever is foreground at dispatch; clicks address the primary monitor. This is not process/window isolation. Focus changes, screen movement, or applications with higher privileges can affect behavior. Display dimensions are rechecked, but unchanged dimensions do not prove unchanged content. Never approve based only on the model's rationale. Input can submit, send, or delete depending on the target. Closing James cancels and waits for native helpers to terminate; already-sent input cannot be undone. Killing the process externally is not cancellation proof.
 
-## Desktop chat preview
+Windows helpers run fixed embedded scripts through the system PowerShell path; user/model strings are JSON stdin, never interpolated executable commands. Native input requires platform API interop inside fixed helpers; the Rust workspace still forbids unsafe Rust. These helpers are not sandboxed. Desktop effects outside Windows return unsupported errors.
 
-The `james-models` adapter constructs HTTP URLs only for numeric ports on `127.0.0.1`, bounds message and response sizes, uses timeouts, and makes no cloud fallback. It does **not** authenticate the server process or prove the model's inference is local. Use a trusted local LM Studio instance.
+## Reporting
 
-Desktop conversations and model choice are stored as plaintext JSON in the user's local application data directory. That is not encryption, durable transactional storage, or protected deletion. The desktop uses a research-identity system prompt but does not ingest Lab research or authorize model-proposed tool calls. The `james-core` permissions and approval tokens do not yet protect a real desktop execution path.
+No production version is supported. Use [GitHub private vulnerability reporting](https://github.com/topherchris420/james/security/advisories/new) for a private reproduction. Do not post credentials, screenshots, or private research in public issues.

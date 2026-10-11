@@ -1,5 +1,31 @@
 # Implementation validation
 
+## v0.3 integration pass (2026-10-11)
+
+### Delayed-action expiry regression fix
+
+The UI's original five-second countdown now has a two-second dispatch grace period.
+The same approval window reaches the worker and is checked before intent recording
+and input handoff. Monotonic and wall clocks reject overdue resume, backward wall-clock
+changes and a capture that becomes stale during the countdown. Expiry clears the
+capture and requires a new review. All 11 local desktop tests passed, including five
+new regression cases for timing, suspend/clock changes and expired worker dispatch;
+the tests use simulated clocks and effects and send no real computer input.
+
+The records below this section describe earlier milestones. Current v0.3 adds native screen and voice helpers, reviewed Windows input, the real Lab discovery client, and installer packaging. Protocol and contract checks do not establish inference quality or automatic outcome verification.
+
+- Actual Lab Vite server: read-only status and discovery verified at upstream commit `a2d7882e1317af1ea1a333c31ead033f0d87c60e`; reachable, available, idle. No experiment started.
+- Windows helpers: in-memory PNG capture and cancellation of launched speech helpers exercised. A capture test hit the original 20-second deadline under host load; subsequent compiled-test and direct-helper retries passed in 12.30 and 11.41 seconds, returning a 1920×1200 PNG. After increasing the cancellable startup deadline to 60 seconds, all seven platform tests (including both opt-in smoke tests) passed in 7.66 seconds. Microphone accuracy and actual target-application input remain separate hands-on checks.
+- REA public Korso page observation: bounded finding ledger in [DESKTOP-RESEARCH.md](DESKTOP-RESEARCH.md). No desktop-internals equivalence claimed.
+- Inno Setup 6.4.3 template compilation and script parameter/path validation passed. The portable compiler download passed package SHA-256 and valid publisher-signature verification. Clean-machine installation lifecycle and signing remain outstanding.
+- [Desktop CI run 38153765315](https://github.com/topherchris420/james/actions/runs/38153765315) subsequently passed Windows and Ubuntu tests/lint, built the optimized Windows executable, compiled the real installer, and uploaded both distributions with the installer checksum. This is build verification, not a clean-machine installation test. The later capture-timeout-only adjustment also passed all seven local platform tests.
+- At commit `1433a22dac97f102eda18bd321f62a5949038cd1`, [desktop CI](https://github.com/topherchris420/james/actions/runs/38152527843) passed all 56 workspace tests, formatting and strict Clippy on Windows and Ubuntu. Windows also completed the optimized MSVC executable build. Packaging then failed because Chocolatey did not provide the pinned compiler; the portable verified compiler replaces that dependency. The separate six-job core Rust compatibility matrix also passed.
+- The local Rust 1.99.0 GNU workspace check and debug desktop build succeeded. The native window was launched and its Settings, Screen, Computer control and Lab panels inspected. Attempting to review a key without a capture was correctly blocked. This was a navigation and guard check, not an executed input action or usability study.
+- No LM Studio server was available on local port 1234. Model/vision protocol tests passed using mock HTTP servers; real inference, screenshot interpretation and proposal quality were not exercised. No microphone accuracy claim is made.
+- Inspection of the first optimized executable found `VCRUNTIME140.dll` among its imports. The final Windows distribution configuration uses static CRT linkage and CI now rejects a separate VC runtime dependency before packaging. Earlier preview artifacts predate this packaging correction.
+
+### Earlier milestone history
+
 Date: 2026-10-11. Scope: `james-core`, the new LM Studio adapter, the desktop build and CI. No human desktop usability study or comparative benchmark was run.
 
 ## Original local tested configuration
