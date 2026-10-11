@@ -2,6 +2,16 @@
 
 ## v0.3 integration pass (2026-10-11)
 
+### Delayed-action expiry regression fix
+
+The UI's original five-second countdown now has a two-second dispatch grace period.
+The same approval window reaches the worker and is checked before intent recording
+and input handoff. Monotonic and wall clocks reject overdue resume, backward wall-clock
+changes and a capture that becomes stale during the countdown. Expiry clears the
+capture and requires a new review. All 11 local desktop tests passed, including five
+new regression cases for timing, suspend/clock changes and expired worker dispatch;
+the tests use simulated clocks and effects and send no real computer input.
+
 The records below this section describe earlier milestones. Current v0.3 adds native screen and voice helpers, reviewed Windows input, the real Lab discovery client, and installer packaging. Protocol and contract checks do not establish inference quality or automatic outcome verification.
 
 - Actual Lab Vite server: read-only status and discovery verified at upstream commit `a2d7882e1317af1ea1a333c31ead033f0d87c60e`; reachable, available, idle. No experiment started.

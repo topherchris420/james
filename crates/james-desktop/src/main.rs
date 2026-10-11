@@ -1,6 +1,7 @@
 //! Native local-first research companion. Desktop effects always require review.
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 mod review;
+mod timing;
 use eframe::egui::{self, Color32, RichText};
 use james_lab::{LabClient, ResearchContext};
 use james_models::{ChatMessage, LocalClient};
@@ -9,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
     sync::mpsc::{self, Receiver, TryRecvError},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 const TEAL: Color32 = Color32::from_rgb(62, 193, 178);
@@ -95,7 +96,7 @@ struct Pending {
 }
 struct Scheduled {
     review: ReviewedAction,
-    at: Instant,
+    window: timing::ApprovalWindow,
 }
 struct JamesApp {
     port: String,
@@ -757,7 +758,11 @@ impl JamesApp {
                     Ok(review) => {
                         self.scheduled = Some(Scheduled {
                             review,
-                            at: Instant::now() + Duration::from_secs(5),
+                            window: timing::ApprovalWindow::new(
+                                Instant::now(),
+                                SystemTime::now(),
+                                pending.captured_at,
+                            ),
                         });
                         self.status = "Action approved. Focus the intended target now; Stop cancels the countdown.".into();
                     }
@@ -893,16 +898,35 @@ impl eframe::App for JamesApp {
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.stop();
         }
-        if self
+        if let Some(state) = self
             .scheduled
             .as_ref()
-            .is_some_and(|s| Instant::now() >= s.at)
+            .map(|s| s.window.state(Instant::now(), SystemTime::now()))
         {
-            let scheduled = self.scheduled.take().expect("due action");
-            let path = self.session.with_file_name("action-intent.json");
-            self.launch("Executing the reviewed input...", move |cancel| {
-                WorkerResult::Action(review::execute(scheduled.review, &path, &cancel))
-            });
+            match state {
+                timing::State::Waiting => {}
+                timing::State::Expired => {
+                    self.scheduled = None;
+                    self.pending = None;
+                    self.screen = None;
+                    self.attach_screen = false;
+                    self.page = Page::Screen;
+                    self.status =
+                        "Approval expired. Capture the screen and review the action again.".into();
+                }
+                timing::State::Ready => {
+                    let scheduled = self.scheduled.take().expect("due action");
+                    let path = self.session.with_file_name("action-intent.json");
+                    self.launch("Executing the reviewed input...", move |cancel| {
+                        WorkerResult::Action(review::execute(
+                            scheduled.review,
+                            &path,
+                            &cancel,
+                            || scheduled.window.current(),
+                        ))
+                    });
+                }
+            }
         }
         if self.busy() || self.lab_connected {
             ctx.request_repaint_after(Duration::from_millis(100));
@@ -1018,7 +1042,11 @@ impl eframe::App for JamesApp {
                     Color32::YELLOW,
                     format!(
                         "Input in {} seconds — focus the target app",
-                        s.at.saturating_duration_since(Instant::now()).as_secs() + 1
+                        s.window
+                            .at
+                            .saturating_duration_since(Instant::now())
+                            .as_secs()
+                            + 1
                     ),
                 );
             }

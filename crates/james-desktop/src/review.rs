@@ -46,15 +46,39 @@ pub fn acknowledge(path: &Path) -> Result<(), String> {
         Err(e) => Err(format!("Cannot clear action record: {e}")),
     }
 }
-pub fn execute(review: ReviewedAction, path: &Path, cancel: &Cancellation) -> Result<(), String> {
-    execute_with(review, path, cancel, james_platform::execute)
+pub fn execute(
+    review: ReviewedAction,
+    path: &Path,
+    cancel: &Cancellation,
+    approval_is_current: impl Fn() -> bool,
+) -> Result<(), String> {
+    execute_guarded(
+        review,
+        path,
+        cancel,
+        approval_is_current,
+        james_platform::execute,
+    )
 }
+#[cfg(test)]
 fn execute_with(
     review: ReviewedAction,
     path: &Path,
     cancel: &Cancellation,
     effect: impl FnOnce(ReviewedAction, &Cancellation) -> Result<(), james_platform::Error>,
 ) -> Result<(), String> {
+    execute_guarded(review, path, cancel, || true, effect)
+}
+fn execute_guarded(
+    review: ReviewedAction,
+    path: &Path,
+    cancel: &Cancellation,
+    approval_is_current: impl Fn() -> bool,
+    effect: impl FnOnce(ReviewedAction, &Cancellation) -> Result<(), james_platform::Error>,
+) -> Result<(), String> {
+    if !approval_is_current() {
+        return Err("Approval expired. Capture the screen and review the action again.".into());
+    }
     if cancel.is_cancelled() {
         return Err("Action cancelled before dispatch".into());
     }
@@ -87,13 +111,22 @@ fn execute_with(
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     run.dispatch_with_journal(id, policy, start.elapsed().as_millis() as u64, |_, _| {
-        if cancel.is_cancelled() { return Err(()); }
+        if cancel.is_cancelled() || !approval_is_current() { return Err(()); }
         // create_new is also a cross-process gate. Never overwrite an unresolved intent.
         let mut file = OpenOptions::new().write(true).create_new(true).open(path).map_err(|_| ())?;
         let record = serde_json::json!({"schema":"james-action-intent/v1", "action":serde_json::from_str::<serde_json::Value>(&exact).map_err(|_| ())?, "state":"requires-human-verification"});
         file.write_all(record.to_string().as_bytes()).map_err(|_| ())?;
         file.sync_all().map_err(|_| ())
-    }).map_err(|e| format!("Input blocked: {e}. Inspect any previous action record before continuing."))?;
+    }).map_err(|e| {
+        if !approval_is_current() {
+            "Approval expired. Capture the screen and review again; inspect any action record.".into()
+        } else {
+            format!("Input blocked: {e}. Inspect any previous action record before continuing.")
+        }
+    })?;
+    if !approval_is_current() {
+        return Err("Approval expired before input. Capture the screen and review again; check and acknowledge any action record.".into());
+    }
     if cancel.is_cancelled() {
         return Err(
             "Cancelled before input. Check the target and acknowledge the action record.".into(),
@@ -184,6 +217,40 @@ mod tests {
         .unwrap();
         assert!(execute_with(approval, &path, &cancel, |_, _| panic!("cancelled")).is_err());
         assert!(!path.exists());
+    }
+    #[test]
+    fn expired_ui_approval_never_records_intent_or_executes() {
+        let path = path();
+        let approval = ReviewedAction::approve(Action::Click { x: 1, y: 1 }, 100, 100).unwrap();
+        let result = execute_guarded(
+            approval,
+            &path,
+            &Cancellation::default(),
+            || false,
+            |_, _| panic!("expired approval cannot execute"),
+        );
+        assert!(result.unwrap_err().starts_with("Approval expired"));
+        assert!(!path.exists());
+    }
+    #[test]
+    fn expiry_during_dispatch_does_not_refresh_the_ui_approval() {
+        let path = path();
+        let checks = std::cell::Cell::new(0);
+        let approval = ReviewedAction::approve(Action::Click { x: 1, y: 1 }, 100, 100).unwrap();
+        let result = execute_guarded(
+            approval,
+            &path,
+            &Cancellation::default(),
+            || {
+                let checked = checks.get();
+                checks.set(checked + 1);
+                checked == 0
+            },
+            |_, _| panic!("worker must preserve the original deadline"),
+        );
+        assert!(result.unwrap_err().starts_with("Approval expired"));
+        assert!(!path.exists());
+        let _ = std::fs::remove_dir(path.parent().unwrap());
     }
     #[test]
     fn failed_input_remains_uncertain_until_acknowledged() {
