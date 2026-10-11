@@ -19,10 +19,10 @@ jobs:
       - name: Toolchain
         run: rustup toolchain install ${{ matrix.rust }} --profile minimal --component rustfmt --component clippy
       - name: Core contracts
-        run: cargo +${{ matrix.rust }} test -p james-core --all-targets --locked --offline
+        run: cargo +${{ matrix.rust }} test -p james-core --all-targets --locked
       - name: Core Clippy
-        run: cargo +${{ matrix.rust }} clippy -p james-core --all-targets --locked --offline -- -D warnings
+        run: cargo +${{ matrix.rust }} clippy -p james-core --all-targets --locked -- -D warnings
       - name: Original demonstration
-        run: cargo +${{ matrix.rust }} run -p james-core --locked --offline --example approval_demo
+        run: cargo +${{ matrix.rust }} run -p james-core --locked --example approval_demo
       - name: Supervised demonstration
-        run: cargo +${{ matrix.rust }} run -p james-core --locked --offline --example supervised_demo
+        run: cargo +${{ matrix.rust }} run -p james-core --locked --example supervised_demo

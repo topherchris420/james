@@ -54,7 +54,9 @@ pub struct LocalClient {
 impl LocalClient {
     pub fn new(port: u16) -> Result<Self, ApiError> {
         if port == 0 {
-            return Err(ApiError::InvalidConfig("Choose a nonzero LM Studio port".into()));
+            return Err(ApiError::InvalidConfig(
+                "Choose a nonzero LM Studio port".into(),
+            ));
         }
         Ok(Self { port })
     }
@@ -116,9 +118,13 @@ fn read_limited(response: ureq::Response) -> Result<String, ApiError> {
         .into_reader()
         .take(MAX_REPLY_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|err| ApiError::Transport(format!("Reading local model response failed: {err}")))?;
+        .map_err(|err| {
+            ApiError::Transport(format!("Reading local model response failed: {err}"))
+        })?;
     if bytes.len() as u64 > MAX_REPLY_BYTES {
-        return Err(ApiError::Protocol("Local model response exceeded 1 MiB limit".into()));
+        return Err(ApiError::Protocol(
+            "Local model response exceeded 1 MiB limit".into(),
+        ));
     }
     String::from_utf8(bytes)
         .map_err(|_| ApiError::Protocol("Local model response was not UTF-8".into()))
@@ -129,19 +135,25 @@ fn validate_request(model: &str, messages: &[ChatMessage]) -> Result<(), ApiErro
         return Err(ApiError::InvalidConfig("Select a valid model ID".into()));
     }
     if messages.is_empty() || messages.len() > MAX_MESSAGES {
-        return Err(ApiError::InvalidConfig("Conversation length is outside the allowed range".into()));
+        return Err(ApiError::InvalidConfig(
+            "Conversation length is outside the allowed range".into(),
+        ));
     }
     let mut total_bytes = 0_usize;
     for message in messages {
         if !matches!(message.role.as_str(), "system" | "user" | "assistant")
             || message.content.len() > MAX_MESSAGE_BYTES
         {
-            return Err(ApiError::InvalidConfig("Invalid role or oversized message".into()));
+            return Err(ApiError::InvalidConfig(
+                "Invalid role or oversized message".into(),
+            ));
         }
         total_bytes = total_bytes.saturating_add(message.content.len());
     }
     if total_bytes > MAX_TOTAL_BYTES {
-        return Err(ApiError::InvalidConfig("Conversation context exceeds 256 KiB".into()));
+        return Err(ApiError::InvalidConfig(
+            "Conversation context exceeds 256 KiB".into(),
+        ));
     }
     Ok(())
 }
@@ -149,7 +161,9 @@ fn validate_request(model: &str, messages: &[ChatMessage]) -> Result<(), ApiErro
 pub fn parse_models(body: &str) -> Result<Vec<String>, ApiError> {
     let value: Value = serde_json::from_str(body)
         .map_err(|_| ApiError::Protocol("Malformed JSON in /v1/models".into()))?;
-    let rows = value.get("data").and_then(Value::as_array)
+    let rows = value
+        .get("data")
+        .and_then(Value::as_array)
         .ok_or_else(|| ApiError::Protocol("Model list did not contain a data array".into()))?;
     let mut models: Vec<String> = rows
         .iter()
@@ -165,10 +179,13 @@ pub fn parse_models(body: &str) -> Result<Vec<String>, ApiError> {
 pub fn parse_chat(body: &str) -> Result<String, ApiError> {
     let value: Value = serde_json::from_str(body)
         .map_err(|_| ApiError::Protocol("Malformed JSON in chat response".into()))?;
-    let content = value.pointer("/choices/0/message/content")
+    let content = value
+        .pointer("/choices/0/message/content")
         .and_then(Value::as_str)
         .filter(|answer| !answer.trim().is_empty())
-        .ok_or_else(|| ApiError::Protocol("Chat response had no assistant message content".into()))?;
+        .ok_or_else(|| {
+            ApiError::Protocol("Chat response had no assistant message content".into())
+        })?;
     Ok(content.to_owned())
 }
 
@@ -206,7 +223,8 @@ mod tests {
 
     #[test]
     fn parses_models_with_deterministic_order_and_deduplication() {
-        let items = parse_models(r#"{"data":[{"id":"z"},{"id":"a"},{"id":"a"},{"other":1}]}"#).unwrap();
+        let items =
+            parse_models(r#"{"data":[{"id":"z"},{"id":"a"},{"id":"a"},{"other":1}]}"#).unwrap();
         assert_eq!(items, vec!["a", "z"]);
         assert!(parse_models(r#"{"hello":true}"#).is_err());
     }
@@ -214,7 +232,8 @@ mod tests {
     #[test]
     fn parses_chat_and_fails_on_missing_content() {
         assert_eq!(
-            parse_chat(r#"{"choices":[{"message":{"content":"Evidence remains tentative."}}]}"#).unwrap(),
+            parse_chat(r#"{"choices":[{"message":{"content":"Evidence remains tentative."}}]}"#)
+                .unwrap(),
             "Evidence remains tentative."
         );
         assert!(parse_chat(r#"{"choices":[]}"#).is_err());
@@ -233,7 +252,9 @@ mod tests {
             r#"{"choices":[{"message":{"role":"assistant","content":"A testable idea."}}]}"#,
             "200 OK",
         );
-        let result = client.chat("qwen-local", &[ChatMessage::new("user", "Propose a test")]).unwrap();
+        let result = client
+            .chat("qwen-local", &[ChatMessage::new("user", "Propose a test")])
+            .unwrap();
         assert_eq!(result, "A testable idea.");
         worker.join().unwrap();
     }

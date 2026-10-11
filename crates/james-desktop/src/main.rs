@@ -74,8 +74,15 @@ impl Default for JamesApp {
             port: saved.port.to_string(),
             model: saved.model,
             available_models: Vec::new(),
-            messages: saved.messages.into_iter().rev().take(MAX_SAVED_MESSAGES).collect::<Vec<_>>()
-                .into_iter().rev().collect(),
+            messages: saved
+                .messages
+                .into_iter()
+                .rev()
+                .take(MAX_SAVED_MESSAGES)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect(),
             draft: String::new(),
             status: "Start LM Studio's Local Server, then discover models.".to_owned(),
             worker: None,
@@ -86,7 +93,8 @@ impl Default for JamesApp {
 
 impl JamesApp {
     fn current_port(&self) -> Result<u16, String> {
-        self.port.parse::<u16>()
+        self.port
+            .parse::<u16>()
             .ok()
             .filter(|port| *port > 0)
             .ok_or_else(|| "Enter a valid localhost port (1–65535).".to_owned())
@@ -100,8 +108,16 @@ impl JamesApp {
         let data = SavedSession {
             port,
             model: self.model.clone(),
-            messages: self.messages.iter().rev().take(MAX_SAVED_MESSAGES)
-                .cloned().collect::<Vec<_>>().into_iter().rev().collect(),
+            messages: self
+                .messages
+                .iter()
+                .rev()
+                .take(MAX_SAVED_MESSAGES)
+                .cloned()
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect(),
         };
         let result = (|| -> Result<(), String> {
             if let Some(parent) = self.session.parent() {
@@ -153,9 +169,16 @@ impl JamesApp {
         self.draft.clear();
         self.save();
         let mut context = vec![ChatMessage::new("system", SYSTEM_CONTEXT)];
-        let recent: Vec<_> = self.messages.iter()
-            .rev().take(39).cloned().collect::<Vec<_>>()
-            .into_iter().rev().collect();
+        let recent: Vec<_> = self
+            .messages
+            .iter()
+            .rev()
+            .take(39)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
         context.extend(recent);
         let (tx, rx) = mpsc::channel();
         self.worker = Some(rx);
@@ -176,7 +199,9 @@ impl JamesApp {
             Ok(WorkerResult::Models(Ok(models))) => {
                 self.available_models = models;
                 if self.available_models.is_empty() {
-                    self.status = "Server connected, but no models were reported. Load one in LM Studio.".into();
+                    self.status =
+                        "Server connected, but no models were reported. Load one in LM Studio."
+                            .into();
                 } else {
                     if !self.available_models.contains(&self.model) {
                         self.model = self.available_models[0].clone();
@@ -245,7 +270,7 @@ impl eframe::App for JamesApp {
                 ui.text_edit_singleline(&mut self.model);
                 if !self.available_models.is_empty() {
                     egui::ComboBox::from_id_salt("loaded-models")
-                        .selected_text(self.model.as_str())
+                        .selected_text(self.model.clone())
                         .show_ui(ui, |ui| {
                             for available in &self.available_models {
                                 ui.selectable_value(&mut self.model, available.clone(), available);
@@ -286,7 +311,11 @@ impl eframe::App for JamesApp {
             let shortcut = compose.has_focus()
                 && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.ctrl);
             ui.horizontal(|ui| {
-                if ui.add_enabled(!busy, egui::Button::new("Send to local model")).clicked() || (shortcut && !busy) {
+                if ui
+                    .add_enabled(!busy, egui::Button::new("Send to local model"))
+                    .clicked()
+                    || (shortcut && !busy)
+                {
                     self.send();
                 }
                 if busy {
@@ -312,7 +341,9 @@ impl eframe::App for JamesApp {
                         ui.add_space(30.0);
                         ui.label(RichText::new("A laboratory without walls.").size(21.0));
                         ui.add_space(8.0);
-                        ui.label("Connect a locally loaded model to begin a conversation with James.");
+                        ui.label(
+                            "Connect a locally loaded model to begin a conversation with James.",
+                        );
                     }
                     for item in &self.messages {
                         let (name, color) = if item.role == "user" {
