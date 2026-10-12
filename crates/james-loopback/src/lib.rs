@@ -285,8 +285,13 @@ impl<'a> Request<'a> {
         let limits = self.client.limits;
         let mut header_bytes = 0_usize;
         let (status, headers) = loop {
-            let (status, headers) =
-                read_head(&mut reader, &clock, limits.headers, &mut header_bytes, &abort)?;
+            let (status, headers) = read_head(
+                &mut reader,
+                &clock,
+                limits.headers,
+                &mut header_bytes,
+                &abort,
+            )?;
             // A 1xx interim response carries no body; the real one follows.
             if (100..200).contains(&status) {
                 continue;
@@ -753,8 +758,9 @@ impl Body {
                 }
                 Framing::Chunked(Chunk::Size) => {
                     let mut used = 0;
-                    let line = read_line(&mut self.inner, &self.clock, 1024, &mut used, &self.abort)?
-                        .ok_or(Error::Closed)?;
+                    let line =
+                        read_line(&mut self.inner, &self.clock, 1024, &mut used, &self.abort)?
+                            .ok_or(Error::Closed)?;
                     let size = parse_chunk_size(&line)?;
                     self.framing = Framing::Chunked(if size == 0 {
                         Chunk::Trailers
@@ -780,12 +786,13 @@ impl Body {
                 }
                 Framing::Chunked(Chunk::DataEnd) => {
                     let mut used = 0;
-                    let line = match read_line(&mut self.inner, &self.clock, 16, &mut used, &self.abort) {
-                        Ok(Some(line)) => line,
-                        Ok(None) => return Err(Error::Closed),
-                        Err(Error::TooLarge) => Vec::from(b"x"),
-                        Err(error) => return Err(error),
-                    };
+                    let line =
+                        match read_line(&mut self.inner, &self.clock, 16, &mut used, &self.abort) {
+                            Ok(Some(line)) => line,
+                            Ok(None) => return Err(Error::Closed),
+                            Err(Error::TooLarge) => Vec::from(b"x"),
+                            Err(error) => return Err(error),
+                        };
                     if !line.is_empty() {
                         return Err(Error::Malformed("chunk data not followed by CRLF".into()));
                     }
@@ -794,9 +801,14 @@ impl Body {
                 Framing::Chunked(Chunk::Trailers) => {
                     let mut used = 0;
                     loop {
-                        let line =
-                            read_line(&mut self.inner, &self.clock, self.header_budget, &mut used, &self.abort)?
-                                .ok_or(Error::Closed)?;
+                        let line = read_line(
+                            &mut self.inner,
+                            &self.clock,
+                            self.header_budget,
+                            &mut used,
+                            &self.abort,
+                        )?
+                        .ok_or(Error::Closed)?;
                         if line.is_empty() {
                             break;
                         }
