@@ -9,30 +9,6 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 0.4.0 were never published as releases. A version with a suffix, such as
 `0.4.0-preview.1`, is published as a prerelease.
 
-## Unreleased
-
-### Added
-
-- **What's new after an upgrade.** The first time an upgraded James starts,
-  it shows this version's notes from this changelog, built into the app.
-  Got it, Esc or the close button dismisses them for good. James still never
-  connects to the internet to look for updates. The saved session now records
-  the version that saved it; sessions saved by older versions load unchanged
-  and show no notes.
-
-### Changed
-
-- **Windows builds can be signed with Azure Artifact Signing**, Microsoft's
-  service that keeps the signing key in its own hardware; new certificates can
-  no longer be issued as a `.pfx` file. Setup is in
-  [docs/INSTALLER.md](docs/INSTALLER.md#getting-a-windows-signing-identity).
-  Builds stay unsigned, and say so, until a maintainer configures it.
-- **Screenshots wait for James to leave the picture** (Windows). After the
-  three-second delay, the capture helper checks that none of James's windows
-  still covers the screen, waits for the display to finish redrawing, and only
-  then takes the picture. If James is still visible after 1.5 seconds, the
-  picture is taken anyway and James says it may appear in it.
-
 ## 0.4.0-preview.1 — 2026-10-12
 
 The first published build of 0.4.0, released as a prerelease because it is a
@@ -80,10 +56,18 @@ not been verified; the release classification is **developer preview**.
 - Release builds can be Authenticode-signed (Windows) and signed and
   notarized with a Developer ID (macOS) when a maintainer configures real
   credentials; releases carry build-provenance attestations and a
-  `release-metadata.json` that states whether signing happened.
+  `release-metadata.json` that states whether signing happened. Windows
+  signing works with Azure Artifact Signing, Microsoft's service that keeps
+  the key in its own hardware (new certificates can no longer be issued as a
+  `.pfx` file), or with an existing certificate file; setup is in
+  [docs/INSTALLER.md](docs/INSTALLER.md#getting-a-windows-signing-identity).
 - Every package includes `THIRD-PARTY-NOTICES.txt`: the license of each
   open-source crate built into that package and the texts the crate
   publishes, generated from `Cargo.lock` by `tools/notices`.
+- **What's new after an upgrade.** From this version on, the first time an
+  upgraded James starts it shows that version's notes from this changelog,
+  built into the app. Got it, Esc or the close button dismisses them for
+  good. James still never connects to the internet to look for updates.
 
 ### Changed
 
@@ -91,6 +75,11 @@ not been verified; the release classification is **developer preview**.
   unloaded model, a full context window, a model that cannot read images or
   chat, a model still loading, and a model that needs a sign-in. The
   server's own words are always shown too.
+- **Screenshots wait for James to leave the picture** (Windows). After the
+  three-second delay, the capture helper checks that none of James's windows
+  still covers the screen, waits for the display to finish redrawing, and only
+  then takes the picture. If James is still visible after 1.5 seconds, the
+  picture is taken anyway and James says it may appear in it.
 - Screenshots are scaled to at most 1600 pixels before a model sees them;
   suggested clicks are mapped back to full-screen coordinates for review.
 - Conversation history is trimmed to fit a known context window, and James
@@ -100,8 +89,9 @@ not been verified; the release classification is **developer preview**.
 - The action record format is now `james-action-intent/v2` (id, time,
   screen, target window and outcome). A v1 record from 0.3 is still read and
   still blocks new actions until checked.
-- The session file gains `keep_history`, `preferences` and `setup`. Sessions
-  from 0.3 load unchanged; one with a model already chosen skips setup.
+- The session file gains `keep_history`, `preferences`, `setup` and
+  `last_version`. Sessions from 0.3 load unchanged; one with a model already
+  chosen skips setup.
 
 ### Fixed
 
