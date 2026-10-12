@@ -4,7 +4,7 @@ James v0.3 is an unsigned desktop preview, not an OS sandbox. The desktop now in
 
 ## Network and context
 
-Model and Lab URLs use numeric ports on `127.0.0.1`; redirects and environment proxies are disabled. Requests and responses are bounded and timed out. A local endpoint does not authenticate its process or prove inference stays on-device. Use trusted local servers. No API keys are stored and authenticated model servers are not yet supported.
+Model and Lab requests go through `james-loopback`, whose only address input is a port. It connects to `127.0.0.1` or `::1` and cannot express another destination; there is no DNS, proxy, TLS or redirect following. Header, line and body sizes are bounded, and connections have connect, idle and total timeouts. Stop shuts the socket down from the UI thread. A local endpoint does not authenticate its process or prove inference stays on-device. Use trusted local servers. No API keys are stored and authenticated model servers are not yet supported.
 
 Screen capture occurs only on an explicit click. The preview remains in memory; attachment to a question or action proposal is explicit. Screenshots and raw audio are not saved by James; on macOS and Linux, tools that need a file (screen capture, whisper.cpp) use a fresh `0700` temporary folder created with create-not-reuse semantics and removed immediately. Voice input can only become chat text; it has no path to action approval. Conversation text, including dictation and model descriptions of screen content, is plaintext in the local session file. Model-server logging has its own retention policy.
 

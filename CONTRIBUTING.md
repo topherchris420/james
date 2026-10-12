@@ -1,6 +1,6 @@
 # Contributing
 
-Start with [README.md](README.md), the [architecture](docs/ARCHITECTURE.md), and the [roadmap](docs/ROADMAP.md). The repository contains an executable contract foundation and a native desktop text-chat preview. Keep changes small enough to review and state which integration, if any, they actually implement.
+Start with [README.md](README.md), the [architecture](docs/ARCHITECTURE.md), and the [roadmap](docs/ROADMAP.md). The repository contains an executable contract foundation and a native desktop preview with streamed local-model chat, screen context, voice and reviewed Windows input. All network access goes through `crates/james-loopback`; do not add another HTTP client. Keep changes small enough to review and state which integration, if any, they actually implement.
 
 Run the README formatting, tests, strict Clippy and Rust examples, plus model/desktop builds when touching those crates. First-time workspace builds need Cargo registry access. Add regression tests for authorization, journal failure, recovery, parsing, cancellation, or budget behavior affected by your change. Formatting-only changes do not need new tests.
 

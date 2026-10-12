@@ -24,7 +24,7 @@ In **Settings**, select **LM Studio**, **Ollama**, **llama.cpp server** or **Oth
 
 Model IDs and presence in a list are not proof of successful inference, tool calling, vision support or context length. JSON fixtures test request/response contracts; run `scripts/test-local-provider.ps1` with the server and model on **your machine** for actual inference. If a provider does not implement the expected compatible routes, James reports an error rather than silently switching providers. Remote URLs, API keys, cloud fallback and network exposure are deliberately not implemented.
 
-**Currently implemented:** non-streaming text requests, optional explicit PNG attachment for compatible vision models, bounded responses and timeouts, worker-thread UI offloading, session persistence. **Not implemented:** token streaming, network-level abortion of a dispatched request, tool calling, model capability negotiation, authenticated remote inference, secure credential storage. Stop discards cancelled responses but the server may continue processing.
+**Currently implemented:** streamed text replies (server-sent events for OpenAI-compatible servers, NDJSON for Ollama, with a fallback for servers that answer in one piece), optional explicit PNG attachment for compatible vision models, bounded responses and idle timeouts, a Stop that closes the connection, worker-thread UI offloading, session persistence. **Not implemented:** tool calling, model capability negotiation, authenticated remote inference, secure credential storage. Closing the connection does not prove the server stopped generating; that is the server's behavior.
 
 ## Desktop capabilities
 

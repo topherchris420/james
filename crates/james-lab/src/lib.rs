@@ -1,12 +1,16 @@
 //! Read-only adapter for lop-nur-twin's actual local discovery API.
-//! This client never starts, authorizes, changes or stops research.
+//! This client never starts, authorizes, changes or stops research. Its only
+//! network path is `james-loopback`, so a port is the whole address.
 
+use james_loopback::{Client, Error as HttpError, Limits, Timeouts};
 use serde::Deserialize;
 use serde_json::Value;
-use std::{fmt, io::Read, time::Duration};
+use std::{fmt, time::Duration};
 
-const MAX_BODY: u64 = 2 * 1024 * 1024;
+const MAX_BODY: usize = 2 * 1024 * 1024;
 const MAX_CONTEXT_BYTES: usize = 24 * 1024;
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+const TOTAL_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LabError(pub String);
@@ -105,48 +109,54 @@ impl LabClient {
     }
 
     fn get<T: serde::de::DeserializeOwned>(&self, path: &'static str) -> Result<T, LabError> {
-        // Numeric loopback avoids DNS, no user-selected paths, redirects disabled.
-        let response = ureq::AgentBuilder::new()
-            .redirects(0)
-            .try_proxy_from_env(false)
-            .timeout_connect(Duration::from_secs(2))
-            .timeout(Duration::from_secs(5))
-            .build()
-            .get(&format!("http://127.0.0.1:{}{path}", self.port))
-            .set("Accept", "application/json")
-            .call()
-            .map_err(|error| LabError(match error {
-                ureq::Error::Status(code, _) => format!("R.A.I.N. Lab returned HTTP {code}. Run its local development server and check the port."),
-                ureq::Error::Transport(_) => "Cannot reach R.A.I.N. Lab on the selected local port within 5 seconds".into(),
-            }))?;
+        // Loopback by construction: no DNS, no user-selected paths, redirects
+        // are never followed, and the whole exchange is bounded in time and size.
+        let client = Client::new(self.port)
+            .map_err(|error| LabError(error.to_string()))?
+            .with_timeouts(Timeouts {
+                connect: CONNECT_TIMEOUT,
+                idle: TOTAL_TIMEOUT,
+                total: Some(TOTAL_TIMEOUT),
+            })
+            .with_limits(Limits {
+                headers: 16 * 1024,
+                body: MAX_BODY,
+            });
+        let response = client
+            .get(path)
+            .header("Accept", "application/json")
+            .send()
+            .map_err(|error| {
+                LabError(match error {
+                    HttpError::Unreachable(_) | HttpError::TimedOut | HttpError::Io(_) => {
+                        "Cannot reach R.A.I.N. Lab on the selected local port within 5 seconds"
+                            .into()
+                    }
+                    HttpError::Closed => {
+                        "R.A.I.N. Lab closed the connection before answering".into()
+                    }
+                    other => format!("R.A.I.N. Lab returned an unexpected HTTP response: {other}"),
+                })
+            })?;
         if response.status() != 200 {
-            return Err(LabError(
-                "R.A.I.N. Lab did not return HTTP 200 (redirects are refused)".into(),
-            ));
+            return Err(LabError(format!(
+                "R.A.I.N. Lab returned HTTP {}. Run its local development server and check the port (redirects are refused).",
+                response.status()
+            )));
         }
-        let mime = response
-            .header("Content-Type")
-            .unwrap_or("")
-            .split(';')
-            .next()
-            .unwrap_or("")
-            .trim();
-        if !mime.eq_ignore_ascii_case("application/json") {
+        if response.media_type().as_deref() != Some("application/json") {
             return Err(LabError(
                 "The selected port is not a R.A.I.N. Lab JSON endpoint".into(),
             ));
         }
-        let mut bytes = Vec::new();
-        response
-            .into_reader()
-            .take(MAX_BODY + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|_| LabError("Could not finish reading R.A.I.N. Lab response".into()))?;
-        if bytes.len() as u64 > MAX_BODY {
-            return Err(LabError(
-                "Lab snapshot exceeds 2 MiB; reduce the Lab history before refreshing".into(),
-            ));
-        }
+        let bytes = response.read_to_end(MAX_BODY).map_err(|error| {
+            LabError(match error {
+                HttpError::TooLarge => {
+                    "Lab snapshot exceeds 2 MiB; reduce the Lab history before refreshing".into()
+                }
+                _ => "Could not finish reading R.A.I.N. Lab response".into(),
+            })
+        })?;
         serde_json::from_slice(&bytes).map_err(|_| {
             LabError("R.A.I.N. Lab returned an invalid or incompatible JSON response".into())
         })
@@ -156,7 +166,11 @@ impl LabClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{io::Write, net::TcpListener, thread};
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+    };
 
     fn server(
         status: &str,
@@ -226,16 +240,23 @@ mod tests {
             ),
             ("200 OK", "text/html", "<html>Vite</html>".into()),
             ("302 Found", "application/json", fixture()),
-            (
-                "200 OK",
-                "application/json",
-                " ".repeat(MAX_BODY as usize + 1),
-            ),
+            ("200 OK", "application/json", " ".repeat(MAX_BODY + 1)),
         ] {
             let (client, join) = server(status, mime, body, "/api/rain/discovery");
             assert!(client.context().is_err());
             join.join().unwrap();
         }
+    }
+
+    #[test]
+    fn nothing_listening_is_reported_within_the_time_budget() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let started = std::time::Instant::now();
+        let error = LabClient::new(port).unwrap().context().unwrap_err();
+        assert!(error.0.starts_with("Cannot reach R.A.I.N. Lab"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]

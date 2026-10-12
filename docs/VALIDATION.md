@@ -1,5 +1,30 @@
 # Implementation validation
 
+## Streaming and Stop session (2026-10-12)
+
+This change moved every network request onto `james-loopback`, a new dependency-free HTTP/1.1 client whose only address input is a port. It also made model replies stream and made **Stop** close the connection.
+
+**Automated checks** on Linux x64 with Rust 1.97.0 stable, at the commit that added this section:
+
+| Check | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | Passed |
+| `cargo test --workspace --all-targets --locked` | 128 passed, 1 ignored (the opt-in screen capture smoke test) |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed |
+| Both `james-core` examples | Passed |
+| Rust 1.85.0: `james-core` tests, Clippy on `james-core`, `james-loopback`, `james-models`, `james-lab` | Passed |
+
+New tests: 21 in `james-loopback` (framing split across arbitrary writes, truncated bodies, header/body/line caps, idle and total timeouts, abort latency, redirects returned not followed, malformed and unsupported responses, IPv6 loopback fallback); 10 more in `james-models` (fragmented SSE across a UTF-8 boundary, NDJSON ordering, malformed frames, mid-stream disconnect, clean end without `[DONE]`, oversized replies, in-stream server errors, abort ending a stalled stream in under two seconds); one in `james-lab`; one in the desktop for a Stop pressed before the connection exists. Every server in these tests is a scripted socket on a random loopback port.
+
+**UI session.** A debug build ran under Xvfb (1400×1000, Mesa software OpenGL, `libxkbcommon-x11-0` installed) with a scratch `HOME`. A Python script on `127.0.0.1:8080` played an OpenAI-compatible server that streams one word every 0.35 seconds over chunked `text/event-stream`. Input came from `xdotool`; the composer needed an explicit `windowfocus` because no window manager ran, and synthetic Ctrl+Enter did not register, so **Send** was clicked.
+
+1. The request arrived with `stream: true`. The reply appeared in the Conversation word by word, with 11 words visible after 3.5 seconds and 21 after 6.5 seconds.
+2. **Stop** was clicked mid-reply. The server's next-but-one write failed with a broken pipe 0.7 seconds later, after 50 words. The 50 words stayed in the Conversation and in `session.json`, followed by "[Stopped by you before the reply finished.]".
+3. A second question, with the server at 0.04 seconds per word, completed: 68 words, saved whole with no label.
+4. After a restart, both replies were restored and the status line read "Ready · mock-model on llama.cpp server at 127.0.0.1:8080". The Talk button rendered as text; the microphone emoji that showed as an empty box is gone.
+
+**What this does not establish.** The server was a script, not LM Studio, Ollama or llama.cpp, so real streaming framing from those products is still unrecorded. Whether a real server stops generating when James closes the connection is that server's behavior and was not measured. No Windows or macOS UI run was made. This replaces the 90-second total read timeout recorded below with a 120-second idle limit between pieces of a reply, but no slow real model was rerun to confirm it.
+
 ## README screenshot session (2026-10-11)
 
 The two README screenshots come from a real run of the desktop app, not mockups.
