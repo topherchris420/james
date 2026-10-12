@@ -117,7 +117,8 @@ mod tests {
 
     #[test]
     fn marks_that_cannot_be_right_are_dropped() {
-        let reply = "Steps.\nMarks: 1 (1600, 5); 2 (5, 900); 4 (1, 1); 3 (7, 7); 3 (8, 8); 1 (2); junk";
+        let reply =
+            "Steps.\nMarks: 1 (1600, 5); 2 (5, 900); 4 (1, 1); 3 (7, 7); 3 (8, 8); 1 (2); junk";
         let (text, marks) = split_marks(reply, SENT);
         assert_eq!(text, "Steps.");
         // Off the picture, step four, a repeated step and malformed entries go.
