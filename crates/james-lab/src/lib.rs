@@ -144,10 +144,7 @@ impl LabClient {
                 response.status()
             )));
         }
-        if !response
-            .media_type()
-            .is_some_and(|mime| mime == "application/json")
-        {
+        if response.media_type().as_deref() != Some("application/json") {
             return Err(LabError(
                 "The selected port is not a R.A.I.N. Lab JSON endpoint".into(),
             ));

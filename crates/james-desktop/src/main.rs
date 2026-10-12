@@ -5,12 +5,15 @@ mod timing;
 mod voice;
 use eframe::egui::{self, Color32, RichText};
 use james_lab::{LabClient, ResearchContext};
-use james_models::{ChatMessage, LocalClient, LocalProvider};
+use james_models::{AbortHandle, ChatMessage, LocalClient, LocalProvider, StreamEvent};
 use james_platform::{Action, Cancellation, Key, ReviewedAction, Screenshot};
 use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
-    sync::mpsc::{self, Receiver, TryRecvError},
+    sync::{
+        Arc, Mutex,
+        mpsc::{self, Receiver, Sender, TryRecvError},
+    },
     time::{Duration, Instant, SystemTime},
 };
 
@@ -108,6 +111,8 @@ enum Page {
 }
 enum WorkerResult {
     Models(Result<Vec<String>, String>),
+    /// One streamed piece of the reply in progress. Never final.
+    Delta(String),
     Chat(Result<String, String>, Ask),
     Screen(Result<Screenshot, String>),
     Dictation(Result<String, String>),
@@ -117,9 +122,55 @@ enum WorkerResult {
 struct Worker {
     rx: Receiver<WorkerResult>,
     cancel: Cancellation,
+    abort: AbortSlot,
     label: &'static str,
     join: Option<std::thread::JoinHandle<()>>,
     wait_on_close: bool,
+}
+impl Worker {
+    /// Stops native helpers through the cancellation flag and closes any open
+    /// model connection, so a streaming reply ends on the wire, not just on screen.
+    fn stop(&self) {
+        self.cancel.cancel();
+        self.abort.abort();
+    }
+}
+/// Where a worker parks the connection it is streaming from. Whichever side
+/// arrives second (the handle or the Stop) performs the abort, so a Stop
+/// pressed before the connection exists still closes it the moment it does.
+#[derive(Clone, Default)]
+struct AbortSlot(Arc<Mutex<Option<AbortHandle>>>);
+impl AbortSlot {
+    fn slot(&self) -> std::sync::MutexGuard<'_, Option<AbortHandle>> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+    fn abort(&self) {
+        if let Some(handle) = self.slot().as_ref() {
+            handle.abort();
+        }
+    }
+}
+/// What a background task gets: the shared cancellation flag, a channel for
+/// progress before its final result, and a place to register a connection.
+struct Job {
+    cancel: Cancellation,
+    tx: Sender<WorkerResult>,
+    abort: AbortSlot,
+}
+impl Job {
+    fn send(&self, progress: WorkerResult) {
+        if !self.cancel.is_cancelled() {
+            let _ = self.tx.send(progress);
+        }
+    }
+    fn arm(&self, handle: AbortHandle) {
+        *self.abort.slot() = Some(handle.clone());
+        if self.cancel.is_cancelled() {
+            handle.abort();
+        }
+    }
 }
 struct Screen {
     capture: Screenshot,
@@ -142,6 +193,8 @@ struct JamesApp {
     model: String,
     available_models: Vec<String>,
     messages: Vec<ChatMessage>,
+    /// The reply arriving right now, shown live and committed when it ends.
+    streaming: Option<String>,
     draft: String,
     status: String,
     worker: Option<Worker>,
@@ -180,6 +233,16 @@ impl Default for JamesApp {
             whisper_program: optional_path(&saved.whisper_program),
             whisper_model: optional_path(&saved.whisper_model),
         };
+        let status = if saved.model.trim().is_empty() {
+            "Choose a local model provider in Settings to begin.".into()
+        } else {
+            format!(
+                "Ready · {} on {} at 127.0.0.1:{}",
+                saved.model,
+                saved.provider.label(),
+                saved.port
+            )
+        };
         Self {
             port: saved.port.to_string(),
             provider: saved.provider,
@@ -197,8 +260,9 @@ impl Default for JamesApp {
                 .into_iter()
                 .rev()
                 .collect(),
+            streaming: None,
             draft: String::new(),
-            status: "Choose a local model provider in Settings to begin.".into(),
+            status,
             worker: None,
             session,
             page: Page::Chat,
@@ -267,17 +331,24 @@ impl JamesApp {
     fn launch(
         &mut self,
         label: &'static str,
-        work: impl FnOnce(Cancellation) -> WorkerResult + Send + 'static,
+        work: impl FnOnce(&Job) -> WorkerResult + Send + 'static,
     ) {
         let cancel = Cancellation::default();
-        let worker_cancel = cancel.clone();
+        let abort = AbortSlot::default();
         let (tx, rx) = mpsc::channel();
+        let job = Job {
+            cancel: cancel.clone(),
+            tx,
+            abort: abort.clone(),
+        };
         let join = std::thread::spawn(move || {
-            let _ = tx.send(work(worker_cancel));
+            let result = work(&job);
+            let _ = job.tx.send(result);
         });
         self.worker = Some(Worker {
             rx,
             cancel,
+            abort,
             label,
             join: Some(join),
             wait_on_close: true,
@@ -287,7 +358,7 @@ impl JamesApp {
     fn launch_model(
         &mut self,
         label: &'static str,
-        work: impl FnOnce(Cancellation) -> WorkerResult + Send + 'static,
+        work: impl FnOnce(&Job) -> WorkerResult + Send + 'static,
     ) {
         self.launch(label, work);
         if let Some(worker) = &mut self.worker {
@@ -300,8 +371,8 @@ impl JamesApp {
         self.voice = voice::Phase::Off;
         self.guide_after_capture = false;
         if let Some(w) = &self.worker {
-            w.cancel.cancel();
-            self.status = "Stopping. Model requests may finish at the server; their replies will be discarded. Input already sent cannot be undone.".into();
+            w.stop();
+            self.status = "Stopping. James closes its connection to the model server at once; the server decides whether it stops generating. Input already sent cannot be undone.".into();
         } else {
             self.status = "Pending action cancelled.".into();
         }
@@ -411,6 +482,7 @@ impl JamesApp {
         self.draft.clear();
         self.attach_screen = false;
         self.pending = None;
+        self.streaming = None;
         self.save_session();
         self.page = Page::Chat;
         self.launch_model(
@@ -419,10 +491,15 @@ impl JamesApp {
                 Ask::Guide => "Looking at your screen...",
                 Ask::Chat => "Asking the local model...",
             },
-            move |_| {
+            move |job| {
                 WorkerResult::Chat(
                     LocalClient::for_provider(provider, port)
-                        .and_then(|c| c.chat_with_image(&model, &context, png.as_deref()))
+                        .and_then(|c| {
+                            c.chat_stream(&model, &context, png.as_deref(), |event| match event {
+                                StreamEvent::Connected(handle) => job.arm(handle),
+                                StreamEvent::Delta(text) => job.send(WorkerResult::Delta(text)),
+                            })
+                        })
                         .map_err(|e| e.to_string()),
                     mode,
                 )
@@ -463,9 +540,9 @@ impl JamesApp {
         let config = self.voice_config();
         self.launch(
             "Listening — speak now, or say \"stop\". James answers when you pause.",
-            move |cancel| {
+            move |job| {
                 WorkerResult::Dictation(
-                    james_platform::dictate(voice::LISTEN, &config, &cancel)
+                    james_platform::dictate(voice::LISTEN, &config, &job.cancel)
                         .map_err(|e| e.to_string()),
                 )
             },
@@ -475,9 +552,9 @@ impl JamesApp {
         let config = self.voice_config();
         self.launch(
             "Listening for one utterance — pause when you're done...",
-            move |cancel| {
+            move |job| {
                 WorkerResult::Dictation(
-                    james_platform::dictate(Duration::from_secs(20), &config, &cancel)
+                    james_platform::dictate(Duration::from_secs(20), &config, &job.cancel)
                         .map_err(|e| e.to_string()),
                 )
             },
@@ -502,25 +579,25 @@ impl JamesApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         self.launch(
             "Capturing primary screen after a 3-second delay...",
-            |cancel| {
+            |job| {
                 for _ in 0..30 {
-                    if cancel.is_cancelled() {
+                    if job.cancel.is_cancelled() {
                         return WorkerResult::Screen(Err("Capture cancelled".into()));
                     }
                     std::thread::sleep(Duration::from_millis(100));
                 }
                 WorkerResult::Screen(
-                    james_platform::capture_screen(&cancel).map_err(|e| e.to_string()),
+                    james_platform::capture_screen(&job.cancel).map_err(|e| e.to_string()),
                 )
             },
         );
     }
     fn speak(&mut self, text: String) {
-        self.launch("Speaking — Stop silences James", move |cancel| {
+        self.launch("Speaking — Stop silences James", move |job| {
             let result = (|| {
                 let chars: Vec<char> = text.chars().collect();
                 for chunk in chars.chunks(6000) {
-                    james_platform::speak(&chunk.iter().collect::<String>(), &cancel)
+                    james_platform::speak(&chunk.iter().collect::<String>(), &job.cancel)
                         .map_err(|e| e.to_string())?;
                 }
                 Ok(())
@@ -552,152 +629,205 @@ impl JamesApp {
         });
         self.page = Page::Actions;
     }
+    /// Keeps whatever part of a streamed reply arrived when the stream ends
+    /// early, labelled so it is never mistaken for a complete answer.
+    /// Returns whether anything was kept.
+    fn keep_partial_reply(&mut self, why: &str) -> bool {
+        if let Some(partial) = self.streaming.take()
+            && !partial.trim().is_empty()
+        {
+            self.messages.push(ChatMessage::new(
+                "assistant",
+                format!("{}\n\n[{why}]", partial.trim_end()),
+            ));
+            self.save_session();
+            return true;
+        }
+        false
+    }
+    /// Applies everything the worker has reported since the last frame:
+    /// streamed text first, then at most one final result.
     fn receive(&mut self, ctx: &egui::Context) {
-        let Some(worker) = self.worker.take() else {
-            return;
-        };
-        match worker.rx.try_recv() {
-            Err(TryRecvError::Empty) => self.worker = Some(worker),
-            Err(TryRecvError::Disconnected) => {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                self.voice = voice::Phase::Off;
-                self.guide_after_capture = false;
-                self.status = "Background operation stopped unexpectedly.".into();
-                self.recovery_needed = review::needs_reconciliation(
-                    &self.session.with_file_name("action-intent.json"),
-                );
-            }
-            Ok(result) => {
-                if matches!(&result, WorkerResult::Screen(_)) {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+        loop {
+            let Some(worker) = self.worker.take() else {
+                return;
+            };
+            match worker.rx.try_recv() {
+                Err(TryRecvError::Empty) => {
+                    self.worker = Some(worker);
+                    return;
                 }
-                if worker.cancel.is_cancelled() {
+                Ok(WorkerResult::Delta(text)) => {
+                    if !worker.cancel.is_cancelled() {
+                        self.streaming
+                            .get_or_insert_with(String::new)
+                            .push_str(&text);
+                    }
+                    self.worker = Some(worker);
+                }
+                Err(TryRecvError::Disconnected) => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                     self.voice = voice::Phase::Off;
                     self.guide_after_capture = false;
+                    self.keep_partial_reply(
+                        "Reply interrupted: the background task stopped unexpectedly.",
+                    );
+                    self.status = "Background operation stopped unexpectedly.".into();
                     self.recovery_needed = review::needs_reconciliation(
                         &self.session.with_file_name("action-intent.json"),
                     );
-                    self.status = "Stopped. Check the target if any input was in progress.".into();
                     return;
                 }
-                match result {
-                    WorkerResult::Models(Ok(models)) => {
-                        self.available_models = models;
-                        if !self.available_models.contains(&self.model) {
-                            self.model = self.available_models.first().cloned().unwrap_or_default();
+                Ok(result) => {
+                    self.finish(ctx, &worker, result);
+                    return;
+                }
+            }
+        }
+    }
+    fn finish(&mut self, ctx: &egui::Context, worker: &Worker, result: WorkerResult) {
+        if matches!(&result, WorkerResult::Screen(_)) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+        }
+        if worker.cancel.is_cancelled() {
+            self.voice = voice::Phase::Off;
+            self.guide_after_capture = false;
+            let kept = self.keep_partial_reply("Stopped by you before the reply finished.");
+            self.recovery_needed =
+                review::needs_reconciliation(&self.session.with_file_name("action-intent.json"));
+            self.status = if kept {
+                "Stopped. James closed the connection; the part that arrived is kept and marked incomplete.".into()
+            } else if matches!(result, WorkerResult::Action(_)) {
+                "Stopped. Check the target application; input may already have been sent.".into()
+            } else {
+                "Stopped.".into()
+            };
+            return;
+        }
+        match result {
+            WorkerResult::Models(Ok(models)) => {
+                self.available_models = models;
+                if !self.available_models.contains(&self.model) {
+                    self.model = self.available_models.first().cloned().unwrap_or_default();
+                }
+                self.status = format!(
+                    "Local server connected · {} models",
+                    self.available_models.len()
+                );
+                self.save_session();
+            }
+            WorkerResult::Delta(_) => unreachable!("deltas are applied in receive()"),
+            WorkerResult::Chat(Ok(reply), mode) => {
+                // The streamed text and the final reply are the same text.
+                self.streaming = None;
+                self.messages.push(ChatMessage::new("assistant", &reply));
+                self.save_session();
+                if mode == Ask::Plan {
+                    match review::parse_proposal(&reply) {
+                        Ok(p) => self.propose(p.action, p.rationale),
+                        Err(e) => {
+                            self.status = format!(
+                                "No executable proposal: {e}. The response is in Conversation."
+                            )
                         }
-                        self.status = format!(
-                            "Local server connected · {} models",
-                            self.available_models.len()
+                    }
+                } else if !self.answer_aloud(&reply) {
+                    self.status = "Reply received from the local endpoint.".into();
+                }
+            }
+            WorkerResult::Screen(Ok(capture)) => {
+                match image::load_from_memory_with_format(&capture.png, image::ImageFormat::Png) {
+                    Ok(image) => {
+                        let image = image.to_rgba8();
+                        let texture = ctx.load_texture(
+                            "primary-screen",
+                            egui::ColorImage::from_rgba_unmultiplied(
+                                [image.width() as usize, image.height() as usize],
+                                image.as_raw(),
+                            ),
+                            egui::TextureOptions::LINEAR,
                         );
-                        self.save_session();
-                    }
-                    WorkerResult::Chat(Ok(reply), mode) => {
-                        self.messages.push(ChatMessage::new("assistant", &reply));
-                        self.save_session();
-                        if mode == Ask::Plan {
-                            match review::parse_proposal(&reply) {
-                                Ok(p) => self.propose(p.action, p.rationale),
-                                Err(e) => {
-                                    self.status = format!(
-                                        "No executable proposal: {e}. The response is in Conversation."
-                                    )
-                                }
-                            }
-                        } else if !self.answer_aloud(&reply) {
-                            self.status = "Reply received from the local endpoint.".into();
+                        self.screen = Some(Screen {
+                            capture,
+                            texture,
+                            at: Instant::now(),
+                        });
+                        self.page = Page::Screen;
+                        self.status =
+                            "Screen captured in memory. Review it before attaching to a question."
+                                .into();
+                        if std::mem::take(&mut self.guide_after_capture) {
+                            self.send(Ask::Guide);
                         }
                     }
-                    WorkerResult::Screen(Ok(capture)) => {
-                        match image::load_from_memory_with_format(
-                            &capture.png,
-                            image::ImageFormat::Png,
-                        ) {
-                            Ok(image) => {
-                                let image = image.to_rgba8();
-                                let texture = ctx.load_texture(
-                                    "primary-screen",
-                                    egui::ColorImage::from_rgba_unmultiplied(
-                                        [image.width() as usize, image.height() as usize],
-                                        image.as_raw(),
-                                    ),
-                                    egui::TextureOptions::LINEAR,
-                                );
-                                self.screen = Some(Screen {
-                                    capture,
-                                    texture,
-                                    at: Instant::now(),
-                                });
-                                self.page = Page::Screen;
-                                self.status = "Screen captured in memory. Review it before attaching to a question.".into();
-                                if std::mem::take(&mut self.guide_after_capture) {
-                                    self.send(Ask::Guide);
-                                }
-                            }
-                            Err(e) => {
-                                self.guide_after_capture = false;
-                                self.status = format!("Could not decode screenshot: {e}");
-                            }
-                        }
-                    }
-                    WorkerResult::Dictation(Ok(text)) if self.voice == voice::Phase::Listening => {
-                        match voice::interpret(&text) {
-                            voice::Heard::Nothing => {
-                                self.voice = voice::Phase::Off;
-                                self.status = "I didn't hear anything, so I paused our conversation. Choose Talk to continue.".into();
-                            }
-                            voice::Heard::Stop => {
-                                self.voice = voice::Phase::Off;
-                                self.status = "Conversation ended.".into();
-                            }
-                            voice::Heard::Ask(question) => {
-                                self.voice = voice::Phase::Thinking;
-                                self.draft = question;
-                                self.send(Ask::Chat);
-                                if self.worker.is_none() {
-                                    // send() explained why it could not ask (busy, no model...).
-                                    self.voice = voice::Phase::Off;
-                                }
-                            }
-                        }
-                    }
-                    WorkerResult::Dictation(Ok(text)) if text.trim().is_empty() => {
-                        self.status = "I didn't catch anything. Try Dictate again.".into();
-                    }
-                    WorkerResult::Dictation(Ok(text)) => {
-                        if !self.draft.is_empty() {
-                            self.draft.push(' ');
-                        }
-                        self.draft.push_str(&text);
-                        self.status = "Dictation added to your draft. Review it, then Send.".into();
-                    }
-                    WorkerResult::Speech(Ok(())) if self.voice == voice::Phase::Speaking => {
-                        self.listen();
-                    }
-                    WorkerResult::Speech(Ok(())) => self.status = "Finished speaking.".into(),
-                    WorkerResult::Action(result) => {
-                        self.recovery_needed = review::needs_reconciliation(
-                            &self.session.with_file_name("action-intent.json"),
-                        );
-                        self.screen = None;
-                        self.pending = None;
-                        self.attach_screen = false;
-                        self.status = match result { Ok(()) => "Input sent. Verify the result in the target application before another action.".into(), Err(e) => e };
-                    }
-                    WorkerResult::Models(Err(e))
-                    | WorkerResult::Chat(Err(e), _)
-                    | WorkerResult::Screen(Err(e))
-                    | WorkerResult::Dictation(Err(e))
-                    | WorkerResult::Speech(Err(e)) => {
-                        if self.voice != voice::Phase::Off {
-                            self.voice = voice::Phase::Off;
-                            self.status = format!("Conversation paused: {e}");
-                        } else {
-                            self.status = e;
-                        }
+                    Err(e) => {
                         self.guide_after_capture = false;
+                        self.status = format!("Could not decode screenshot: {e}");
                     }
                 }
+            }
+            WorkerResult::Dictation(Ok(text)) if self.voice == voice::Phase::Listening => {
+                match voice::interpret(&text) {
+                    voice::Heard::Nothing => {
+                        self.voice = voice::Phase::Off;
+                        self.status = "I didn't hear anything, so I paused our conversation. Choose Talk to continue.".into();
+                    }
+                    voice::Heard::Stop => {
+                        self.voice = voice::Phase::Off;
+                        self.status = "Conversation ended.".into();
+                    }
+                    voice::Heard::Ask(question) => {
+                        self.voice = voice::Phase::Thinking;
+                        self.draft = question;
+                        self.send(Ask::Chat);
+                        if self.worker.is_none() {
+                            // send() explained why it could not ask (busy, no model...).
+                            self.voice = voice::Phase::Off;
+                        }
+                    }
+                }
+            }
+            WorkerResult::Dictation(Ok(text)) if text.trim().is_empty() => {
+                self.status = "I didn't catch anything. Try Dictate again.".into();
+            }
+            WorkerResult::Dictation(Ok(text)) => {
+                if !self.draft.is_empty() {
+                    self.draft.push(' ');
+                }
+                self.draft.push_str(&text);
+                self.status = "Dictation added to your draft. Review it, then Send.".into();
+            }
+            WorkerResult::Speech(Ok(())) if self.voice == voice::Phase::Speaking => {
+                self.listen();
+            }
+            WorkerResult::Speech(Ok(())) => self.status = "Finished speaking.".into(),
+            WorkerResult::Action(result) => {
+                self.recovery_needed = review::needs_reconciliation(
+                    &self.session.with_file_name("action-intent.json"),
+                );
+                self.screen = None;
+                self.pending = None;
+                self.attach_screen = false;
+                self.status = match result { Ok(()) => "Input sent. Verify the result in the target application before another action.".into(), Err(e) => e };
+            }
+            WorkerResult::Chat(Err(e), _) if self.streaming.is_some() => {
+                self.keep_partial_reply(&format!("Reply interrupted: {e}"));
+                self.voice = voice::Phase::Off;
+                self.guide_after_capture = false;
+                self.status = format!("The reply stopped early and is marked as incomplete: {e}");
+            }
+            WorkerResult::Models(Err(e))
+            | WorkerResult::Chat(Err(e), _)
+            | WorkerResult::Screen(Err(e))
+            | WorkerResult::Dictation(Err(e))
+            | WorkerResult::Speech(Err(e)) => {
+                if self.voice != voice::Phase::Off {
+                    self.voice = voice::Phase::Off;
+                    self.status = format!("Conversation paused: {e}");
+                } else {
+                    self.status = e;
+                }
+                self.guide_after_capture = false;
             }
         }
     }
@@ -749,6 +879,35 @@ impl JamesApp {
                         .map_err(|e| e.to_string()),
                 );
             });
+        }
+    }
+    fn conversation_ui(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Conversation");
+        ui.small("Model output is not verified scientific evidence.");
+        ui.separator();
+        if self.messages.is_empty() && self.streaming.is_none() {
+            ui.add_space(35.0);
+            ui.label(RichText::new("A laboratory without walls.").size(23.0));
+            ui.label("Choose a local model provider in Settings. Talk with James, ask Guide me when you're stuck, or connect the read-only R.A.I.N. Lab whenever you need context.");
+        }
+        for m in &self.messages {
+            ui.add_space(12.0);
+            ui.label(
+                RichText::new(if m.role == "user" { "YOU" } else { "JAMES" })
+                    .color(TEAL)
+                    .strong(),
+            );
+            ui.label(&m.content);
+            ui.separator();
+        }
+        if let Some(partial) = &self.streaming {
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("JAMES").color(TEAL).strong());
+                ui.spinner();
+                ui.small("replying as the model writes");
+            });
+            ui.label(partial);
         }
     }
     fn screen_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -1146,7 +1305,7 @@ impl JamesApp {
 impl Drop for JamesApp {
     fn drop(&mut self) {
         if let Some(mut worker) = self.worker.take() {
-            worker.cancel.cancel();
+            worker.stop();
             // Let native helpers observe cancellation and terminate before exiting.
             // HTTP requests have no effects and may finish independently at the server.
             if worker.wait_on_close
@@ -1183,11 +1342,11 @@ impl eframe::App for JamesApp {
                 timing::State::Ready => {
                     let scheduled = self.scheduled.take().expect("due action");
                     let path = self.session.with_file_name("action-intent.json");
-                    self.launch("Executing the reviewed input...", move |cancel| {
+                    self.launch("Executing the reviewed input...", move |job| {
                         WorkerResult::Action(review::execute(
                             scheduled.review,
                             &path,
-                            &cancel,
+                            &job.cancel,
                             || scheduled.window.current(),
                         ))
                     });
@@ -1265,7 +1424,7 @@ impl eframe::App for JamesApp {
                 };
                 if self.voice == voice::Phase::Off {
                     if ui
-                        .add_enabled(enabled && can_listen, egui::Button::new(RichText::new("🎙 Talk").color(TEAL)))
+                        .add_enabled(enabled && can_listen, egui::Button::new(RichText::new("Talk").color(TEAL)))
                         .on_hover_text("Hands-free conversation: speak, hear the answer, keep going. Say \"stop\" or press Esc to end.")
                         .on_disabled_hover_text(&listen_hint)
                         .clicked()
@@ -1356,16 +1515,22 @@ impl eframe::App for JamesApp {
             ui.add_space(5.0);
         });
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical().id_salt("page").show(ui, |ui| {
-                match self.page {
-                    Page::Chat => {
-                        ui.heading("Conversation"); ui.small("Model output is not verified scientific evidence."); ui.separator();
-                        if self.messages.is_empty() { ui.add_space(35.0); ui.label(RichText::new("A laboratory without walls.").size(23.0)); ui.label("Choose a local model provider in Settings. Talk with James, ask Guide me when you're stuck, or connect the read-only R.A.I.N. Lab whenever you need context."); }
-                        for m in &self.messages { ui.add_space(12.0); ui.label(RichText::new(if m.role == "user" { "YOU" } else { "JAMES" }).color(TEAL).strong()); ui.label(&m.content); ui.separator(); }
-                    }
-                    Page::Screen => self.screen_ui(ui, ctx), Page::Actions => self.action_ui(ui), Page::Lab => self.lab_ui(ui), Page::Settings => self.settings_ui(ui),
-                }
-            });
+            if self.page == Page::Chat {
+                egui::ScrollArea::vertical()
+                    .id_salt("conversation")
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| self.conversation_ui(ui));
+                return;
+            }
+            egui::ScrollArea::vertical()
+                .id_salt("page")
+                .show(ui, |ui| match self.page {
+                    Page::Chat => {}
+                    Page::Screen => self.screen_ui(ui, ctx),
+                    Page::Actions => self.action_ui(ui),
+                    Page::Lab => self.lab_ui(ui),
+                    Page::Settings => self.settings_ui(ui),
+                });
         });
     }
 }
@@ -1420,6 +1585,50 @@ mod tests {
         assert_eq!(loaded.provider, LocalProvider::Ollama);
         assert_eq!(loaded.port, 11434);
         assert_eq!(loaded.messages, saved.messages);
+    }
+
+    #[test]
+    fn stop_before_the_connection_exists_still_closes_it_at_once() {
+        use std::io::{Read, Write};
+        // A model server that accepts, then says nothing for ten seconds.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut buf = [0_u8; 4096];
+            let _ = socket.read(&mut buf);
+            std::thread::sleep(Duration::from_secs(10));
+            let _ = socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+        });
+        let (tx, rx) = mpsc::channel();
+        let job = Job {
+            cancel: Cancellation::default(),
+            tx,
+            abort: AbortSlot::default(),
+        };
+        // Stop arrives first, while the worker has not connected yet.
+        job.cancel.cancel();
+        job.abort.abort();
+        let started = Instant::now();
+        let result = LocalClient::new(port).unwrap().chat_stream(
+            "model",
+            &[ChatMessage::new("user", "Hello")],
+            None,
+            |event| match event {
+                StreamEvent::Connected(handle) => job.arm(handle),
+                StreamEvent::Delta(text) => job.send(WorkerResult::Delta(text)),
+            },
+        );
+        assert!(result.is_err());
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "the late connection must be closed on arrival: {:?}",
+            started.elapsed()
+        );
+        // A cancelled job reports no progress.
+        job.send(WorkerResult::Delta("late".into()));
+        assert!(rx.try_recv().is_err());
+        drop(server);
     }
 
     #[test]
