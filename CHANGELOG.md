@@ -9,7 +9,10 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 0.4.0 were never published as releases. A version with a suffix, such as
 `0.4.0-preview.1`, is published as a prerelease.
 
-## Unreleased
+## 0.4.0-preview.2 — 2026-10-12
+
+A second developer preview: Guide me marks its steps, and screen and voice
+features work with models whose chat template accepts one system message.
 
 ### Added
 
