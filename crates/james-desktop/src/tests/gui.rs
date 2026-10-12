@@ -838,3 +838,57 @@ fn a_screen_question_is_sent_without_the_conversation_history() {
     );
     assert!(request.contains("I'm stuck. What should I do next on this screen?"));
 }
+
+#[test]
+fn guide_me_marks_its_steps_on_the_screenshot() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(
+            &[
+                "1. Click **File**.\n2. Choose **Save**.\n",
+                "Marks: 1 (2, 3); 2 (7, 7)",
+            ],
+            Duration::ZERO,
+        )
+    });
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::RgbaImage::from_pixel(8, 8, image::Rgba([255, 255, 255, 255]))
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+    let texture = h.ctx.load_texture(
+        "test-screen",
+        egui::ColorImage::new([8, 8], egui::Color32::WHITE),
+        egui::TextureOptions::LINEAR,
+    );
+    h.state_mut().screen = Some(Screen {
+        capture: Screenshot {
+            png: png.into_inner(),
+            width: 8,
+            height: 8,
+            target: None,
+            james_hidden: Some(true),
+        },
+        texture,
+        at: Instant::now(),
+    });
+    assert!(h.state_mut().send(Ask::Guide));
+    wait_until(&mut h, "the guidance", |app| app.worker.is_none());
+    frames(&mut h, 2);
+    let request = seen.lock().unwrap().clone();
+    assert!(request.contains("Marks: 1 (x, y)"), "{request}");
+    assert!(
+        request.contains("Screenshot dimensions: 8 x 8 pixels."),
+        "{request}"
+    );
+    // The Marks line is gone from what is shown, saved and read aloud.
+    let answer = &h.state().messages.last().unwrap().content;
+    assert_eq!(answer, "1. Click **File**.\n2. Choose **Save**.");
+    let shown = h.state().guide_marks.clone().expect("marks for the answer");
+    let points: Vec<_> = shown.marks.iter().map(|m| (m.step, m.x, m.y)).collect();
+    assert_eq!(points, [(1, 2, 3), (2, 7, 7)]);
+    let marked = h.query_by_label("Your screenshot with the steps marked");
+    assert!(marked.is_some());
+}

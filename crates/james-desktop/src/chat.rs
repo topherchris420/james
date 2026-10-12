@@ -1,5 +1,5 @@
 //! The conversation: who James is talking to, the messages, and the composer.
-use crate::{Ask, JamesApp, Page, Tone, markdown, theme, voice};
+use crate::{Ask, JamesApp, Page, Tone, guide, markdown, pages, theme, voice};
 use eframe::egui::{self, RichText};
 use james_models::Support;
 
@@ -112,6 +112,33 @@ pub fn model_facts(app: &JamesApp, ui: &mut egui::Ui) {
     }
 }
 
+/// The screenshot a Guide me answer is about, with its steps marked, while
+/// that answer and that screenshot are both current.
+fn guide_screenshot(app: &JamesApp, ui: &mut egui::Ui, answer: &str) {
+    let (Some(shown), Some(screen)) = (&app.guide_marks, &app.screen) else {
+        return;
+    };
+    if shown.answer != answer || shown.screenshot != screen.at {
+        return;
+    }
+    ui.add_space(4.0);
+    let response = ui.add(
+        egui::Image::new(&screen.texture)
+            .max_size(egui::vec2(ui.available_width(), 260.0))
+            .maintain_aspect_ratio(true),
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Image,
+            true,
+            "Your screenshot with the steps marked",
+        )
+    });
+    let size = (screen.capture.width, screen.capture.height);
+    pages::mark_steps(ui, response.rect, &shown.marks, size);
+    ui.small("The numbers match the steps above. James only points: you take each step yourself.");
+}
+
 fn message_ui(app: &mut JamesApp, ui: &mut egui::Ui, index: usize, last_answer: bool) {
     let message = &app.messages[index];
     let user = message.role == "user";
@@ -156,6 +183,9 @@ fn message_ui(app: &mut JamesApp, ui: &mut egui::Ui, index: usize, last_answer: 
             ui.label(&message.content);
         } else {
             markdown::show(ui, &message.content, ("message", index));
+            if last_answer {
+                guide_screenshot(app, ui, &message.content);
+            }
         }
     });
     if copy {
@@ -266,6 +296,11 @@ pub fn conversation(app: &mut JamesApp, ui: &mut egui::Ui) {
             });
         });
         if let Some(partial) = &app.streaming {
+            let partial = if app.asking == Some(Ask::Guide) {
+                guide::hide_partial_marks(partial)
+            } else {
+                partial
+            };
             markdown::show(ui, partial, "streaming");
         }
     }

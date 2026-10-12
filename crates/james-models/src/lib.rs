@@ -609,12 +609,31 @@ fn parse_ndjson_line(line: &str) -> Result<Frame, ApiError> {
     })
 }
 
+/// The conversation with every instruction joined, in order, into one leading
+/// system message. Some chat templates (Qwen's, for one) refuse a second
+/// system message, and the server then fails the whole request.
+fn one_system_message(messages: &[ChatMessage]) -> Vec<ChatMessage> {
+    let system: Vec<&str> = messages
+        .iter()
+        .filter(|m| m.role == "system")
+        .map(|m| m.content.as_str())
+        .collect();
+    let rest = messages.iter().filter(|m| m.role != "system").cloned();
+    if system.is_empty() {
+        return rest.collect();
+    }
+    std::iter::once(ChatMessage::new("system", system.join("\n\n")))
+        .chain(rest)
+        .collect()
+}
+
 fn build_request(
     model: &str,
     messages: &[ChatMessage],
     png: Option<&[u8]>,
 ) -> Result<String, ApiError> {
     validate_request(model, messages)?;
+    let messages = &one_system_message(messages);
     let mut wire =
         serde_json::to_value(messages).map_err(|err| ApiError::Protocol(err.to_string()))?;
     if let Some(bytes) = png {
@@ -644,6 +663,7 @@ fn build_ollama_request(
     png: Option<&[u8]>,
 ) -> Result<String, ApiError> {
     validate_request(model, messages)?;
+    let messages = &one_system_message(messages);
     let mut wire =
         serde_json::to_value(messages).map_err(|err| ApiError::Protocol(err.to_string()))?;
     if let Some(bytes) = png {
@@ -1000,6 +1020,29 @@ mod tests {
             StreamEvent::Thinking => {}
         });
         (result, deltas, handle)
+    }
+
+    #[test]
+    fn instructions_reach_the_server_as_one_leading_system_message() {
+        // Qwen's chat template fails a request that has a second system message.
+        let messages = vec![
+            ChatMessage::new("system", "Be careful."),
+            ChatMessage::new("system", "Guide the user."),
+            ChatMessage::new("user", "What now?"),
+        ];
+        for body in [
+            build_request("m", &messages, None).unwrap(),
+            build_ollama_request("m", &messages, None).unwrap(),
+        ] {
+            let wire: Value = serde_json::from_str(&body).unwrap();
+            assert_eq!(wire["messages"].as_array().unwrap().len(), 2);
+            assert_eq!(wire["messages"][0]["role"], "system");
+            assert_eq!(
+                wire["messages"][0]["content"],
+                "Be careful.\n\nGuide the user."
+            );
+            assert_eq!(wire["messages"][1]["content"], "What now?");
+        }
     }
 
     #[test]
