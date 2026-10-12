@@ -286,7 +286,7 @@ impl<'a> Request<'a> {
         let mut header_bytes = 0_usize;
         let (status, headers) = loop {
             let (status, headers) =
-                read_head(&mut reader, &clock, limits.headers, &mut header_bytes)?;
+                read_head(&mut reader, &clock, limits.headers, &mut header_bytes, &abort)?;
             // A 1xx interim response carries no body; the real one follows.
             if (100..200).contains(&status) {
                 continue;
@@ -349,7 +349,7 @@ fn connect(
     // timeout can double the wait, particularly on Windows where an unbound
     // IPv6 loopback port may time out instead of refusing immediately.
     let mut failures = Vec::new();
-    for address in candidates(port) {
+    for (index, address) in candidates(port).into_iter().enumerate() {
         debug_assert!(address.ip().is_loopback());
         let elapsed = started.elapsed();
         if let Some(total) = timeouts.total {
@@ -360,6 +360,11 @@ fn connect(
         let mut wait = timeouts.connect.saturating_sub(elapsed);
         if let Some(total) = timeouts.total {
             wait = wait.min(total - elapsed);
+        }
+        // Reserve half the initial budget for IPv6, even if an unbound IPv4
+        // loopback port consumes its entire allowance on Windows.
+        if index == 0 {
+            wait /= 2;
         }
         if wait.is_zero() {
             break;
@@ -395,8 +400,16 @@ struct Clock {
 }
 
 impl Clock {
-    fn arm(&self, stream: &TcpStream) -> Result<(), Error> {
-        let mut wait = self.timeouts.idle;
+    // Winsock does not reliably wake another thread's blocking read when a
+    // cloned socket is shut down. Poll in small slices so the cancellation
+    // flag is observed promptly, while retaining the original idle and
+    // exchange-wide deadlines.
+    fn arm(&self, stream: &TcpStream, last_progress: Instant) -> Result<(), Error> {
+        let elapsed_idle = last_progress.elapsed();
+        if elapsed_idle >= self.timeouts.idle {
+            return Err(Error::TimedOut);
+        }
+        let mut wait = (self.timeouts.idle - elapsed_idle).min(Duration::from_millis(100));
         if let Some(total) = self.timeouts.total {
             let elapsed = self.started.elapsed();
             if elapsed >= total {
@@ -418,11 +431,36 @@ fn read_line(
     clock: &Clock,
     cap: usize,
     used: &mut usize,
+    abort: &AbortHandle,
 ) -> Result<Option<Vec<u8>>, Error> {
     let mut line = Vec::new();
+    let mut last_progress = Instant::now();
     loop {
-        clock.arm(reader.get_ref())?;
-        let available = reader.fill_buf()?;
+        if abort.is_aborted() {
+            return Err(Error::Closed);
+        }
+        clock.arm(reader.get_ref(), last_progress)?;
+        let available = match reader.fill_buf() {
+            Ok(bytes) => bytes,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) =>
+            {
+                continue;
+            }
+            Err(error) => {
+                return Err(if abort.is_aborted() {
+                    Error::Closed
+                } else {
+                    error.into()
+                });
+            }
+        };
+        if abort.is_aborted() {
+            return Err(Error::Closed);
+        }
         if available.is_empty() {
             if line.is_empty() {
                 return Ok(None);
@@ -442,6 +480,7 @@ fn read_line(
         }
         line.extend_from_slice(&available[..take]);
         reader.consume(take);
+        last_progress = Instant::now();
         if done {
             *used += line.len();
             if line.ends_with(b"\n") {
@@ -460,12 +499,13 @@ fn read_head(
     clock: &Clock,
     cap: usize,
     used: &mut usize,
+    abort: &AbortHandle,
 ) -> Result<(u16, Vec<(String, String)>), Error> {
-    let status_line = read_line(reader, clock, cap, used)?.ok_or(Error::Closed)?;
+    let status_line = read_line(reader, clock, cap, used, abort)?.ok_or(Error::Closed)?;
     let status = parse_status_line(&status_line)?;
     let mut headers = Vec::new();
     loop {
-        let line = read_line(reader, clock, cap, used)?.ok_or(Error::Closed)?;
+        let line = read_line(reader, clock, cap, used, abort)?.ok_or(Error::Closed)?;
         if line.is_empty() {
             break;
         }
@@ -713,7 +753,7 @@ impl Body {
                 }
                 Framing::Chunked(Chunk::Size) => {
                     let mut used = 0;
-                    let line = read_line(&mut self.inner, &self.clock, 1024, &mut used)?
+                    let line = read_line(&mut self.inner, &self.clock, 1024, &mut used, &self.abort)?
                         .ok_or(Error::Closed)?;
                     let size = parse_chunk_size(&line)?;
                     self.framing = Framing::Chunked(if size == 0 {
@@ -740,7 +780,7 @@ impl Body {
                 }
                 Framing::Chunked(Chunk::DataEnd) => {
                     let mut used = 0;
-                    let line = match read_line(&mut self.inner, &self.clock, 16, &mut used) {
+                    let line = match read_line(&mut self.inner, &self.clock, 16, &mut used, &self.abort) {
                         Ok(Some(line)) => line,
                         Ok(None) => return Err(Error::Closed),
                         Err(Error::TooLarge) => Vec::from(b"x"),
@@ -755,7 +795,7 @@ impl Body {
                     let mut used = 0;
                     loop {
                         let line =
-                            read_line(&mut self.inner, &self.clock, self.header_budget, &mut used)?
+                            read_line(&mut self.inner, &self.clock, self.header_budget, &mut used, &self.abort)?
                                 .ok_or(Error::Closed)?;
                         if line.is_empty() {
                             break;
@@ -770,22 +810,35 @@ impl Body {
     }
 
     fn read_socket(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        if self.abort.is_aborted() {
-            return Err(Error::Closed);
-        }
-        self.clock.arm(self.inner.get_ref())?;
+        let last_progress = Instant::now();
         loop {
+            if self.abort.is_aborted() {
+                return Err(Error::Closed);
+            }
+            self.clock.arm(self.inner.get_ref(), last_progress)?;
             match self.inner.read(buf) {
                 Ok(read) => {
-                    // A concurrent Stop may make read() return Ok(0) on
-                    // Windows; that must not finish an until-close stream.
                     if self.abort.is_aborted() {
                         return Err(Error::Closed);
                     }
                     return Ok(read);
                 }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) => return Err(error.into()),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    continue;
+                }
+                Err(error) => {
+                    return Err(if self.abort.is_aborted() {
+                        Error::Closed
+                    } else {
+                        error.into()
+                    });
+                }
             }
         }
     }
