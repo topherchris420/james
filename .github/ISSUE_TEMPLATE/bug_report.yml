@@ -1,0 +1,54 @@
+name: Something isn't working
+description: Report a problem using James. You don't need to be a developer.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Please don't paste passwords, private conversations or screenshots of sensitive windows: this page is public.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: I pressed Find my model server with LM Studio open, and James said no server answered.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we make it happen again?
+      placeholder: |
+        1. Open James
+        2. ...
+  - type: input
+    id: version
+    attributes:
+      label: James version
+      description: Shown at the bottom left of the James window, for example "James 0.3.0".
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Computer
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model app and model
+      description: For example "LM Studio 0.3.30 with Gemma 3 4B" or "Ollama with qwen3:4b". Leave blank if you never got that far.
+  - type: textarea
+    id: error-text
+    attributes:
+      label: Error message or crash report
+      description: |
+        Copy any message James showed at the bottom of its window. If James told you it saved a crash report, open `crash.log` and paste its contents here. It contains the James version, your operating system and where the error happened, not your conversations.
+      render: text
