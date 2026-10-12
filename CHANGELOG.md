@@ -6,9 +6,13 @@ says when it does and how older data is handled.
 
 Releases are published only from an explicit `v<version>` tag, by the
 workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
-0.4.0 were never published as releases.
+0.4.0 were never published as releases. A version with a suffix, such as
+`0.4.0-preview.1`, is published as a prerelease.
 
-## 0.4.0 — 2026-10-12
+## 0.4.0-preview.1 — 2026-10-12
+
+The first published build of 0.4.0, released as a prerelease because it is a
+developer preview.
 
 The first version prepared for people who are not developers. See
 [docs/END_USER_READINESS.md](docs/END_USER_READINESS.md) for what has and has

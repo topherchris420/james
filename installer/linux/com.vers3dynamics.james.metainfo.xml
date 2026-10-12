@@ -44,7 +44,7 @@
     <display_length compare="ge">760</display_length>
   </requires>
   <releases>
-    <release version="0.4.0" date="2026-10-12">
+    <release version="0.4.0~preview.1" type="development" date="2026-10-12">
       <description>
         <p>Guided setup, model capability checks, Markdown replies, themes and accessibility settings, privacy controls and safer reviewed input.</p>
       </description>
