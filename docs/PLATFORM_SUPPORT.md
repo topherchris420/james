@@ -4,11 +4,11 @@ Status: **developer previews, not a universal production release**. A successful
 
 | Platform / architecture | Build pipeline | Native screen / input / speech | End-user status |
 | --- | --- | --- | --- |
-| Windows 10/11 x64 | Existing GitHub Actions executable and per-user installer, with tests | Windows-only fixed helpers; approved one action at a time | Preview; installer lifecycle and real-model integration still require hands-on verification |
+| Windows 10/11 x64 | Per-user installer and portable `.exe` from GitHub Actions, with tests | Windows-only fixed helpers; approved one action at a time | Preview; installer lifecycle and real-model integration still require hands-on verification |
 | Windows 11 ARM64 | No native ARM64 build established | x64 compatibility not validated on all devices | Unsupported as a native target; compatibility is unverified |
-| macOS (runner architecture) | macOS CI build and portable archive now configured; check actual run results | Screen capture (`screencapture`), speech (`say`) and whisper.cpp listening implemented, not device-validated. No computer input | Experimental source/portable build pending test results; unsigned, unnotarized |
-| macOS Apple Silicon and Intel, independently | CI runner only establishes its *actual* architecture | As above | Other architecture unverified |
-| Linux x64 | Ubuntu CI build and tarball now configured; check actual run results | Screen capture (gnome-screenshot, spectacle, grim, ImageMagick), speech (espeak-ng, spd-say) and whisper.cpp listening implemented, not device-validated. No X11/Wayland input or portal capture adapter | Experimental; display server and system library dependencies vary |
+| macOS 11+ Apple silicon | Universal `James.app` (zip) built on the arm64 macOS runner, ad-hoc signed, started with `--version` in CI | Screen capture (`screencapture`), speech (`say`) and whisper.cpp listening implemented, not device-validated. No computer input | Preview; unsigned with a Developer ID and unnotarized, so first launch needs **Open Anyway**. No hands-on Mac run recorded |
+| macOS 11+ Intel | The x86_64 slice of the same universal app; cross-compiled, never run in CI | As above | Unverified on Intel hardware |
+| Linux x64 (glibc 2.35+) | `.deb` and portable archive built in an Ubuntu 22.04 container; both installed and started with `--version` there in CI | Screen capture (gnome-screenshot, spectacle, grim, ImageMagick), speech (espeak-ng, spd-say) and whisper.cpp listening implemented, not device-validated. No X11/Wayland input or portal capture adapter | Preview; the `.deb` installed with apt, its window opened (Xvfb, software OpenGL) and removed on an Ubuntu 24.04 VM. Display server and system library dependencies vary |
 | Linux ARM64 | No native ARM64 CI or hardware validation | Not implemented | Unsupported / not validated |
 | Browser/PWA | Not implemented | Browser cannot receive unrestricted desktop control | Not available |
 | Android/iOS | Not implemented | No device control | Not available |
@@ -32,8 +32,8 @@ The Rust desktop application can compile on platforms where its dependency stack
 
 Local session JSON is stored in `%LOCALAPPDATA%/Vers3Dynamics/James` on Windows or `~/.james` when HOME exists. Action intents contain potentially sensitive typed text until acknowledged. See [SECURITY.md](../SECURITY.md).
 
-## Archive meaning
+## Package meaning
 
-CI may upload a portable Windows executable, Windows per-user installer, and, after successful host builds, tarball archives for the GitHub-hosted macOS/Linux runner architectures. These archives are **unsigned** experimental outputs, not universal installers. GitHub-hosted macOS binaries may be blocked by Gatekeeper; no code-signing/notarization claim is made. Linux binaries can require compatible graphics libraries and display server. Never advertise an architecture until its actual artifact and runner architecture are verified.
+Tagged releases and CI artifacts contain a Windows per-user installer and portable executable, a universal macOS `James.app`, and a Linux `.deb` and portable archive (see [INSTALLER.md](INSTALLER.md)). All are **unsigned** preview builds: Windows SmartScreen and macOS Gatekeeper warn on first launch, and the [getting started guide](GETTING_STARTED.md) explains how to proceed. The Linux binary is built against glibc 2.35 so it starts on Ubuntu 22.04, Debian 12, Linux Mint 21 and newer; it still needs an OpenGL driver, `libxkbcommon-x11` and a display server. CI starting a binary with `--version` proves it loads on that system, not that its window, permissions or native features work. Never advertise an architecture until its actual artifact has been run there.
 
 See [RELEASE_READINESS.md](RELEASE_READINESS.md) and [ACCEPTANCE_TESTS.md](ACCEPTANCE_TESTS.md) before public distribution.

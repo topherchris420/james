@@ -10,14 +10,14 @@
 [![Desktop CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/desktop.yml?branch=main&style=flat-square&label=desktop%20CI)](https://github.com/topherchris420/james/actions/workflows/desktop.yml)
 [![Rust 1.85+](https://img.shields.io/badge/Rust-1.85%2B-dea584?style=flat-square&logo=rust&logoColor=white)](Cargo.toml)
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-3EC1B2?style=flat-square)](Cargo.toml)
-[![Windows preview](https://img.shields.io/badge/release-Windows%20preview-555555?style=flat-square&logo=windows)](docs/VALIDATION.md)
+[![Download: Windows, macOS, Linux](https://img.shields.io/badge/download-Windows%20·%20macOS%20·%20Linux-555555?style=flat-square)](https://github.com/topherchris420/james/releases)
 [![MIT license](https://img.shields.io/badge/license-MIT-0B5D63?style=flat-square)](LICENSE)
 
 **[Vers3Dynamics](https://vers3dynamics.com/) · [R.A.I.N. Lab](https://github.com/topherchris420/lop-nur-twin) · [Validation ledger](docs/VALIDATION.md)**
 
-[Quick start](#quick-start) · [How James works](#how-james-works) · [What James can do](#what-james-can-do) · [Status](#status) · [FAQ](#faq) · [Documentation](#documentation)
+[Download](#quick-start) · [Getting started guide](docs/GETTING_STARTED.md) · [How James works](#how-james-works) · [What James can do](#what-james-can-do) · [Status](#status) · [FAQ](#faq) · [Documentation](#documentation)
 
-<code>cargo run -p james-desktop --locked</code>
+**[Download James](https://github.com/topherchris420/james/releases)** for Windows, macOS or Linux, then follow the [getting started guide](docs/GETTING_STARTED.md).
 
 <br />
 
@@ -50,20 +50,32 @@ them with you, but it cannot steer the Lab.
 
 ## Quick start
 
-### Download the Windows preview
+### Download
 
-1. Open the [**James desktop workflow**](https://github.com/topherchris420/james/actions/workflows/desktop.yml),
-   pick a **successful run on `main`**, and scroll to **Artifacts**.
-2. Download one of:
-   - **`James-Windows-x64-installer`**: extract and run the versioned `*-setup.exe` for a per-user install.
-   - **`James-Windows-x64`**: extract and launch `james.exe` directly.
-3. Start a local model server with a model loaded ([see below](#connect-a-model)).
+Get the newest release from the [**Releases page**](https://github.com/topherchris420/james/releases):
+
+| Your computer | Download |
+| ------------- | -------- |
+| Windows 10 or 11, 64-bit | `James-<version>-windows-x64-setup.exe` (per-user installer) or `…-portable.exe` |
+| macOS 11 or newer, Apple silicon or Intel | `James-<version>-macos-universal.zip` (drag James to Applications) |
+| Ubuntu 22.04+, Debian 12+, Mint 21+ | `james_<version>_amd64.deb` |
+| Other 64-bit Linux (glibc 2.35+) | `James-<version>-linux-x86_64.tar.gz` (run `./install.sh`) |
+
+Then install a local model app such as [LM Studio](https://lmstudio.ai/) or
+[Ollama](https://ollama.com/download), open James, and press **Find my model
+server**. The [getting started guide](docs/GETTING_STARTED.md) covers every step
+in plain language, including troubleshooting.
 
 > [!WARNING]
-> These builds are **unsigned Windows x64 previews**. They contain no model
-> server and no model weights. GitHub artifacts may require sign-in and expire
-> after 30 days, and install, upgrade and uninstall have **not** been tested on
-> a clean machine. Read the [installer guide](docs/INSTALLER.md) before sharing a build.
+> Builds are **not code-signed yet**, so Windows SmartScreen and macOS
+> Gatekeeper warn on first launch; the [guide](docs/GETTING_STARTED.md#1-install-james)
+> shows how to open James anyway. Downloads contain no model server or model
+> weights. Install, upgrade and uninstall have not yet been tested on clean
+> machines; see the [installer notes](docs/INSTALLER.md).
+
+Builds of the newest commit on `main` are also attached to each successful
+[desktop workflow run](https://github.com/topherchris420/james/actions/workflows/desktop.yml)
+(GitHub sign-in required; artifacts expire after 30 days).
 
 ### Run from source
 
@@ -81,8 +93,11 @@ On Linux, James also needs an OpenGL driver and `libxkbcommon-x11` at runtime
 
 ### Connect a model
 
-In James, open **Settings**, choose a provider, confirm the port, press
-**Discover models** and pick your model.
+On James's welcome screen, press **Find my model server**. James asks the
+default loopback ports below for their model lists, once, when you press it,
+and selects the first server that offers a chat model. To choose a provider,
+port or model yourself, open **Settings**, pick a provider, confirm the port,
+press **Discover models** and pick your model.
 
 | Provider                | Default port | Routes James uses                                    |
 | ----------------------- | ------------ | ---------------------------------------------------- |
@@ -178,7 +193,7 @@ Platform support:
 | Listening (*Talk*, *Dictate*) | Windows speech recognition     | whisper.cpp + SoX or ffmpeg               | whisper.cpp + parec, arecord, sox or ffmpeg           |
 | Spoken answers                | Installed Windows voice        | `say`                                     | espeak-ng or spd-say                                  |
 | Reviewed computer input       | ✅ one action at a time        | not implemented                           | not implemented                                       |
-| Build                         | Preview build and installer    | Experimental CI archive                   | Experimental CI archive                               |
+| Download                      | Installer and portable `.exe`  | Universal `James.app` (unsigned)          | `.deb` and portable archive                           |
 
 On macOS and Linux, listening runs [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
 on your computer. James records only until you pause, never sends silence to
@@ -219,11 +234,11 @@ the tier its evidence supports.
 
 | Tier                                                 | Claims                                                                                                                                                                                                                                                                                                                                  |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ✅ **Verified on a real system**                     | Windows x64 preview build and installer compiled in [CI](docs/VALIDATION.md) · Windows capture and speech helpers exercised · read-only Lab status and discovery against a real Lab server · a native window launched and its guards checked · Linux model discovery and a three-turn local-model conversation through the real UI ([screenshots above](docs/VALIDATION.md#readme-screenshot-session-2026-10-11)) · live streaming and Stop through the real UI against a scripted loopback server ([record](docs/VALIDATION.md#streaming-and-stop-session-2026-10-12)) |
-| 🧪 **Implemented and tested in CI, not on a device** | macOS/Linux capture, speech and whisper.cpp listening · Ollama and OpenAI-compatible protocol contracts, including streamed replies split at awkward byte boundaries, malformed frames, disconnects and Stop (socket fixtures) · approval timing, expiry and clock-change regressions (simulated clocks)                                     |
-| ⬜ **Not yet proven**                                | Streaming against real LM Studio, Ollama and llama.cpp builds · real-model answer quality and vision accuracy · end-user usability and accessibility · clean-machine install, upgrade and uninstall · reliable targeting of a specific app · microphone recognition quality                                                                                                                             |
+| ✅ **Verified on a real system**                     | Windows x64 preview build and installer compiled in [CI](docs/VALIDATION.md) · Windows capture and speech helpers exercised · read-only Lab status and discovery against a real Lab server · a native window launched and its guards checked · Linux model discovery and a three-turn local-model conversation through the real UI ([screenshots above](docs/VALIDATION.md#readme-screenshot-session-2026-10-11)) · live streaming and Stop through the real UI against a scripted loopback server ([record](docs/VALIDATION.md#streaming-and-stop-session-2026-10-12)) · first-run **Find my model server**, its three outcomes and the "can't reach" message through the real UI against scripted servers · the Linux `.deb` and archive installed, started and removed on Ubuntu 24.04 ([record](docs/VALIDATION.md#end-user-readiness-session-2026-10-12)) |
+| 🧪 **Implemented and tested in CI, not on a device** | macOS/Linux capture, speech and whisper.cpp listening · Ollama and OpenAI-compatible protocol contracts, including streamed replies split at awkward byte boundaries, malformed frames, disconnects and Stop (socket fixtures) · approval timing, expiry and clock-change regressions (simulated clocks) · universal `James.app` assembled, ad-hoc signed and started with `--version` on a macOS runner · Linux packages installed and started on Ubuntu 22.04 (container) |
+| ⬜ **Not yet proven**                                | Streaming against real LM Studio, Ollama and llama.cpp builds · real-model answer quality and vision accuracy · end-user usability and accessibility · clean-machine install, upgrade and uninstall on Windows and macOS · Gatekeeper, SmartScreen and permission prompts on real machines · code signing · reliable targeting of a specific app · microphone recognition quality                                                                                                                             |
 
-**This is a developer preview, not a production-ready autonomous agent.**
+**This is an early preview, not a production-ready autonomous agent.**
 Passing CI proves code paths work, not that real-world use is flawless. The
 full record is in the [validation ledger](docs/VALIDATION.md).
 
@@ -240,10 +255,10 @@ enabled. See the [benchmark protocol](docs/BENCHMARKS.md).
 | **01**    | Real-model text, vision and harmless-action evaluation            | A reproducible end-to-end session with failures recorded                |
 | **02**    | SQLite history and a crash-tested action journal                  | Restart, interruption, rollback and replay-suppression tests            |
 | **03**    | Window-specific targeting and better accessibility                | Real focus, scaling and assistive-technology tests                      |
-| **04**    | Clean-machine installer, signed builds, short demo video          | Install/upgrade/uninstall matrix and an authentic recorded walkthrough  |
+| **04**    | Signed builds, clean-machine install tests, short demo video      | Install/upgrade/uninstall matrix and an authentic recorded walkthrough  |
 | **Later** | Scoped tools, MCP interoperability, coordinated research workflows | Deterministic gates, human authorization, provenance, measurable benefit |
 
-Streaming replies and a Stop that closes the connection have shipped, with the fixtures that milestone asked for.
+Streaming replies and a Stop that closes the connection have shipped, with the fixtures that milestone asked for, as have installable packages for all three systems and a first-run screen that finds your model server.
 The long-range [roadmap](docs/ROADMAP.md) is a plan, not a list of shipped features.
 
 ## FAQ
@@ -255,7 +270,9 @@ No. Every request James makes goes through
 [`james-loopback`](crates/james-loopback), a small HTTP client whose only address
 input is a port number. It connects to `127.0.0.1`, or `::1` if nothing answers
 there, and has no way to express any other destination. There is no hostname,
-DNS lookup, cloud fallback, proxy, redirect following or API key. Whatever you
+DNS lookup, cloud fallback, proxy, redirect following or API key. **Find my model
+server** asks only ports 1234, 11434 and 8080 on loopback, and only when you
+press it. Whatever you
 attach goes to the local model server you chose, and that server's own logging
 and routing apply.
 
@@ -299,6 +316,7 @@ No. Voice has no path to approval. Spoken words only ever become chat text.
 | Pending action record, including the **exact text** approved for typing  | `action-intent.json`, beside the session file                                                       | Until you acknowledge the outcome       |
 | Screenshots                                                              | Memory only; a private temp folder where an OS tool needs a file, deleted immediately               | No image files kept                     |
 | Microphone audio                                                         | The same private temp folder for whisper.cpp, deleted after each utterance                          | Never stored, never leaves your computer |
+| Internal error report: version, OS and error location, no conversation text | `crash.log`, beside the session file                                                             | Until you dismiss it in James           |
 
 Clearing history is not forensic deletion and does not remove an unresolved
 action marker. Don't point the preview at sensitive windows or credentials until
@@ -310,7 +328,10 @@ you understand these limits. See [SECURITY.md](SECURITY.md).
 <summary><strong>Which models work best?</strong></summary>
 
 Any model your local server can run will chat. Screen questions, *Guide me* and
-*Suggest one action* need a vision-capable model. Small models can answer
+*Suggest one action* need a vision-capable model. The welcome screen and the
+[getting started guide](docs/GETTING_STARTED.md) suggest Gemma 3 4B as a first
+model because it is small and accepts images; that is a starting point, not a
+benchmark result. Small models can answer
 poorly; the [validation ledger](docs/VALIDATION.md) records examples. Model
 claims carry no authority either way: the code enforces approval.
 
@@ -333,16 +354,19 @@ Add `-Model '<listed model ID>'` to send one real inference request.
 <details>
 <summary><strong>What should I do if I hit a bug?</strong></summary>
 
-Pull the latest `main` or download a fresh build from a recent successful
-[desktop workflow run](https://github.com/topherchris420/james/actions/workflows/desktop.yml).
-If the problem persists, [open an issue](https://github.com/topherchris420/james/issues)
-with your OS, James version, model server and model, steps to reproduce and any
-error text. A well-documented failure is as useful as a feature.
+Check the [troubleshooting table](docs/GETTING_STARTED.md#if-something-goes-wrong)
+and update to the newest [release](https://github.com/topherchris420/james/releases).
+If the problem persists, use **Report a problem** in James's sidebar (or
+[open an issue](https://github.com/topherchris420/james/issues/new/choose)). The
+form asks for your OS, James version, model app and model, and any error text.
+If James saved a crash report, paste it in; it contains no conversation text. A
+well-documented failure is as useful as a feature.
 
 </details>
 
 ## Documentation
 
+- [Getting started guide](docs/GETTING_STARTED.md): install, connect a model, troubleshoot. Start here if you just want to use James.
 - [Desktop guide](docs/DESKTOP.md): using the app day to day.
 - [Supervision](docs/SUPERVISION.md) and [security](SECURITY.md): the safety model and its limits.
 - [Validation ledger](docs/VALIDATION.md): what has actually been tested, and how.
@@ -356,7 +380,7 @@ as the current record. Report vulnerabilities through [SECURITY.md](SECURITY.md)
 
 ## Disclaimer
 
-James is a developer preview. Reviewed input sends real clicks and keystrokes to
+James is an early preview. Reviewed input sends real clicks and keystrokes to
 whichever Windows application has focus, and James cannot undo input that has
 already been sent. Use non-sensitive windows and throwaway data, and keep
 credentials off screen while you evaluate it. You are responsible for what you
