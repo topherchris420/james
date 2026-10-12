@@ -353,13 +353,47 @@ fn abort_from_another_thread_unblocks_a_waiting_read_at_once() {
     });
     let started = Instant::now();
     let result = body.next_line(100);
-    assert!(result.is_err(), "{result:?}");
+    assert_eq!(result, Err(Error::Closed), "Stop must never look like a clean EOF");
     assert!(
         started.elapsed() < Duration::from_millis(1500),
         "abort must not wait for the idle timeout: {:?}",
         started.elapsed()
     );
     assert!(!body.is_complete());
+    aborter.join().unwrap();
+    server.join().unwrap();
+}
+
+#[test]
+fn abort_does_not_complete_an_until_close_response() {
+    // A socket shutdown can surface as Ok(0) on Windows. With no declared
+    // response length that looks like a legitimate HTTP end-of-body, unless
+    // the transport remembers that this socket was explicitly aborted.
+    let (client, server) = serve(vec![
+        Step::Write(b"HTTP/1.1 200 OK\r\n\r\nfirst\n"),
+        Step::Sleep(Duration::from_millis(350)),
+        Step::Write(b"second\n"),
+    ]);
+    let mut handle = None;
+    let response = client
+        .with_timeouts(quick())
+        .get("/x")
+        .on_connect(|abort| handle = Some(abort))
+        .send()
+        .unwrap();
+    let mut body = response.into_body();
+    assert_eq!(body.next_line(100).unwrap(), Some(b"first".to_vec()));
+    let aborter = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(70));
+        handle.unwrap().abort();
+    });
+    let started = Instant::now();
+    assert_eq!(body.next_line(100), Err(Error::Closed));
+    assert!(!body.is_complete());
+    assert!(
+        started.elapsed() < Duration::from_millis(1000),
+        "abort must unblock the read promptly"
+    );
     aborter.join().unwrap();
     server.join().unwrap();
 }
