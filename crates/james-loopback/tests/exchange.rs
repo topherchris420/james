@@ -353,7 +353,11 @@ fn abort_from_another_thread_unblocks_a_waiting_read_at_once() {
     });
     let started = Instant::now();
     let result = body.next_line(100);
-    assert_eq!(result, Err(Error::Closed), "Stop must never look like a clean EOF");
+    assert_eq!(
+        result,
+        Err(Error::Closed),
+        "Stop must never look like a clean EOF"
+    );
     assert!(
         started.elapsed() < Duration::from_millis(1500),
         "abort must not wait for the idle timeout: {:?}",
