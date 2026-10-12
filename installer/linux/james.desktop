@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=James
+GenericName=Local AI companion
+Comment=Talk to an AI model on your own computer
+Exec=james
+Icon=james
+Terminal=false
+Categories=Utility;
+Keywords=AI;assistant;chat;LLM;local;
+StartupWMClass=james
