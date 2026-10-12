@@ -136,14 +136,14 @@ fn explain(provider: LocalProvider, port: u16, error: ApiError) -> String {
         other => other.to_string(),
     }
 }
-/// Picks the first server that offers a model (or, failing that, the first
-/// that answered) and says in plain words what happened.
-fn describe_found(servers: &[FoundServer]) -> (Option<&FoundServer>, String) {
-    let chosen = servers
-        .iter()
-        .find(|s| !s.models.is_empty())
-        .or_else(|| servers.first());
-    let note = match chosen {
+/// Picks the first server that offers a model and says in plain words what
+/// happened. A server with no models is only chosen when nothing is set up
+/// yet, so pressing Find never replaces a working model with an empty server.
+fn describe_found(servers: &[FoundServer], has_model: bool) -> (Option<&FoundServer>, String) {
+    let with_model = servers.iter().find(|s| !s.models.is_empty());
+    let shown = with_model.or_else(|| servers.first());
+    let chosen = with_model.or(shown.filter(|_| !has_model));
+    let mut note = match shown {
         None => {
             let ports = LocalProvider::detectable()
                 .iter()
@@ -168,6 +168,9 @@ fn describe_found(servers: &[FoundServer]) -> (Option<&FoundServer>, String) {
             ),
         },
     };
+    if shown.is_some() && chosen.is_none() {
+        note.push_str(" Your current model settings are unchanged.");
+    }
     (chosen, note)
 }
 /// Where an internal error report is kept for the user to attach to a bug report.
@@ -176,7 +179,8 @@ fn crash_report_path(session: &std::path::Path) -> PathBuf {
 }
 /// Windows builds have no console and the window may simply vanish, so a
 /// panic on any thread is written down before the default handler runs. The
-/// report holds the version, platform and error location, never conversation text.
+/// report holds the version, platform, panic message, location and backtrace;
+/// James's own panic messages carry no conversation text.
 fn record_panics(path: PathBuf) {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -861,7 +865,8 @@ impl JamesApp {
                 self.save_session();
             }
             WorkerResult::Found(servers) => {
-                let (chosen, note) = describe_found(&servers);
+                let has_model = !self.model.trim().is_empty();
+                let (chosen, note) = describe_found(&servers, has_model);
                 if let Some(found) = chosen {
                     self.provider = found.provider;
                     self.port = found.port.to_string();
@@ -1939,7 +1944,7 @@ mod tests {
 
     #[test]
     fn find_prefers_a_server_with_a_chat_model() {
-        let (chosen, note) = describe_found(&[]);
+        let (chosen, note) = describe_found(&[], false);
         assert!(chosen.is_none());
         assert!(note.contains("1234, 11434, 8080"), "{note}");
 
@@ -1948,9 +1953,16 @@ mod tests {
             port: 1234,
             models: Vec::new(),
         };
-        let (chosen, note) = describe_found(std::slice::from_ref(&empty));
+        let (chosen, note) = describe_found(std::slice::from_ref(&empty), false);
         assert_eq!(chosen, Some(&empty));
         assert!(note.contains("no models yet"), "{note}");
+        // A working setup is never swapped for a server with nothing to run.
+        let (chosen, note) = describe_found(std::slice::from_ref(&empty), true);
+        assert!(chosen.is_none());
+        assert!(
+            note.ends_with("Your current model settings are unchanged."),
+            "{note}"
+        );
 
         let ollama = FoundServer {
             provider: LocalProvider::Ollama,
@@ -1958,7 +1970,7 @@ mod tests {
             models: vec!["nomic-embed-text:latest".into(), "qwen3:4b".into()],
         };
         let servers = [empty, ollama.clone()];
-        let (chosen, note) = describe_found(&servers);
+        let (chosen, note) = describe_found(&servers, true);
         assert_eq!(chosen, Some(&ollama));
         assert!(note.contains("Ollama on port 11434"), "{note}");
         assert!(note.contains("qwen3:4b"), "{note}");
