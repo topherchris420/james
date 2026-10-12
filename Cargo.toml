@@ -6,6 +6,7 @@ members = [
     "crates/james-lab",
     "crates/james-platform",
     "crates/james-desktop",
+    "tools/notices",
 ]
 resolver = "3"
 

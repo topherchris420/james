@@ -117,6 +117,7 @@ jobs:
           name: James-Windows-x64
           path: |
             target/installer/*.exe
+            target/installer/*.txt
             target/installer/*.sha256
           if-no-files-found: error
           retention-days: 30
@@ -157,9 +158,11 @@ jobs:
           mkdir -p /tmp/portable
           tar -xzf dist/James-*-linux-x86_64.tar.gz -C /tmp/portable
           /tmp/portable/James-*/james --version
+          test -s /tmp/portable/James-*/THIRD-PARTY-NOTICES.txt
           apt-get install -y ./dist/james_*_amd64.deb
           james --version
           dpkg -L james
+          grep -q '^eframe ' /usr/share/doc/james/THIRD-PARTY-NOTICES.txt
       - name: Upload Linux packages
         uses: actions/upload-artifact@v4
         with:

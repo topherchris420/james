@@ -11,6 +11,9 @@
 #ifndef OutputPath
   #error OutputPath is required
 #endif
+#ifndef Notices
+  #error Notices is required
+#endif
 
 [Setup]
 AppId={{CC1BEDD1-3479-4B46-A3C3-A47DC4398EE2}
@@ -44,6 +47,7 @@ SetupLogging=yes
 [Files]
 Source: "{#AppBinary}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Notices}"; DestDir: "{app}"; DestName: "THIRD-PARTY-NOTICES.txt"; Flags: ignoreversion
 Source: "{#SourceRoot}\installer\james.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Tasks]

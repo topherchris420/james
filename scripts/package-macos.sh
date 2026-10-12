@@ -44,6 +44,10 @@ sed "s/@BUNDLE_VERSION@/${version%%-*}/g" installer/macos/Info.plist > "${app}/C
 plutil -lint "${app}/Contents/Info.plist"
 cp installer/james.icns "${app}/Contents/Resources/james.icns"
 cp LICENSE "${app}/Contents/Resources/LICENSE"
+# Licenses of the third-party crates in both slices, sealed by the signature.
+notices="${app}/Contents/Resources/THIRD-PARTY-NOTICES.txt"
+cargo run --quiet --locked -p james-notices -- --target aarch64-apple-darwin --target x86_64-apple-darwin --output "$notices"
+grep -q '^eframe ' "$notices" || { echo "Third-party notices look incomplete." >&2; exit 1; }
 identity="${MACOS_SIGNING_IDENTITY:-}"
 if [[ -n "$identity" ]]; then
     codesign --force --options runtime --timestamp \

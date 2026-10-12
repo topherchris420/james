@@ -39,13 +39,18 @@ mkdir -p "$dist"
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 
+# Licenses of the third-party crates compiled into this binary.
+notices="${stage}/THIRD-PARTY-NOTICES.txt"
+cargo run --quiet --locked -p james-notices -- --target "${arch}-unknown-linux-gnu" --output "$notices"
+grep -q '^eframe ' "$notices" || { echo "Third-party notices look incomplete." >&2; exit 1; }
+
 # Portable folder.
 product="James-${version}-linux-${arch}"
 folder="${stage}/${product}"
 mkdir -p "$folder"
 install -m 0755 "$binary" "${folder}/james"
 install -m 0755 installer/linux/install.sh "${folder}/install.sh"
-install -m 0644 installer/linux/james.desktop installer/linux/README.txt LICENSE "${folder}/"
+install -m 0644 installer/linux/james.desktop installer/linux/README.txt LICENSE "$notices" "${folder}/"
 install -m 0644 installer/linux/com.vers3dynamics.james.metainfo.xml "${folder}/"
 install -m 0644 installer/james-512.png "${folder}/james.png"
 tar -czf "${dist}/${product}.tar.gz" -C "$stage" --owner=0 --group=0 "$product"
@@ -61,6 +66,7 @@ install -D -m 0644 installer/james-512.png "${package}/usr/share/icons/hicolor/5
 install -D -m 0644 crates/james-desktop/assets/james-256.png "${package}/usr/share/icons/hicolor/256x256/apps/james.png"
 install -D -m 0644 installer/linux/com.vers3dynamics.james.metainfo.xml "${package}/usr/share/metainfo/com.vers3dynamics.james.metainfo.xml"
 mkdir -p "${package}/usr/share/doc/james"
+install -m 0644 "$notices" "${package}/usr/share/doc/james/THIRD-PARTY-NOTICES.txt"
 # A Debian changelog entry pointing at the full release notes.
 release_date="$(date -u -R -d "@${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct 2>/dev/null || date +%s)}")"
 {

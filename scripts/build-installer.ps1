@@ -64,7 +64,16 @@ try {
     $signed = Invoke-CodeSign $binary
     $outputPath = Join-Path $sourceRoot 'target\installer'
     New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
-    & $IsccPath "/DAppVersion=$version" "/DSourceRoot=$sourceRoot" "/DAppBinary=$binary" "/DOutputPath=$outputPath" (Join-Path $sourceRoot 'installer\james.iss')
+    # Licenses of the third-party crates compiled into james.exe: installed
+    # with the app and published beside the portable copy.
+    $notices = Join-Path $outputPath "James-$version-windows-x64-third-party-notices.txt"
+    & cargo run --quiet --locked -p james-notices -- --target $target --output $notices
+    if ($LASTEXITCODE -ne 0) { throw 'Could not write the third-party notices.' }
+    if (-not (Select-String -LiteralPath $notices -Pattern '^eframe ' -Quiet)) { throw 'Third-party notices look incomplete.' }
+    $noticesChecksum = (Get-FileHash -LiteralPath $notices -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$noticesChecksum  $([System.IO.Path]::GetFileName($notices))" |
+        Set-Content -LiteralPath "$notices.sha256" -Encoding ascii
+    & $IsccPath "/DAppVersion=$version" "/DSourceRoot=$sourceRoot" "/DAppBinary=$binary" "/DOutputPath=$outputPath" "/DNotices=$notices" (Join-Path $sourceRoot 'installer\james.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
     $installerPath = Join-Path $outputPath "James-$version-windows-x64-setup.exe"
     if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) { throw 'Installer output missing.' }

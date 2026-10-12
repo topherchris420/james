@@ -27,7 +27,7 @@ short checklist.
 | Accessibility | AccessKit enabled; keyboard, contrast and 1x-2x/100-200% layouts tested automatically. **No screen reader or human test** |
 | Data protection | Owner-only files and history controls verified on Linux; not encrypted; Windows permissions unchecked |
 | Signed Windows and notarized macOS builds | Supported by the pipeline when certificates are configured; **none exist** |
-| Third-party license notices in packages | **Missing**: packages ship James's MIT license only |
+| Third-party license notices in packages | Generated per target from `Cargo.lock` by `tools/notices` and shipped in every package; the packaging scripts fail if a license text is missing |
 | Independent security review | **Not done** |
 | SQLite history, encrypted credentials, PWA or mobile companion | Not implemented |
 

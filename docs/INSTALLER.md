@@ -10,6 +10,8 @@ End users should start with the [getting started guide](GETTING_STARTED.md). Thi
 
 Every file gets a `.sha256` beside it; a release collects them into `SHA256SUMS.txt`. The app icon is drawn by `scripts/make-icons.py`, which writes `crates/james-desktop/assets/james-256.png` and the `installer/james.*` icon files.
 
+Every package also contains `THIRD-PARTY-NOTICES.txt`: for each open-source crate compiled into that package's program, its declared license and the license texts it publishes, with the standard [SPDX](https://spdx.org/licenses/) text of each declared license for the few crates that publish none (see [`installer/licenses`](../installer/licenses/README.md)). `tools/notices` generates it from `Cargo.lock` for the package's own targets, and the packaging scripts stop if it fails or looks incomplete. The Windows installer puts it beside `james.exe`, the Mac app in `James.app/Contents/Resources`, the `.deb` in `/usr/share/doc/james`, and the Linux archive at its top level; for the portable `.exe`, the release publishes it as `James-<version>-windows-x64-third-party-notices.txt`.
+
 No package includes a model app, model weights, speech models or the R.A.I.N. Lab, and installing James turns on nothing: screen capture, the microphone, computer input and the Lab connection each start only when the person chooses them.
 
 ## Windows installer

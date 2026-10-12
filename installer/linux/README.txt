@@ -20,3 +20,6 @@ optional system tools; Settings in James tells you what is missing.
 
 Getting started guide, troubleshooting and bug reports:
 https://github.com/topherchris420/james/blob/main/docs/GETTING_STARTED.md
+
+James is MIT-licensed (LICENSE). The open-source libraries built into it and
+their licenses are listed in THIRD-PARTY-NOTICES.txt.

@@ -659,7 +659,7 @@ fn help(app: &mut JamesApp, ui: &mut egui::Ui) {
         ui.hyperlink_to("See the newest release", crate::RELEASES_URL)
             .on_hover_text("Opens the releases page in your web browser. Each release lists SHA-256 checksums so you can check your download.");
     });
-    ui.small("James is free software under the MIT license, built by Vers3Dynamics with egui and other open-source libraries.");
+    ui.small("James is free software under the MIT license, built by Vers3Dynamics with egui and other open-source libraries; their licenses come with James in THIRD-PARTY-NOTICES.txt.");
     if app.tone == Tone::Error {
         ui.hyperlink_to("Troubleshooting for the last error", crate::TROUBLE_URL);
     }

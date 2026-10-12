@@ -12,7 +12,7 @@ cargo test --workspace --all-targets --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-- The library crates (`james-core`, `james-loopback`, `james-models`, `james-lab`) must keep building with Rust 1.85, and the desktop and platform crates with 1.88: `cargo +1.85.0 test -p james-core -p james-loopback -p james-models -p james-lab --all-targets --locked`.
+- The library crates (`james-core`, `james-loopback`, `james-models`, `james-lab`) and `james-notices` must keep building with Rust 1.85, and the desktop and platform crates with 1.88: `cargo +1.85.0 test -p james-core -p james-loopback -p james-models -p james-lab -p james-notices --all-targets --locked`.
 - Code behind `cfg(windows)` or `cfg(target_os = "macos")` can be type-checked from another system: `rustup target add x86_64-pc-windows-msvc aarch64-apple-darwin`, then `cargo clippy --workspace --all-targets --locked --target <target> -- -D warnings`.
 - After editing a PowerShell helper in `crates/james-platform/src`, run `pwsh ./scripts/check-powershell.ps1`; it parses each helper and compiles its embedded C#.
 - The GUI tests in `crates/james-desktop/src/tests/gui.rs` drive the real interface headlessly through its AccessKit tree with `egui_kittest`. Give new controls an accessible label (a visible label, `labelled_by` or `widget_info`), and add a test that finds them by that label. A control a test cannot find by name is probably invisible to a screen reader too.
@@ -27,6 +27,8 @@ User-facing wording belongs in [GETTING_STARTED.md](docs/GETTING_STARTED.md) as 
 Models, model servers, the Lab and extension metadata are untrusted inputs. Only the host classifies effects and validates scope. A passing in-memory contract test does not prove OS confinement or durable execution; include adversarial fixtures and failure-path evidence when implementing those boundaries.
 
 ## Provenance
+
+A new dependency must have a license compatible with distributing James under MIT. The packaging scripts run `cargo run -p james-notices -- --target <triple> --output <file>`; if it stops with "no stored text", add the license's standard text to `installer/licenses` as described there.
 
 Keep reference source, binaries, captured private data, credentials, certificates and model weights out of commits. Contributions to original James files are under the MIT license. Document the provenance and license of any third-party addition in [PROVENANCE.md](PROVENANCE.md).
 

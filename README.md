@@ -253,8 +253,10 @@ with one job each:
 | [`james-lab`](crates/james-lab) | Read-only R.A.I.N. Lab client and plain-language summaries. |
 | [`james-desktop`](crates/james-desktop) | The eframe/egui app: setup, conversation, review, settings and GUI tests. |
 
-The desktop and platform crates need Rust 1.88; the four library crates also
-build with Rust 1.85. CI checks both minimums as well as stable.
+[`tools/notices`](tools/notices) writes the third-party license notices that
+ship in every package. The desktop and platform crates need Rust 1.88; the
+library crates and the notices tool also build with Rust 1.85. CI checks both
+minimums as well as stable.
 
 ## Disclaimer
 

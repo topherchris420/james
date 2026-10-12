@@ -53,6 +53,9 @@ not been verified; the release classification is **developer preview**.
   notarized with a Developer ID (macOS) when a maintainer configures real
   credentials; releases carry build-provenance attestations and a
   `release-metadata.json` that states whether signing happened.
+- Every package includes `THIRD-PARTY-NOTICES.txt`: the license of each
+  open-source crate built into that package and the texts the crate
+  publishes, generated from `Cargo.lock` by `tools/notices`.
 
 ### Changed
 
@@ -77,6 +80,8 @@ not been verified; the release classification is **developer preview**.
 - The Lab's `report` field, a file path inside the Lab, is no longer shown
   as if it were the report's text.
 - Characters the bundled font cannot draw no longer appear in the interface.
+- The desktop needs Rust 1.88, not 1.85 as the README said; its crates now
+  declare it and CI checks it.
 
 ### Security
 
