@@ -11,17 +11,45 @@ Set-StrictMode -Version Latest
 if ($env:OS -ne 'Windows_NT') { throw 'The James installer must be built on Windows.' }
 $sourceRoot = Split-Path -Parent $PSScriptRoot
 
-# Signs a file with Authenticode only when a maintainer provides a real
-# certificate: WINDOWS_CERTIFICATE_PFX (path to a .pfx file) and
-# WINDOWS_CERTIFICATE_PASSWORD, optionally WINDOWS_TIMESTAMP_URL. Without them
+# Signs a file with Authenticode only when a maintainer provides real
+# credentials, either:
+# - Azure Artifact Signing: ARTIFACT_SIGNING_ACCOUNT, ARTIFACT_SIGNING_ENDPOINT
+#   and ARTIFACT_SIGNING_PROFILE, with ARTIFACT_SIGNING_DLIB (the path that
+#   scripts/get-artifact-signing.ps1 prints). It signs as the Azure identity in
+#   AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET, or as the
+#   signed-in Azure CLI user; or
+# - a certificate file: WINDOWS_CERTIFICATE_PFX (path to a .pfx file) and
+#   WINDOWS_CERTIFICATE_PASSWORD.
+# WINDOWS_TIMESTAMP_URL overrides the timestamp server. Without credentials
 # the build stays unsigned and says so; signing is never faked.
 function Invoke-CodeSign([string]$Path) {
-    if (-not $env:WINDOWS_CERTIFICATE_PFX) { return $false }
+    $artifactSigning = [bool]$env:ARTIFACT_SIGNING_ACCOUNT
+    if (-not $artifactSigning -and -not $env:WINDOWS_CERTIFICATE_PFX) { return $false }
     $signtool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
         Sort-Object FullName -Descending | Select-Object -First 1
-    if (-not $signtool) { throw 'WINDOWS_CERTIFICATE_PFX is set, but signtool.exe was not found.' }
-    $timestamp = if ($env:WINDOWS_TIMESTAMP_URL) { $env:WINDOWS_TIMESTAMP_URL } else { 'http://timestamp.digicert.com' }
-    & $signtool.FullName sign /fd SHA256 /td SHA256 /tr $timestamp /f $env:WINDOWS_CERTIFICATE_PFX /p $env:WINDOWS_CERTIFICATE_PASSWORD $Path | Out-Host
+    if (-not $signtool) { throw 'Code signing is configured, but signtool.exe was not found.' }
+    if ($artifactSigning) {
+        foreach ($name in 'ARTIFACT_SIGNING_DLIB', 'ARTIFACT_SIGNING_ENDPOINT', 'ARTIFACT_SIGNING_PROFILE') {
+            if (-not [Environment]::GetEnvironmentVariable($name)) { throw "ARTIFACT_SIGNING_ACCOUNT is set, but $name is not." }
+        }
+        $timestamp = if ($env:WINDOWS_TIMESTAMP_URL) { $env:WINDOWS_TIMESTAMP_URL } else { 'http://timestamp.acs.microsoft.com' }
+        $metadata = Join-Path ([IO.Path]::GetTempPath()) "james-artifact-signing-$PID.json"
+        $settings = [ordered]@{
+            Endpoint = $env:ARTIFACT_SIGNING_ENDPOINT
+            CodeSigningAccountName = $env:ARTIFACT_SIGNING_ACCOUNT
+            CertificateProfileName = $env:ARTIFACT_SIGNING_PROFILE
+        }
+        # Without a byte-order mark, which Windows PowerShell's utf8 would add.
+        [IO.File]::WriteAllText($metadata, ($settings | ConvertTo-Json))
+        try {
+            & $signtool.FullName sign /fd SHA256 /td SHA256 /tr $timestamp /dlib $env:ARTIFACT_SIGNING_DLIB /dmdf $metadata $Path | Out-Host
+        }
+        finally { Remove-Item -LiteralPath $metadata -Force }
+    }
+    else {
+        $timestamp = if ($env:WINDOWS_TIMESTAMP_URL) { $env:WINDOWS_TIMESTAMP_URL } else { 'http://timestamp.digicert.com' }
+        & $signtool.FullName sign /fd SHA256 /td SHA256 /tr $timestamp /f $env:WINDOWS_CERTIFICATE_PFX /p $env:WINDOWS_CERTIFICATE_PASSWORD $Path | Out-Host
+    }
     if ($LASTEXITCODE -ne 0) { throw "Code signing failed for $Path" }
     & $signtool.FullName verify /pa $Path | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $Path" }
@@ -78,7 +106,9 @@ try {
     $installerPath = Join-Path $outputPath "James-$version-windows-x64-setup.exe"
     if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) { throw 'Installer output missing.' }
     if ($signed) { [void](Invoke-CodeSign $installerPath) }
-    Write-Output $(if ($signed) { 'Signed with the configured Authenticode certificate.' } else { 'Not code-signed: no certificate configured.' })
+    Write-Output $(if (-not $signed) { 'Not code-signed: no certificate configured.' }
+        elseif ($env:ARTIFACT_SIGNING_ACCOUNT) { 'Signed with Azure Artifact Signing.' }
+        else { 'Signed with the configured Authenticode certificate.' })
     $checksum = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
     "$checksum  $([System.IO.Path]::GetFileName($installerPath))" |
         Set-Content -LiteralPath "$installerPath.sha256" -Encoding ascii

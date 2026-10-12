@@ -174,6 +174,8 @@ that fails stops the build, so a package is never published half-signed.
 
 | Secret | Used for |
 | --- | --- |
+| `ARTIFACT_SIGNING_ACCOUNT`, `ARTIFACT_SIGNING_ENDPOINT`, `ARTIFACT_SIGNING_PROFILE` | An Azure Artifact Signing account name, its regional endpoint (for example `https://eus.codesigning.azure.net`) and its public-trust certificate profile |
+| `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` | A Microsoft Entra app registration (service principal) allowed to sign with that profile |
 | `WINDOWS_CERTIFICATE_PFX_BASE64` | Base64 of an Authenticode code-signing certificate (`.pfx`) |
 | `WINDOWS_CERTIFICATE_PASSWORD` | Its password |
 | `MACOS_CERTIFICATE_P12_BASE64` | Base64 of a "Developer ID Application" certificate and key (`.p12`) |
@@ -181,7 +183,13 @@ that fails stops the build, so a package is never published half-signed.
 | `MACOS_SIGNING_IDENTITY` | The identity name, for example `Developer ID Application: Name (TEAMID)` |
 | `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD` | An Apple ID, its team, and an app-specific password, for notarization |
 
-- **Windows.** The certificate is written to the runner's temporary folder,
+- **Windows with Artifact Signing** (used when `ARTIFACT_SIGNING_ACCOUNT` is
+  set). `scripts/get-artifact-signing.ps1` downloads Microsoft's SignTool
+  plug-in (`Microsoft.ArtifactSigning.Client` 1.0.128), checks its SHA-256 and
+  Microsoft signature, and `signtool` signs `james.exe` and the installer
+  through it with SHA-256 and Microsoft's timestamp server, then verifies them.
+  The Azure secrets are visible only to the installer step.
+- **Windows with a certificate file.** The certificate is written to the runner's temporary folder,
   used by `signtool` to sign `james.exe` (before it is copied to the portable
   file) and the installer with SHA-256 and an RFC 3161 timestamp
   (`WINDOWS_TIMESTAMP_URL`, default DigiCert's), verified with
@@ -191,6 +199,33 @@ that fails stops the build, so a package is never published half-signed.
   when all three Apple values are present, submitted with `notarytool`,
   stapled, validated and assessed with `spctl` before it is zipped again.
 - **Linux.** Packages are not signed; checksums and attestations cover them.
+
+### Getting a Windows signing identity
+
+Since June 2023, a new publicly trusted code-signing certificate's private key
+must stay in certified hardware, so certificate authorities no longer issue a
+`.pfx` file you can store as a secret. The file route above remains for a
+certificate that already exists. For a new one, Azure Artifact Signing
+(formerly Trusted Signing) keeps the key in Microsoft's hardware and costs
+about US$10 a month. Individuals can use it in the United States and Canada,
+organizations in more countries; it requires a paid Azure subscription and
+identity validation. Check Microsoft's
+[quickstart](https://learn.microsoft.com/azure/artifact-signing/quickstart) for
+current terms.
+
+1. In the Azure portal, register the `Microsoft.CodeSigning` resource
+   provider, create an Artifact Signing account and note its region's
+   endpoint, give yourself the **Artifact Signing Identity Verifier** role,
+   and request a public identity validation; Microsoft says it takes 1 to 20
+   business days. An individual's Azure billing account must be of type
+   Individual, with the legal name and address on the ID used. Then create a
+   **Public Trust** certificate profile from that validation.
+2. Create an app registration and a client secret for it, and give it the
+   **Artifact Signing Certificate Profile Signer** role on the account.
+3. Add the six secrets in the table above under the repository's
+   **Settings → Secrets and variables → Actions**.
+4. Push any commit: the James desktop workflow now signs the Windows installer
+   artifact, so the setup can be checked before a release.
 
 After adding certificates, push a test tag on a fork or a prerelease tag, check
 that `release-metadata.json` reports what you expect, and verify the signatures

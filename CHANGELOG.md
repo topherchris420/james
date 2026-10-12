@@ -22,6 +22,11 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Changed
 
+- **Windows builds can be signed with Azure Artifact Signing**, Microsoft's
+  service that keeps the signing key in its own hardware; new certificates can
+  no longer be issued as a `.pfx` file. Setup is in
+  [docs/INSTALLER.md](docs/INSTALLER.md#getting-a-windows-signing-identity).
+  Builds stay unsigned, and say so, until a maintainer configures it.
 - **Screenshots wait for James to leave the picture** (Windows). After the
   three-second delay, the capture helper checks that none of James's windows
   still covers the screen, waits for the display to finish redrawing, and only

@@ -102,7 +102,19 @@ jobs:
       - name: Build per-user Windows installer
         if: matrix.os == 'windows-latest'
         shell: pwsh
+        env:
+          # Azure Artifact Signing, used only when configured and only in this
+          # step, so no other step can read the Azure credentials.
+          ARTIFACT_SIGNING_ACCOUNT: ${{ secrets.ARTIFACT_SIGNING_ACCOUNT }}
+          ARTIFACT_SIGNING_ENDPOINT: ${{ secrets.ARTIFACT_SIGNING_ENDPOINT }}
+          ARTIFACT_SIGNING_PROFILE: ${{ secrets.ARTIFACT_SIGNING_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         run: |
+          if ($env:ARTIFACT_SIGNING_ACCOUNT) {
+            $env:ARTIFACT_SIGNING_DLIB = ./scripts/get-artifact-signing.ps1
+          }
           if ($env:WINDOWS_CERTIFICATE_PFX_BASE64) {
             $pfx = Join-Path $env:RUNNER_TEMP 'certificate.pfx'
             [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_PFX_BASE64))
@@ -203,7 +215,7 @@ jobs:
         working-directory: artifacts
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-          WINDOWS_SIGNED: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 != '' }}
+          WINDOWS_SIGNED: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 != '' || secrets.ARTIFACT_SIGNING_ACCOUNT != '' }}
           MACOS_SIGNED: ${{ secrets.MACOS_SIGNING_IDENTITY != '' }}
           # The same conditions package-macos.sh uses; a configured step that
           # fails stops the build, so reaching this job means it happened.
