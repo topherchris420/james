@@ -49,8 +49,9 @@ install -m 0644 installer/linux/james.desktop installer/linux/README.txt LICENSE
 install -m 0644 installer/james-512.png "${folder}/james.png"
 tar -czf "${dist}/${product}.tar.gz" -C "$stage" --owner=0 --group=0 "$product"
 
-# Debian package. A prerelease such as 0.4.0-beta.1 becomes 0.4.0~beta.1 so it
-# sorts before the final 0.4.0.
+# Debian package. A prerelease such as 0.4.0-beta.1 gets the package version
+# 0.4.0~beta.1 so it sorts before the final 0.4.0. The file name keeps the
+# plain version, because GitHub renames release assets containing "~".
 deb_version="${version//-/\~}"
 package="${stage}/deb"
 install -D -m 0755 "$binary" "${package}/usr/bin/james"
@@ -89,7 +90,7 @@ Description: desktop AI companion that asks before it touches anything
  else. It sees the screen only when you capture it, and speaks and listens
  with tools on this computer.
 CONTROL
-deb="${dist}/james_${deb_version}_${deb_arch}.deb"
+deb="${dist}/james_${version}_${deb_arch}.deb"
 dpkg-deb --root-owner-group --build "$package" "$deb" >/dev/null
 
 cd "$dist"

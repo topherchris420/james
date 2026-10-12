@@ -134,7 +134,7 @@ jobs:
         working-directory: artifacts
         run: |
           sha256sum --check ./*.sha256
-          cat ./*.sha256 | sort -k 2 > SHA256SUMS.txt
+          cat ./*.sha256 | tr -d '\r' | sort -k 2 > SHA256SUMS.txt
           rm ./*.sha256
           ls -l
       - name: Publish explicitly tagged release
@@ -144,8 +144,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           version="${RELEASE_TAG#v}"
-          deb_version="${version//-/\~}"
-          sed -e "s/@VERSION@/${version}/g" -e "s/@DEB_VERSION@/${deb_version}/g" .github/release-notes.md > "$RUNNER_TEMP/notes.md"
+          sed "s/@VERSION@/${version}/g" .github/release-notes.md > "$RUNNER_TEMP/notes.md"
           flags=()
           if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
           gh release create "$RELEASE_TAG" artifacts/* --verify-tag --notes-file "$RUNNER_TEMP/notes.md" --generate-notes --title "James $RELEASE_TAG" "${flags[@]}"
