@@ -20,8 +20,8 @@
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// Why an exchange failed. Variants are deliberately coarse: callers turn them
@@ -369,7 +369,10 @@ fn connect(
             Err(error) => failures.push(format!("{address}: {error}")),
         }
     }
-    if timeouts.total.is_some_and(|total| started.elapsed() >= total) {
+    if timeouts
+        .total
+        .is_some_and(|total| started.elapsed() >= total)
+    {
         return Err(Error::TimedOut);
     }
     // A connect timeout is still an unreachable local service, not a
