@@ -1,5 +1,12 @@
 [workspace]
-members = ["crates/james-core", "crates/james-models", "crates/james-desktop", "crates/james-platform", "crates/james-lab"]
+members = [
+    "crates/james-core",
+    "crates/james-loopback",
+    "crates/james-models",
+    "crates/james-lab",
+    "crates/james-platform",
+    "crates/james-desktop",
+]
 resolver = "3"
 
 [workspace.package]

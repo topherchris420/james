@@ -1,0 +1,11 @@
+[package]
+name = "james-loopback"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The only network path out of James: a dependency-free HTTP/1.1 client that can connect to a loopback port and nowhere else"
+publish = false
+
+[lints]
+workspace = true
