@@ -2,6 +2,8 @@
 name = "james-desktop"
 version.workspace = true
 edition.workspace = true
+# Let chains need 1.88; the library crates keep the workspace minimum (1.85).
+rust-version = "1.88"
 license.workspace = true
 description = "James native Rust desktop interface"
 publish = false
