@@ -97,9 +97,10 @@ reasons separately (Ollama's thinking models), James shows that it is
 thinking and keeps only the answer. Reasoning is never read aloud or treated
 as an action.
 
-Each message has **Copy**; the latest answer also has **Ask again** and
-**Read aloud**. Ctrl+Shift+C copies the last answer and Ctrl+L jumps to the
-message box.
+Each message has **Copy** and each answer **Read aloud**. The latest answer
+also has **Ask again**, which sends your last question again and replaces
+that answer (a screenshot is not sent again). Ctrl+Shift+C copies the last
+answer and Ctrl+L jumps to the message box.
 
 **Stop** (or Esc) closes the connection to the model server at once, even
 before the first word. The part of the reply that arrived stays, marked
