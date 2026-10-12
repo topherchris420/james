@@ -325,13 +325,17 @@ pub fn delete_all(session: &Path) -> Result<Vec<PathBuf>, String> {
 
 #[cfg(test)]
 pub(crate) fn scratch_dir(name: &str) -> PathBuf {
+    // The clock alone can repeat: Windows counts in 100 ns steps, and tests
+    // that start together then share a folder and collide on its files.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let dir = std::env::temp_dir().join(format!(
-        "james-{name}-{}-{}",
+        "james-{name}-{}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     let _ = std::fs::remove_dir_all(&dir);
     dir
