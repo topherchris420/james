@@ -39,7 +39,7 @@ cp installer/james.icns "${app}/Contents/Resources/james.icns"
 cp LICENSE "${app}/Contents/Resources/LICENSE"
 codesign --force --deep --sign - "$app"
 codesign --verify --deep --strict "$app"
-lipo -verify_arch "${app}/Contents/MacOS/james" arm64 x86_64
+lipo "${app}/Contents/MacOS/james" -verify_arch arm64 x86_64
 "${app}/Contents/MacOS/james" --version
 
 dist="${root}/dist"
