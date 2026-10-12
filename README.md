@@ -159,7 +159,7 @@ input boundary is [`review.rs`](crates/james-desktop/src/review.rs).
 
 | Capability                  | What James does                                                                                                   | Requirements and guide                                                                     |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Local chat                  | Chats with a model on your machine. Replies are currently non-streaming                                          | A local model server; [desktop guide](docs/DESKTOP.md)                                     |
+| Local chat                  | Chats with a model on your machine. Replies stream in as the model writes them; Stop closes the connection       | A local model server; [desktop guide](docs/DESKTOP.md)                                     |
 | Screen context              | Captures the primary screen on request, shows a preview, attaches it to a question                                | A vision-capable model; [platform support](docs/PLATFORM_SUPPORT.md)                       |
 | Guide me                    | Takes one snapshot, names what matters on screen and suggests up to three steps *you* can take                    | A vision-capable model. Guidance never turns into an action                                |
 | Reviewed computer input     | Prepares one click, allowlisted key or text insertion, or lets a vision model suggest one, for you to approve once | Windows x64; [supervision](docs/SUPERVISION.md)                                            |
@@ -219,9 +219,9 @@ the tier its evidence supports.
 
 | Tier                                                 | Claims                                                                                                                                                                                                                                                                                                                                  |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ✅ **Verified on a real system**                     | Windows x64 preview build and installer compiled in [CI](docs/VALIDATION.md) · Windows capture and speech helpers exercised · read-only Lab status and discovery against a real Lab server · a native window launched and its guards checked · Linux model discovery and a three-turn local-model conversation through the real UI ([screenshots above](docs/VALIDATION.md#readme-screenshot-session-2026-10-11)) |
-| 🧪 **Implemented and tested in CI, not on a device** | macOS/Linux capture, speech and whisper.cpp listening · Ollama and OpenAI-compatible protocol contracts (HTTP fixtures) · approval timing, expiry and clock-change regressions (simulated clocks)                                                                                                                                        |
-| ⬜ **Not yet proven**                                | Real-model answer quality and vision accuracy · end-user usability and accessibility · clean-machine install, upgrade and uninstall · reliable targeting of a specific app · microphone recognition quality                                                                                                                             |
+| ✅ **Verified on a real system**                     | Windows x64 preview build and installer compiled in [CI](docs/VALIDATION.md) · Windows capture and speech helpers exercised · read-only Lab status and discovery against a real Lab server · a native window launched and its guards checked · Linux model discovery and a three-turn local-model conversation through the real UI ([screenshots above](docs/VALIDATION.md#readme-screenshot-session-2026-10-11)) · live streaming and Stop through the real UI against a scripted loopback server ([record](docs/VALIDATION.md#streaming-and-stop-session-2026-10-12)) |
+| 🧪 **Implemented and tested in CI, not on a device** | macOS/Linux capture, speech and whisper.cpp listening · Ollama and OpenAI-compatible protocol contracts, including streamed replies split at awkward byte boundaries, malformed frames, disconnects and Stop (socket fixtures) · approval timing, expiry and clock-change regressions (simulated clocks)                                     |
+| ⬜ **Not yet proven**                                | Streaming against real LM Studio, Ollama and llama.cpp builds · real-model answer quality and vision accuracy · end-user usability and accessibility · clean-machine install, upgrade and uninstall · reliable targeting of a specific app · microphone recognition quality                                                                                                                             |
 
 **This is a developer preview, not a production-ready autonomous agent.**
 Passing CI proves code paths work, not that real-world use is flawless. The
@@ -238,12 +238,12 @@ enabled. See the [benchmark protocol](docs/BENCHMARKS.md).
 | Order     | Work                                                              | Evidence required                                                       |
 | --------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | **01**    | Real-model text, vision and harmless-action evaluation            | A reproducible end-to-end session with failures recorded                |
-| **02**    | Streaming responses and network-level cancellation                | Malformed and disconnected stream fixtures; cancellation checks         |
-| **03**    | SQLite history and a crash-tested action journal                  | Restart, interruption, rollback and replay-suppression tests            |
-| **04**    | Window-specific targeting and better accessibility                | Real focus, scaling and assistive-technology tests                      |
-| **05**    | Clean-machine installer, signed builds, short demo video          | Install/upgrade/uninstall matrix and an authentic recorded walkthrough  |
+| **02**    | SQLite history and a crash-tested action journal                  | Restart, interruption, rollback and replay-suppression tests            |
+| **03**    | Window-specific targeting and better accessibility                | Real focus, scaling and assistive-technology tests                      |
+| **04**    | Clean-machine installer, signed builds, short demo video          | Install/upgrade/uninstall matrix and an authentic recorded walkthrough  |
 | **Later** | Scoped tools, MCP interoperability, coordinated research workflows | Deterministic gates, human authorization, provenance, measurable benefit |
 
+Streaming replies and a Stop that closes the connection have shipped, with the fixtures that milestone asked for.
 The long-range [roadmap](docs/ROADMAP.md) is a plan, not a list of shipped features.
 
 ## FAQ
@@ -251,11 +251,13 @@ The long-range [roadmap](docs/ROADMAP.md) is a plan, not a list of shipped featu
 <details>
 <summary><strong>Does James send anything to the cloud?</strong></summary>
 
-No. Model and Lab clients accept only numeric `127.0.0.1` ports. There is no
-cloud fallback, no environment proxy, no redirect following and no API key.
-Whatever you attach goes to the local model server you chose, and that server's
-own logging applies. Enforced in [`james-models`](crates/james-models) and
-[`james-lab`](crates/james-lab).
+No. Every request James makes goes through
+[`james-loopback`](crates/james-loopback), a small HTTP client whose only address
+input is a port number. It connects to `127.0.0.1`, or `::1` if nothing answers
+there, and has no way to express any other destination. There is no hostname,
+DNS lookup, cloud fallback, proxy, redirect following or API key. Whatever you
+attach goes to the local model server you chose, and that server's own logging
+and routing apply.
 
 </details>
 
@@ -374,7 +376,8 @@ directories, never through a shell. The workspace is split into crates with one
 job each:
 
 - [`james-core`](crates/james-core): one-use approvals, policy checks, budgets, cancellation and supervised action contracts. No third-party dependencies.
-- [`james-models`](crates/james-models): loopback provider selection; bounded OpenAI-compatible and Ollama requests.
+- [`james-loopback`](crates/james-loopback): the only network path. A dependency-free HTTP/1.1 client that can reach a loopback port and nothing else, with an abort handle for Stop.
+- [`james-models`](crates/james-models): provider selection and streamed, bounded OpenAI-compatible and Ollama requests.
 - [`james-platform`](crates/james-platform): screen capture and speech on Windows, macOS and Linux; whisper.cpp listening; constrained Windows input.
 - [`james-lab`](crates/james-lab): read-only status and recent research from R.A.I.N. Lab.
 - [`james-desktop`](crates/james-desktop): the native `eframe`/`egui` UI, settings, local session state and review workflow.

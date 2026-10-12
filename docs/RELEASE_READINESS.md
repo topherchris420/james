@@ -4,7 +4,7 @@
 
 ## Implemented in cross-platform foundation work
 
-- Existing: Rust workspace with core one-use approval policies, Windows screenshot/speech/input helper, action-intent crash gate, optional read-only R.A.I.N. Lab discovery bridge, non-streaming OpenAI-compatible loopback chat, Windows preview installer, and CI tests.
+- Existing: Rust workspace with core one-use approval policies, Windows screenshot/speech/input helper, action-intent crash gate, optional read-only R.A.I.N. Lab discovery bridge, streamed OpenAI-compatible and Ollama loopback chat through the dependency-free `james-loopback` client, Windows preview installer, and CI tests.
 - Added: explicit user-selected provider protocol and persisted provider choice (legacy sessions default to LM Studio), native Ollama model listing/text chat and PNG request encoding, llama.cpp/OpenAI-compatible presets, UI messages about unsupported native capabilities, CI macOS desktop build and experimental Unix portable packaging, and `scripts/test-local-provider.ps1`.
 - Important: adding compatible endpoints does not constitute a real-model inference benchmark. The tested protocols are explicitly scoped to local loopback and do not expose unauthenticated services.
 
@@ -19,7 +19,7 @@
 | Windows ARM64, Linux ARM64 and other macOS architecture | No independent device validation yet |
 | Actual LM Studio/Qwen text and vision | Run and record on a real loaded model. This environment cannot assume access to the user's own localhost |
 | Ollama/llama.cpp genuine server responses | Native fixtures added; run real servers and record failures before compatibility claims |
-| Streaming and cancellation | **Not implemented** at HTTP transport level; Stop only prevents reply application |
+| Streaming and cancellation | Implemented at the transport level: Stop closes the socket. Socket fixtures and a scripted-server UI session pass; real LM Studio, Ollama and llama.cpp streaming still need recorded runs |
 | SQLite recovery and encrypted credentials | **Not implemented**; keep existing session backwards compatible |
 | Native macOS/Linux screen capture, speech and whisper.cpp listening | Implemented with unit tests; real-device validation (permissions, microphones, recognition quality, display servers) required |
 | Native macOS/Linux computer input | **Not implemented**; explicitly disabled in UI |

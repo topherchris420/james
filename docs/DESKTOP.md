@@ -15,7 +15,7 @@ cargo test --workspace --all-targets --locked
 cargo run -p james-desktop --locked
 ```
 
-The native screen, input and speech operations require Windows. On other platforms they return an unsupported-capability error. A successful cross-platform compile does not imply those features are portable.
+Screen capture, Guide me, speech and listening run on Windows, macOS and Linux; reviewed computer input is Windows-only and returns an unsupported-capability error elsewhere. See [PLATFORM_SUPPORT.md](PLATFORM_SUPPORT.md). A successful cross-platform compile does not prove those features work on a given device.
 
 ## Connect a model
 
@@ -28,9 +28,11 @@ The native screen, input and speech operations require Windows. On other platfor
 3. Choose **Discover models**, select an actual loaded identifier, and save settings.
 4. Write a question and choose **Send**, or press Ctrl+Enter in the draft.
 
-LM Studio, llama.cpp and other compatible servers use `/v1/models` and `/v1/chat/completions`; Ollama uses its native `/api/tags` and `/api/chat`. Replies are non-streaming. Model work runs off the UI thread with bounded requests. Stopping the UI operation does not guarantee that an already dispatched model request stops computing on the server. Protocol behavior is covered by mock HTTP tests; real inference and vision quality have not been established by those tests.
+LM Studio, llama.cpp and other compatible servers use `/v1/models` and `/v1/chat/completions` with server-sent events; Ollama uses its native `/api/tags` and `/api/chat` with newline-delimited JSON. Replies appear as the model writes them, and a server that ignores the streaming request is still understood. Model work runs off the UI thread with bounded requests. James waits up to two minutes for each next piece of a reply, so a long answer on a slow computer is not cut off while it keeps arriving, but a server that falls silent is.
 
-Both model and Lab connections are numeric loopback only, with redirects and environment proxies disabled. There is no automatic cloud fallback, but the selected server may itself route to a remote provider or retain requests.
+**Stop** closes James's connection to the model server at once, even while James is still waiting for the first word. Whatever part of the reply already arrived stays in the conversation, marked "[Stopped by you before the reply finished.]". A reply cut short by an error is kept the same way, labelled with the reason. Whether the server stops generating once the connection closes is up to the server. Protocol behavior is covered by socket fixture tests and a scripted-server session; real inference and vision quality have not been established by those tests.
+
+Both model and Lab connections go through `james-loopback`, whose only address input is a port on `127.0.0.1` (or `::1`). It does no DNS, follows no redirects and uses no proxy. There is no automatic cloud fallback, but the selected server may itself route to a remote provider or retain requests.
 
 ## Screen questions and computer input
 

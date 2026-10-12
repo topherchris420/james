@@ -1,6 +1,6 @@
 # James implementation roadmap
 
-Status: v0.3 adds an integrated native desktop, LM Studio text/vision requests, Windows screen/voice helpers, reviewed single-action input through the core policy gate, a conservative durable intent marker, the actual read-only Lab discovery connection, and unsigned per-user installer packaging. Streaming, automated outcome verification, full crash-tested transactional history, broad platform coverage, accessibility validation and signed releases remain open.
+Status: the current preview streams replies through a loopback-only transport with a Stop that closes the connection. v0.3 added an integrated native desktop, LM Studio text/vision requests, Windows screen/voice helpers, reviewed single-action input through the core policy gate, a conservative durable intent marker, the actual read-only Lab discovery connection, and unsigned per-user installer packaging. Automated outcome verification, full crash-tested transactional history, broad platform coverage, accessibility validation and signed releases remain open.
 
 | Milestone | Deliverable | Exit gate |
 | --- | --- | --- |
@@ -15,9 +15,9 @@ Status: v0.3 adds an integrated native desktop, LM Studio text/vision requests, 
 ## Phase 2 implementation order
 
 1. **Implemented first slice:** minimal eframe window and a worker-to-UI channel, with model HTTP I/O off the UI thread.
-2. Build the provider adapter against recorded synthetic responses before touching a user's server. Test fragmented streams, malformed frames, context errors, timeouts, and cancellation.
+2. **Implemented:** provider adapters tested against scripted socket fixtures: fragmented streams, malformed frames, mid-stream disconnects, in-stream errors, idle timeouts and cancellation.
 3. **Partially implemented:** explicit local port and model settings, model discovery and mock HTTP tests. Do not load/unload models or change inference services silently.
-4. **Partially implemented:** typed text conversation and terminal HTTP result exist. Add incremental streaming and cancellation.
+4. **Implemented:** typed conversation with incremental streaming and a Stop that closes the connection; partial replies are kept and labelled.
 5. **Partial local history:** plaintext JSON session file exists. Replace it with SQLite migrations and crash-aware incomplete-run tracking.
 6. Verify keyboard/assistive-technology review, scaling, long conversations, and UI responsiveness. Record actual platform support.
 

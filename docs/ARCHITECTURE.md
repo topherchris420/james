@@ -6,7 +6,7 @@ Status: Phase 1 design, 2026-10-11. James is an original open-source Rust deskto
 
 The Phase 1 implementation is a small `james-core` Rust policy and action-lifecycle prototype plus an in-memory [run supervisor](SUPERVISION.md). Its scope is immutable reviewed invocations, grants bound to one in-memory action generation and run, fail-closed recovery transitions, non-copyable run-bound budgets, and action-state contracts. The supervisor now assigns ephemeral action IDs, owns shared quotas, traces state changes, and requires a caller-supplied intent callback before dispatch. **Durable identity**, task scheduling, real resource enforcement, and committed journaling remain future work. See [VALIDATION.md](VALIDATION.md) for the actual checked behavior and limits.
 
-The desktop, inference adapters, SQLite store, MCP client, OS sandbox, and multi-agent runtime below are **proposed later work**. A type, interface, or passing unit test is not proof that those integrations exist or enforce their intended boundary.
+Since then the desktop, streamed inference adapters for LM Studio, Ollama, llama.cpp and other OpenAI-compatible servers, and the `james-loopback` transport (ADR 008) have shipped as a developer preview; [VALIDATION.md](VALIDATION.md) records what was checked. The SQLite store, MCP client, OS sandbox, and multi-agent runtime below remain **proposed later work**. A type, interface, or passing unit test is not proof that those integrations exist or enforce their intended boundary.
 
 ## ADR 001: Rust application and Rust-rendered desktop
 
@@ -74,6 +74,14 @@ Proposed agent coordination uses a supervisor-owned dependency graph with worker
 Use exclusive ownership or staged patches for shared artifacts, then reconcile conflicts centrally. Keep cancellation and budget accounting at the supervisor. Measure planner/worker/reviewer coordination against a single-agent baseline before treating extra workers as a benefit.
 
 The user sees the selected provider/model, data destinations, action arguments, approval scope, task state, failures, and resumability. Show summaries and retained evidence; do not present private model reasoning as an execution audit.
+
+## ADR 008: One loopback-only transport that James owns
+
+Decision, 2026-10-12: every network request goes through `james-loopback`, a dependency-free HTTP/1.1 client written for James. Its only address input is a `u16` port; sockets are built from `Ipv4Addr::LOCALHOST`, falling back to `Ipv6Addr::LOCALHOST`. There is no URL type, hostname, DNS, TLS, proxy or redirect following, so "nothing leaves this computer" is a property of the type signature rather than of careful configuration. A general HTTP library would need every one of those features turned off and kept off.
+
+Owning the socket also gives James an `AbortHandle` that shuts the connection down from another thread. Stop therefore ends a streaming reply on the wire, including during the wait for the first byte, instead of discarding text that keeps arriving. Whether the server then stops computing remains the server's behavior, and James does not claim otherwise.
+
+The client deliberately implements only what loopback model and Lab servers need: one request per connection, `Content-Length`, chunked and until-close bodies, interim 1xx responses, and bounded header, line and body sizes with connect, idle and total timeouts. Compression and other transfer codings are refused by name rather than guessed at. The cost is owning a small HTTP parser; it is covered by socket fixtures that split messages at arbitrary byte boundaries. Remote providers, if ever added, would need a separate, visibly labelled transport and an explicit user opt-in, never a change to this crate.
 
 ## Data privacy and release gates
 

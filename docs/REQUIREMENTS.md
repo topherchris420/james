@@ -4,10 +4,10 @@ Status: original Phase 1 specification, 2026-10-11. Proposed acceptance criteria
 
 | ID | Requirement | Acceptance evidence | Current state |
 | --- | --- | --- | --- |
-| J01 | Rust application with a Rust-rendered desktop UI | Build and operate an eframe conversation/review/timeline flow on supported platforms | Core only; UI proposed |
-| J02 | Explicit context capture | Preview contains exactly the region/window/display sent; hidden fixtures never leave that scope | Proposed |
-| J03 | Useful local-model operation | Complete chat offline with configured on-device server; show model/backend and capabilities | Proposed |
-| J04 | Honest provider locality | Distinguish endpoint location from inference locality; no silent provider/cloud fallback | Proposed |
+| J01 | Rust application with a Rust-rendered desktop UI | Build and operate an eframe conversation/review/timeline flow on supported platforms | eframe desktop preview with conversation and review; operated on Linux under Xvfb; no execution timeline yet |
+| J02 | Explicit context capture | Preview contains exactly the region/window/display sent; hidden fixtures never leave that scope | Primary-monitor capture with preview before attaching; region and window selection proposed |
+| J03 | Useful local-model operation | Complete chat offline with configured on-device server; show model/backend and capabilities | Streamed chat with LM Studio, Ollama, llama.cpp or OpenAI-compatible servers; one real llama.cpp session recorded; capability display proposed |
+| J04 | Honest provider locality | Distinguish endpoint location from inference locality; no silent provider/cloud fallback | Endpoint locality enforced by `james-loopback`; no fallback exists; inference locality is not verified or displayed |
 | J05 | Immutable action review | Changed run, tool, arguments, scope, destination, or action generation cannot use prior consent | In-memory contract tested |
 | J06 | Immediate revocation and expiry | Reject dispatch after expiry, changed policy, denial, or pre-dispatch cancellation | In-memory contract tested |
 | J07 | Bounded work | Enforce run-owned dispatch/token/deadline ceilings; later add model-call/depth/worker limits | Shared in-memory run budget implemented; host limits proposed |
@@ -16,7 +16,7 @@ Status: original Phase 1 specification, 2026-10-11. Proposed acceptance criteria
 | J10 | Extensibility | Versioned provider/tool APIs and MCP fixtures; arbitrary subprocess trust visible | Proposed |
 | J11 | Explainable execution | Show concrete action, destination, permission, observed result, errors, and uncertainty | Proposed UI |
 | J12 | User-owned history | Local retention, export/delete, redacted diagnostics, no unsolicited analytics upload | Proposed |
-| J13 | Voice under user control | Separate input/output/dictation permissions; visible recording and bounded follow-up window | Proposed |
+| J13 | Voice under user control | Separate input/output/dictation permissions; visible recording and bounded follow-up window | Talk, Dictate and read-aloud implemented with visible state and a 15-second silence limit; voice cannot approve actions; device testing pending |
 | J14 | Accessible, responsive desktop | Keyboard review, screen-reader inspection, scaling/high contrast, bounded UI latency under inference load | Proposed; measure before release |
 | J15 | Reproducible evidence | Hash-identified reference artifacts, evidence classes, explicit unknowns and repeatable checks | Phase 1 documents and tests |
 | J16 | Comparative claims require results | Frozen task corpus, matched configs, failures retained, measured outcomes with uncertainty | Protocol prepared; no results |
