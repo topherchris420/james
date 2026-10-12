@@ -20,6 +20,7 @@
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -240,7 +241,10 @@ impl<'a> Request<'a> {
         }
         let timeouts = self.client.timeouts;
         let (stream, address) = connect(self.client.port, timeouts, started)?;
-        let abort = AbortHandle(Arc::new(stream.try_clone()?));
+        let abort = AbortHandle {
+            stream: Arc::new(stream.try_clone()?),
+            aborted: Arc::new(AtomicBool::new(false)),
+        };
         stream.set_nodelay(true)?;
         stream.set_write_timeout(Some(timeouts.idle.max(Duration::from_millis(1))))?;
         if let Some(callback) = self.on_connect {
@@ -341,31 +345,42 @@ fn connect(
     timeouts: Timeouts,
     started: Instant,
 ) -> Result<(TcpStream, SocketAddr), Error> {
-    let mut first_failure = None;
+    // IPv4 and IPv6 share one connect budget. Giving each address the full
+    // timeout can double the wait, particularly on Windows where an unbound
+    // IPv6 loopback port may time out instead of refusing immediately.
+    let mut failures = Vec::new();
     for address in candidates(port) {
         debug_assert!(address.ip().is_loopback());
-        let mut wait = timeouts.connect;
+        let elapsed = started.elapsed();
         if let Some(total) = timeouts.total {
-            let elapsed = started.elapsed();
             if elapsed >= total {
                 return Err(Error::TimedOut);
             }
+        }
+        let mut wait = timeouts.connect.saturating_sub(elapsed);
+        if let Some(total) = timeouts.total {
             wait = wait.min(total - elapsed);
         }
-        match TcpStream::connect_timeout(&address, wait.max(Duration::from_millis(1))) {
+        if wait.is_zero() {
+            break;
+        }
+        match TcpStream::connect_timeout(&address, wait) {
             Ok(stream) => return Ok((stream, address)),
-            Err(error) => {
-                if first_failure.is_none() {
-                    first_failure = Some(error);
-                }
-            }
+            Err(error) => failures.push(format!("{address}: {error}")),
         }
     }
-    let error = first_failure.expect("two candidate addresses");
-    Err(match error.kind() {
-        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => Error::TimedOut,
-        _ => Error::Unreachable(format!("port {port}: {error}")),
-    })
+    if timeouts.total.is_some_and(|total| started.elapsed() >= total) {
+        return Err(Error::TimedOut);
+    }
+    // A connect timeout is still an unreachable local service, not a
+    // response read timeout. Preserve the individual socket errors for
+    // diagnostics instead of classifying only the first address's error.
+    let detail = if failures.is_empty() {
+        "connection deadline elapsed".to_owned()
+    } else {
+        failures.join("; ")
+    };
+    Err(Error::Unreachable(format!("port {port}: {detail}")))
 }
 
 /// Tracks the exchange deadline and arms the socket read timeout before each
@@ -575,11 +590,21 @@ fn parse_chunk_size(line: &[u8]) -> Result<u64, Error> {
 /// without waiting for a timeout. Whether the server stops computing is the
 /// server's own behaviour; James only knows it closed the connection.
 #[derive(Debug, Clone)]
-pub struct AbortHandle(Arc<TcpStream>);
+pub struct AbortHandle {
+    stream: Arc<TcpStream>,
+    aborted: Arc<AtomicBool>,
+}
 
 impl AbortHandle {
     pub fn abort(&self) {
-        let _ = self.0.shutdown(Shutdown::Both);
+        // Windows can report a local shutdown as a successful EOF. Keep a
+        // separate cancellation bit so EOF cannot masquerade as completion.
+        self.aborted.store(true, Ordering::Release);
+        let _ = self.stream.shutdown(Shutdown::Both);
+    }
+
+    fn is_aborted(&self) -> bool {
+        self.aborted.load(Ordering::Acquire)
     }
 }
 
@@ -651,6 +676,9 @@ impl Body {
     /// Reads some decoded body bytes. `Ok(0)` means the message is complete;
     /// a peer that disappears mid-message yields [`Error::Closed`] instead.
     pub fn read_chunk(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        if self.abort.is_aborted() && self.framing != Framing::Done {
+            return Err(Error::Closed);
+        }
         if buf.is_empty() {
             return Ok(0);
         }
@@ -739,10 +767,20 @@ impl Body {
     }
 
     fn read_socket(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        if self.abort.is_aborted() {
+            return Err(Error::Closed);
+        }
         self.clock.arm(self.inner.get_ref())?;
         loop {
             match self.inner.read(buf) {
-                Ok(read) => return Ok(read),
+                Ok(read) => {
+                    // A concurrent Stop may make read() return Ok(0) on
+                    // Windows; that must not finish an until-close stream.
+                    if self.abort.is_aborted() {
+                        return Err(Error::Closed);
+                    }
+                    return Ok(read);
+                }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
                 Err(error) => return Err(error.into()),
             }
