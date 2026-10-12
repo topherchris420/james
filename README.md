@@ -27,12 +27,12 @@
 
 James is a free, open-source desktop app, written in Rust by
 [Vers3Dynamics](https://vers3dynamics.com/). It talks to an AI model that runs
-**on your own computer**, through a model app such as LM Studio, Ollama or
+**on your own computer**, through a model app such as LM Studio, Ollama, or
 llama.cpp. It has no internet connection of its own, no account and no
 analytics.
 
 Most desktop agents ask for your trust up front and then act on it. James
-works the other way round. The model can talk, look and suggest as much as you
+works the other way round. The model can talk, look, and suggest as much as you
 like, but it never holds the keys: anything that would change your computer is
 one exact proposal that you inspect and approve once, and then James waits
 while you check what happened.
@@ -40,10 +40,7 @@ while you check what happened.
 > **Intelligence may propose. Evidence must be checked. Authority stays with the human.**
 
 > [!IMPORTANT]
-> **James 0.4.0 is a developer preview.** Its readiness score is
-> [5.2 / 10](docs/END_USER_READINESS.md): it has been used with real model
-> servers on Linux, but not yet on a physical Windows PC or Mac, with a screen
-> reader, or by first-time users in a study. Downloads are not code-signed.
+> **James 0.4.0 is a developer preview.** Downloads are not code-signed.
 > Read [what has and hasn't been verified](#status) before relying on it.
 
 ## What James can do
@@ -51,11 +48,11 @@ while you check what happened.
 | | |
 | --- | --- |
 | **Guided setup** | Five short steps from "what is this?" to a real answer: how to get LM Studio or Ollama for your system, finding your model app, a test message, and what screen capture and permissions mean. Resumes where you left off. |
-| **Chat** | Replies stream in as the model writes them, with headings, lists, emphasis and copyable code. **Stop** ends a reply at once and keeps what arrived, marked incomplete. Copy, Ask again and Try again are one click away. |
+| **Chat** | Replies stream in as the model writes them, with headings, lists, emphasis, and copyable code. **Stop** ends a reply at once and keeps what arrived, marked incomplete. Copy, Ask again, and Try again are one click away. |
 | **Know your model** | James asks your model app what the model can do — read images, chat, its context window, whether it is loaded — and switches off features the model can't support, instead of letting them fail. |
 | **No silent cloud** | If your model app says a model runs on another computer (Ollama's cloud models), James labels it, warns you, and never picks it for you. |
 | **Screen help** | **Guide me** takes one picture of your screen, only when you press it, and suggests up to three next steps you take yourself. Turn on step numbers in Settings to have your model mark where each one is on the picture; small models often misplace them. Or capture, look at the preview, and attach it to a question. Needs a model that reads images. |
-| **Reviewed input** (Windows) | James can press one key, click once or type text you approved, after a five-second countdown, only if the window from your screenshot is in front. Then it waits for you to check the result. |
+| **Reviewed input** (Windows) | James can press one key, click once or type text you approved after a five-second countdown, only if the window from your screenshot is in front. Then it waits for you to check the result. |
 | **Voice** | Talk hands-free, dictate into the message box, or have answers read aloud. Listening runs on your computer. Voice can never approve an action. |
 | **R.A.I.N. Lab** | A read-only view of [R.A.I.N. Lab](https://github.com/topherchris420/lop-nur-twin) research: what the Lab is doing, recent simulator results labelled by how far they were checked, and, only if you turn it on, a short summary shared with your model. |
 | **Your preferences** | Light, dark or system theme in Vers3Dynamics teal, high contrast, text from 80% to 200%, reduced motion, full keyboard control (F1 lists shortcuts) and screen-reader labels. |
