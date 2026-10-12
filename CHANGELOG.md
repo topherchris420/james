@@ -9,6 +9,18 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 0.4.0 were never published as releases. A version with a suffix, such as
 `0.4.0-preview.1`, is published as a prerelease.
 
+## Unreleased
+
+### Changed
+
+- **Guide me's step numbers are off by default.** Turn them on in Settings →
+  Guide me. Your model decides where each number goes. In a test with
+  Gemma 4 E4B in LM Studio, on synthetic screens with known button
+  positions, the written steps were right but the numbers landed 150 to 270
+  pixels from the buttons they meant. When numbers are shown, James now says
+  the model placed them and they may be off. With them off, Guide me sends
+  exactly the request it did before step numbers existed.
+
 ## 0.4.0-preview.2 — 2026-10-12
 
 A second developer preview: Guide me marks its steps, and screen and voice

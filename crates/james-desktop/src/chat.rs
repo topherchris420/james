@@ -136,7 +136,7 @@ fn guide_screenshot(app: &JamesApp, ui: &mut egui::Ui, answer: &str) {
     });
     let size = (screen.capture.width, screen.capture.height);
     pages::mark_steps(ui, response.rect, &shown.marks, size);
-    ui.small("The numbers match the steps above. James only points: you take each step yourself.");
+    ui.small("Your model placed these numbers, and they may be off: find the label each step names before you click.");
 }
 
 fn message_ui(app: &mut JamesApp, ui: &mut egui::Ui, index: usize, last_answer: bool) {

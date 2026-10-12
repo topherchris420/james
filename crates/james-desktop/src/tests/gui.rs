@@ -837,6 +837,8 @@ fn a_screen_question_is_sent_without_the_conversation_history() {
         "{request}"
     );
     assert!(request.contains("I'm stuck. What should I do next on this screen?"));
+    // Step numbers are off by default, so the model isn't asked for them.
+    assert!(!request.contains("Marks:"), "{request}");
 }
 
 #[test]
@@ -874,6 +876,7 @@ fn guide_me_marks_its_steps_on_the_screenshot() {
         texture,
         at: Instant::now(),
     });
+    h.state_mut().prefs.guide_marks = true;
     assert!(h.state_mut().send(Ask::Guide));
     wait_until(&mut h, "the guidance", |app| app.worker.is_none());
     frames(&mut h, 2);
