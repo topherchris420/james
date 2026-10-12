@@ -201,8 +201,7 @@ fn draw(lab: &mut LabState, ui: &mut egui::Ui) {
     }
     if !lab.connected && lab.snapshot.is_none() {
         ui.add_space(8.0);
-        ui.label(RichText::new("Not connected").strong());
-        ui.label("Start the Lab on this computer:");
+        ui.label("To use it, start the Lab on this computer:");
         crate::copyable(
             ui,
             "git clone https://github.com/topherchris420/lop-nur-twin.git && cd lop-nur-twin && npm ci && npm run dev",

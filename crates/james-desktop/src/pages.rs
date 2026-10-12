@@ -489,7 +489,7 @@ fn appearance(app: &mut JamesApp, ui: &mut egui::Ui) {
     app.prefs.text_scale = scale;
     ui.checkbox(&mut app.prefs.reduce_motion, "Reduce motion")
         .on_hover_text("No animations, spinners or smooth scrolling");
-    ui.small("Ctrl+plus and Ctrl+minus (⌘ on a Mac) also change the size. Screen readers can read James's buttons, fields and messages on Windows, macOS and Linux (AT-SPI).");
+    ui.small("Ctrl+plus and Ctrl+minus (⌘ on a Mac) also change the size. James describes its buttons, fields and messages to screen readers through AccessKit, but this hasn't been tested with a real screen reader yet; please report anything that doesn't work.");
     if app.prefs != before {
         app.save_session();
     }

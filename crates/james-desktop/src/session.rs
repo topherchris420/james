@@ -190,7 +190,13 @@ pub fn load(path: &Path) -> SavedSession {
     if let Some(parent) = path.parent() {
         let _ = tighten(parent, true);
     }
-    let _ = tighten(path, false);
+    for file in [
+        path.to_path_buf(),
+        intent_path(path),
+        crash_report_path(path),
+    ] {
+        let _ = tighten(&file, false);
+    }
     let mut saved: SavedSession = std::fs::metadata(path)
         .ok()
         .filter(|m| m.len() <= MAX_SESSION_BYTES)
@@ -437,8 +443,15 @@ mod tests {
         // A file from an older version, readable by everyone, is tightened on load.
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // An action record left by 0.3, which did not restrict permissions.
+        let intent = intent_path(&path);
+        std::fs::write(&intent, "{}").unwrap();
+        std::fs::set_permissions(&intent, std::fs::Permissions::from_mode(0o644)).unwrap();
         load(&path);
-        assert_eq!((mode(&dir), mode(&path)), (0o700, 0o600));
+        assert_eq!(
+            (mode(&dir), mode(&path), mode(&intent)),
+            (0o700, 0o600, 0o600)
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 

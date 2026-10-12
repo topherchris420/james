@@ -19,6 +19,9 @@ struct Palette {
     field: Color32,
     faint: Color32,
     text: Color32,
+    /// Emphasis and headings: brighter (dark) or darker (light) than text,
+    /// because the bundled font has no bold face.
+    strong: Color32,
     accent: Color32,
     on_accent: Color32,
     warn: Color32,
@@ -35,7 +38,8 @@ fn palette(dark: bool, high_contrast: bool) -> Palette {
             window: Color32::from_rgb(20, 28, 31),
             field: Color32::from_rgb(11, 16, 18),
             faint: Color32::from_rgb(25, 34, 38),
-            text: Color32::from_rgb(227, 236, 236),
+            text: Color32::from_rgb(208, 220, 220),
+            strong: Color32::WHITE,
             accent: TEAL,
             on_accent: Color32::from_rgb(4, 20, 20),
             warn: Color32::from_rgb(242, 193, 78),
@@ -49,7 +53,8 @@ fn palette(dark: bool, high_contrast: bool) -> Palette {
             window: Color32::WHITE,
             field: Color32::WHITE,
             faint: Color32::from_rgb(233, 239, 239),
-            text: Color32::from_rgb(26, 37, 38),
+            text: Color32::from_rgb(52, 66, 67),
+            strong: Color32::BLACK,
             accent: TEAL_DEEP,
             on_accent: Color32::WHITE,
             warn: Color32::from_rgb(138, 83, 0),
@@ -64,6 +69,7 @@ fn palette(dark: bool, high_contrast: bool) -> Palette {
             field: Color32::BLACK,
             faint: Color32::from_rgb(20, 20, 20),
             text: Color32::WHITE,
+            strong: Color32::WHITE,
             accent: Color32::from_rgb(255, 212, 0),
             on_accent: Color32::BLACK,
             warn: Color32::from_rgb(255, 212, 0),
@@ -78,6 +84,7 @@ fn palette(dark: bool, high_contrast: bool) -> Palette {
             field: Color32::WHITE,
             faint: Color32::from_rgb(235, 235, 235),
             text: Color32::BLACK,
+            strong: Color32::BLACK,
             accent: Color32::from_rgb(0, 51, 170),
             on_accent: Color32::WHITE,
             warn: Color32::from_rgb(110, 60, 0),
@@ -126,6 +133,9 @@ fn visuals(dark: bool, high_contrast: bool) -> Visuals {
         widget.bg_fill = bg;
         widget.weak_bg_fill = bg;
     }
+    // egui's "strong" text uses the active widget colour.
+    v.widgets.active.fg_stroke.color = p.strong;
+    v.widgets.hovered.fg_stroke.color = p.strong;
     v.widgets.noninteractive.bg_stroke = Stroke::new(p.stroke_width, p.stroke);
     v.widgets.inactive.bg_stroke = Stroke::new(p.stroke_width, p.stroke);
     // A clearly visible ring shows where keyboard focus and the pointer are.
@@ -256,6 +266,7 @@ mod tests {
                 let floor = if high { 7.0 } else { 4.5 };
                 for (name, fg, bg) in [
                     ("text on panel", p.text, p.panel),
+                    ("emphasis on panel", p.strong, p.panel),
                     ("text on field", p.text, p.field),
                     ("accent on panel", p.accent, p.panel),
                     ("warning on panel", p.warn, p.panel),

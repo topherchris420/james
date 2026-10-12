@@ -136,10 +136,10 @@ impl LocalClient {
         });
         let mut info = show.and_then(|body| ollama_show(&body)).unwrap_or_default();
         // Ollama 0.40 marks cloud models in its list, not in /api/show.
-        if info.remote_host.is_none()
-            && let Some(body) = self.probe_get("/api/tags")
-        {
-            info.remote_host = ollama_listed_remote(&body, model);
+        if info.remote_host.is_none() {
+            if let Some(body) = self.probe_get("/api/tags") {
+                info.remote_host = ollama_listed_remote(&body, model);
+            }
         }
         if let Some(body) = self.probe_get("/api/ps") {
             let (loaded, context) = ollama_running(&body, model);

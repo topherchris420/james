@@ -764,3 +764,47 @@ mod review_screen {
         assert!(!session::intent_path(&h.state().session).exists());
     }
 }
+
+#[test]
+fn a_screen_question_is_sent_without_the_conversation_history() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(&["The Save button is at the bottom right."], Duration::ZERO)
+    });
+    let mut app = james_on(port, Some("gemma3:4b"), SetupStep::Done);
+    app.messages
+        .push(ChatMessage::new("user", "an earlier private question"));
+    app.messages
+        .push(ChatMessage::new("assistant", "an earlier answer"));
+    let mut h = harness(app);
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::RgbaImage::from_pixel(8, 8, image::Rgba([255, 255, 255, 255]))
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+    let texture = h.ctx.load_texture(
+        "test-screen",
+        egui::ColorImage::new([8, 8], egui::Color32::WHITE),
+        egui::TextureOptions::LINEAR,
+    );
+    h.state_mut().screen = Some(Screen {
+        capture: Screenshot {
+            png: png.into_inner(),
+            width: 8,
+            height: 8,
+            target: None,
+        },
+        texture,
+        at: Instant::now(),
+    });
+    assert!(h.state_mut().send(Ask::Guide));
+    wait_until(&mut h, "the guidance", |app| app.worker.is_none());
+    let request = seen.lock().unwrap().clone();
+    assert!(request.contains("\"images\""), "the screenshot is attached");
+    assert!(
+        !request.contains("an earlier private question"),
+        "{request}"
+    );
+    assert!(request.contains("I'm stuck. What should I do next on this screen?"));
+}

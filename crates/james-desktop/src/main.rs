@@ -817,7 +817,9 @@ impl JamesApp {
                 }
             }
         }
-        if mode != Ask::Test {
+        // Screen questions stand on their own: earlier turns only distract a
+        // vision model from the picture (a real one repeated an old answer).
+        if mode == Ask::Chat {
             let fixed: usize = context.iter().map(|m| m.content.len()).sum::<usize>() + text.len();
             let window = self.info_now().and_then(|i| i.context_tokens);
             let (recent, left_out) = recent_history(&self.messages, history_budget(window, fixed));

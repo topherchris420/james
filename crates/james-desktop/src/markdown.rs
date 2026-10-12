@@ -336,10 +336,11 @@ pub fn show(ui: &mut egui::Ui, text: &str, id: impl std::hash::Hash) {
                 links_ui(ui, spans);
             }
             Block::Item(depth, marker, spans) => {
-                ui.horizontal_wrapped(|ui| {
+                // Wrapped lines hang under the item's text, not its number.
+                ui.horizontal_top(|ui| {
                     ui.add_space(8.0 + 16.0 * (*depth).min(4) as f32);
-                    ui.label(RichText::new(marker).color(style.accent));
-                    ui.label(layout(spans, style, size, style.text));
+                    ui.label(RichText::new(marker).size(size).color(style.accent));
+                    ui.add(egui::Label::new(layout(spans, style, size, style.text)).wrap());
                 });
                 links_ui(ui, spans);
             }
