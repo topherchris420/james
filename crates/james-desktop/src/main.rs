@@ -1,6 +1,7 @@
 //! Native local-first research companion. Desktop effects always require review.
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 mod chat;
+mod guide;
 mod lab_view;
 mod markdown;
 mod pages;
@@ -479,9 +480,11 @@ struct JamesApp {
     thinking: bool,
     /// What the running model request is for.
     asking: Option<Ask>,
-    /// The size of the image sent with an action request, to map the model's
-    /// coordinates back to the screen.
-    plan_image: Option<(u32, u32)>,
+    /// The size of the image sent with an action or Guide me request, to map
+    /// the model's coordinates back to the screen.
+    sent_image: Option<(u32, u32)>,
+    /// Where the latest Guide me answer's steps are on its screenshot.
+    guide_marks: Option<guide::GuideMarks>,
     draft: String,
     status: String,
     tone: Tone,
@@ -564,7 +567,8 @@ impl JamesApp {
             streaming: None,
             thinking: false,
             asking: None,
-            plan_image: None,
+            sent_image: None,
+            guide_marks: None,
             draft: String::new(),
             status,
             tone: Tone::Info,
@@ -649,6 +653,31 @@ impl JamesApp {
                 "Could not save your settings on this computer: {e}"
             ));
         }
+    }
+    /// Keeps a Guide me answer's marks, mapped to full-screen pixels, and
+    /// returns the answer without its Marks line.
+    fn take_marks(&mut self, reply: &str) -> String {
+        self.guide_marks = None;
+        let (Some(sent), Some(screen)) = (self.sent_image, &self.screen) else {
+            return guide::split_marks(reply, (0, 0)).0;
+        };
+        let (answer, marks) = guide::split_marks(reply, sent);
+        let size = (screen.capture.width, screen.capture.height);
+        let marks: Vec<guide::Mark> = marks
+            .into_iter()
+            .map(|mark| {
+                let (x, y) = to_screen((mark.x, mark.y), sent, size);
+                guide::Mark { x, y, ..mark }
+            })
+            .collect();
+        if !marks.is_empty() {
+            self.guide_marks = Some(guide::GuideMarks {
+                answer: answer.clone(),
+                screenshot: screen.at,
+                marks,
+            });
+        }
+        answer
     }
     /// Closes the release notes for good: saving records this version.
     fn dismiss_whats_new(&mut self) {
@@ -849,14 +878,19 @@ impl JamesApp {
         } else if mode == Ask::Chat && self.voice != voice::Phase::Off {
             context.push(ChatMessage::new("system", VOICE_CONTEXT));
         }
-        self.plan_image = None;
-        if let (Ask::Plan, Some((_, width, height))) = (mode, &image) {
+        self.sent_image = None;
+        if let (Ask::Plan | Ask::Guide, Some((_, width, height))) = (mode, &image) {
             let sent = scaled_size(*width, *height, MAX_IMAGE_SIDE);
-            self.plan_image = Some(sent);
+            self.sent_image = Some(sent);
+            let ask = if mode == Ask::Plan {
+                PLAN_CONTEXT
+            } else {
+                guide::MARKS_CONTEXT
+            };
             context.push(ChatMessage::new(
                 "system",
                 format!(
-                    "{PLAN_CONTEXT}\nScreenshot dimensions: {} x {} pixels.",
+                    "{ask}\nScreenshot dimensions: {} x {} pixels.",
                     sent.0, sent.1
                 ),
             ));
@@ -1323,6 +1357,11 @@ impl JamesApp {
             WorkerResult::Chat(Ok(reply), mode) => {
                 // The streamed text and the final reply are the same text.
                 self.streaming = None;
+                let reply = if mode == Ask::Guide {
+                    self.take_marks(&reply)
+                } else {
+                    reply
+                };
                 self.messages.push(ChatMessage::new("assistant", &reply));
                 self.save_session();
                 if self.info_now().is_some_and(|i| i.context_tokens.is_none()) {
@@ -1333,7 +1372,7 @@ impl JamesApp {
                 if mode == Ask::Plan {
                     match review::parse_proposal(&reply) {
                         Ok(p) => {
-                            let action = match (p.action, self.plan_image, &self.screen) {
+                            let action = match (p.action, self.sent_image, &self.screen) {
                                 (Action::Click { x, y }, Some(sent), Some(screen)) => {
                                     let (x, y) = to_screen(
                                         (x, y),

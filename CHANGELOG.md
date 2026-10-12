@@ -9,6 +9,19 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 0.4.0 were never published as releases. A version with a suffix, such as
 `0.4.0-preview.1`, is published as a prerelease.
 
+## Unreleased
+
+### Added
+
+- **Guide me marks its steps.** Each suggested step is numbered on your
+  screenshot, under the answer and on the Screen page, where the model says
+  its button, field or link is. The marks are drawn on James's copy of the
+  picture, never over your screen, and they only point: you still take each
+  step yourself. The model gives them on one extra line of its answer, which
+  James removes before the answer is shown, saved or read aloud; marks off
+  the picture, beyond step three or repeated are ignored. A model that leaves
+  the line out still gives the same written steps.
+
 ## 0.4.0-preview.1 — 2026-10-12
 
 The first published build of 0.4.0, released as a prerelease because it is a

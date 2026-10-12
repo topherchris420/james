@@ -1,6 +1,6 @@
 //! Screen context, Computer control and Settings.
 use crate::{
-    JamesApp, Page, Tone, chat, copyable, numeric_port, review,
+    JamesApp, Page, Tone, chat, copyable, guide, numeric_port, review,
     session::{SetupStep, ThemeChoice},
     theme,
 };
@@ -21,6 +21,28 @@ fn mark_click(ui: &egui::Ui, rect: egui::Rect, action: &Action, width: u32, heig
             .circle_stroke(pos, 12.0, egui::Stroke::new(3.0_f32, color));
         ui.painter()
             .circle_stroke(pos, 3.0, egui::Stroke::new(2.0_f32, color));
+    }
+}
+
+/// Draws Guide me's numbered marks where its steps are on a screenshot.
+pub fn mark_steps(ui: &egui::Ui, rect: egui::Rect, marks: &[guide::Mark], size: (u32, u32)) {
+    let fill = theme::accent(ui);
+    let ink = ui.visuals().panel_fill;
+    for mark in marks {
+        let pos = rect.min
+            + egui::vec2(
+                mark.x as f32 / size.0 as f32 * rect.width(),
+                mark.y as f32 / size.1 as f32 * rect.height(),
+            );
+        ui.painter()
+            .circle(pos, 11.0, fill, egui::Stroke::new(2.0_f32, ink));
+        ui.painter().text(
+            pos,
+            egui::Align2::CENTER_CENTER,
+            mark.step.to_string(),
+            egui::FontId::proportional(13.0),
+            ink,
+        );
     }
 }
 
@@ -95,6 +117,16 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
         }
         if let Some(p) = &app.pending {
             mark_click(ui, response.rect, &p.proposal.action, p.width, p.height);
+        }
+        let guide_marks = app.guide_marks.as_ref();
+        if let Some(shown) = guide_marks.filter(|g| g.screenshot == screen.at) {
+            mark_steps(
+                ui,
+                response.rect,
+                &shown.marks,
+                (screen.capture.width, screen.capture.height),
+            );
+            ui.small("The numbers mark the steps in James's last Guide me answer.");
         }
         discard = ui.button("Discard screenshot").clicked();
     } else {
