@@ -8,6 +8,8 @@ The Phase 1 implementation is a small `james-core` Rust policy and action-lifecy
 
 Since then the desktop, streamed inference adapters for LM Studio, Ollama, llama.cpp and other OpenAI-compatible servers, and the `james-loopback` transport (ADR 008) have shipped as a developer preview; [VALIDATION.md](VALIDATION.md) records what was checked. The SQLite store, MCP client, OS sandbox, and multi-agent runtime below remain **proposed later work**. A type, interface, or passing unit test is not proof that those integrations exist or enforce their intended boundary.
 
+**0.4.0 note (2026-10-12).** The shipped desktop uses eframe/egui with AccessKit, plain threads and channels rather than Tokio, a JSON session file written atomically with owner-only permissions rather than SQLite, and a synced JSON intent record as its one-action gate. Those are deliberate simplifications for a single-user, one-action-at-a-time desktop; the Tokio supervisor and SQLite journal below are still the plan if James grows multi-step tools. See [END_USER_READINESS.md](END_USER_READINESS.md) for what is verified.
+
 ## ADR 001: Rust application and Rust-rendered desktop
 
 Proposed decision: use eframe/egui for the Phase 2 desktop. The UI submits typed commands and renders events; it owns no execution permissions. Eframe supports native application startup, graphics backends, and AccessKit integration. Native OS widgets and complete accessibility are separate claims requiring platform testing. [Official eframe documentation](https://docs.rs/eframe/latest/eframe/).

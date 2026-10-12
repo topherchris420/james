@@ -1,5 +1,133 @@
 # Implementation validation
 
+This ledger records what was actually checked, where, and what was found,
+newest first. [END_USER_READINESS.md](END_USER_READINESS.md) turns it into a
+score and release classification; [ACCEPTANCE_TESTS.md](ACCEPTANCE_TESTS.md)
+lists the scenarios still to run.
+
+## End-user release session (2026-10-12)
+
+James 0.4.0: guided setup, model capabilities, cloud-model warnings,
+Markdown, themes and accessibility settings, privacy controls, a richer
+action record, a Windows target-window check, R.A.I.N. Lab summaries, and
+release packaging. Everything below ran on one 4-vCPU Linux x64 cloud VM
+(Ubuntu 24.04.5, no GPU, no audio) with Rust 1.97.0. **No Windows or macOS
+machine was used by a person; those platforms have CI evidence only.**
+
+### Automated checks
+
+| Check | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | Passed |
+| `cargo test --workspace --all-targets --locked` | 192 passed, 0 failed, 2 ignored on Linux (opt-in screen-capture tests; the Windows helper tests compile only on Windows) |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` for `x86_64-unknown-linux-gnu`, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin` | Passed on all three (Windows and macOS type-checked from Linux) |
+| Rust 1.85.0: tests and Clippy for `james-core`, `james-loopback`, `james-models`, `james-lab` | Passed after removing one let-chain that 1.85 rejects |
+| Rust 1.88.0: `cargo check --all-targets` of `james-desktop` and `james-platform` for Linux, Windows and macOS targets | Passed. Rust 1.85 rejects their let-chains (E0658), which the README's "1.85+" badge had hidden; both crates now declare `rust-version = "1.88"` and CI checks it |
+| `scripts/check-powershell.ps1` (PowerShell 7 on Linux) | All four helpers parse; their C# compiles. A planted syntax error and a broken C# struct were both caught |
+| `appstreamcli validate`, `desktop-file-validate`, `lintian` on the `.deb` | Passed (lintian with four documented suppressions) |
+| GitHub Actions at `85a6b21`: [James desktop 38223328461](https://github.com/topherchris420/james/actions/runs/38223328461) and [Core Rust contracts 38223328485](https://github.com/topherchris420/james/actions/runs/38223328485) | All jobs passed: tests, Clippy and packaging on Windows, macOS and Ubuntu; the Ubuntu 22.04 package container including `appstreamcli` and `lintian`; Rust 1.85 and stable on all three systems. The previous run (38222147035) failed only on the 22.04 AppStream validator, fixed in `85a6b21` |
+| Windows runner real-session tests (same run) | Capture recorded the window in front ("hosted-compute-agent", WindowsTerminal); input aimed at a window that was not in front was refused before anything was sent. Inno Setup 6.4.3 compiled the uninstaller's `[Code]` section. The executable imports no Visual C++ runtime DLL |
+
+New tests: 20 GUI tests drive the real interface headlessly through its
+AccessKit tree (setup and resume, streaming and Markdown, Stop, errors and
+retry, Ask again, vision gating, cloud warnings, keyboard-only navigation,
+shortcuts, delete-all, history off, crash recovery, layout at 760×560 to
+1920×1080 at 1x, 1.25x and 2x with text at 100-200% in every theme, the Lab
+view, Lab offline back-off, platform honesty, glyph coverage, screen
+questions without history), plus two Windows-only GUI tests (Deny, countdown
+Cancel) that run on the Windows runner. Model-client tests use response
+shapes recorded from the real servers below.
+
+### Real model servers
+
+- **llama.cpp** built from tag `b11564` (commit 08ffba2), CPU, one thread,
+  serving SmolVLM2-500M-Video-Instruct Q8_0 with its projector (vision,
+  `-c 4096`) and Qwen2.5-1.5B-Instruct q4_k_m (text, `-c 1024`), downloaded
+  from Hugging Face (`ggml-org`, `Qwen`).
+- **Ollama** built from tag `v0.40.3` (it reports version 0.0.0 because a
+  source build carries no release stamp), with `qwen2.5:0.5b`,
+  `nomic-embed-text`, `gemma3:4b` and the cloud stub `gpt-oss:20b-cloud`
+  pulled from the Ollama registry. No Ollama account was signed in.
+- LM Studio was **not** available; its support remains fixture-tested only.
+
+Through `cargo run -p james-models --example probe`:
+
+| Probe | Result |
+| --- | --- |
+| llama.cpp SmolVLM capabilities | vision Yes, context 4096 (from `/v1/models`) |
+| llama.cpp text chat | streamed 194 bytes; first text 183 ms, done 1.4 s |
+| llama.cpp vision (800×400 PNG with a blue "Save changes" button under "Settings: Notifications") | named both labels; first text 13.2 s; ignored "button text only" |
+| llama.cpp Qwen2.5-1.5B with an image | HTTP 500 "image input is not supported…" → classified *no images* |
+| llama.cpp ~3,200-token prompt at `-c 1024` | HTTP 400 "request (3234 tokens) exceeds the available context size (1024 tokens)" → *context full* |
+| Ollama listing | `gpt-oss:20b-cloud` carries `remote_host: https://ollama.com` in `/api/tags`, but **not** in `/api/show`; James now reads both |
+| Ollama capabilities | gemma3 vision Yes; nomic-embed chat No; qwen2.5:0.5b vision No; after loading, gemma3 context 4096 from `/api/ps` |
+| Ollama gemma3:4b vision, same PNG, "label only" | "Save changes"; first text 37.5 s |
+| Ollama errors | embedding model chat → HTTP 400 "does not support chat" (*not a chat model*); text model + image → "Multimodal data provided, but model does not support multimodal requests." (*no images*); unknown model → 404 (*model missing*); cloud model → HTTP 401 "Unauthorized" (*needs sign-in*) |
+
+### Real interface sessions
+
+The app ran under Xvfb (1400×1000 at 1x and 2240×1640 at 2x) with Mesa
+software OpenGL and no window manager, driven by `xdotool`.
+
+1. **First-run setup** with Ollama and llama.cpp running: **Find my model
+   server** chose Ollama `gemma3:4b`, skipping the cloud and embedding
+   models; the facts line read "can read images, loads on first use";
+   choosing `gpt-oss:20b-cloud` showed the remote warning. The test message
+   answered in 16-30 s including model load. Progress was saved after each
+   step.
+2. **Bug: typing did not reach the message box.** The new text box's id
+   equalled its panel's id ("composer"). Confirmed by typing into an
+   unmodified `main` build, fixed, and covered by a GUI test.
+3. **Bug: "→" and "│" rendered as empty boxes** in egui's proportional font.
+   Replaced; a test now checks every non-ASCII character in the UI source.
+4. **Upgrade.** `james_0.3.0_amd64.deb` built from `main` (3ed88d9) was
+   installed; 0.3.0 found Ollama and held a real conversation, saved with
+   permissions 0644 in a 0755 folder. An action record in the 0.3 format
+   was then planted (Linux 0.3 never writes one; Windows 0.3 does).
+   `apt install ./james_0.4.0_amd64.deb` unpacked 0.4.0 over 0.3.0. On
+   launch, setup was skipped, the model and conversation were kept, the
+   folder became 0700 and the session 0600, and the old record was shown as
+   "Type “hello from 0.3” (14 characters)" with an unknown outcome until
+   acknowledged. (That record itself stayed 0644; fixed so every file James
+   owns is tightened.) `apt remove james` removed the program and kept
+   `~/.james`; the archive's `install.sh` and `--uninstall` worked.
+5. **Markdown** from gemma3 rendered, but list numbers sat off the baseline
+   and bold was invisible because the theme gave "strong" text the body
+   colour. Both fixed.
+6. **Stop.** During a 600-word essay, Esc after about 25 s kept 750 bytes
+   labelled "[Stopped by you before the reply finished.]". Ollama's log then
+   showed `srv stop: cancel task` and idle slots: **Ollama 0.40.3 stops
+   generating when James closes the connection.**
+7. **Guide me.** SmolVLM2-500M accepted the screenshot (a 1,087-token
+   prompt) but answered by paraphrasing the system prompt. Gemma 3 then
+   repeated an earlier answer word for word, which exposed a design flaw:
+   Guide me sent the whole conversation. Screen questions now send no
+   history; afterwards Gemma 3 named the visible "Conversation" panel, an
+   on-screen heading, the message box and the Stop button (about 2.5
+   minutes end to end on this CPU).
+8. **R.A.I.N. Lab** at lop-nur-twin `4871ef6`, run with Node 22.22
+   (`npm ci`, `npm run dev`). **Find the Lab** found port 5173; the page
+   showed "lop-nur-twin 4871ef6 · scripted meetings", the idle stage in
+   words, no finished experiments, and the knowledge graph's 62 Lab-observed
+   and 49 source items. No experiment was started.
+9. The README and guide screenshots in `docs/assets` come from this session
+   at 2x scale, unedited.
+
+### What this does not establish
+
+- Nothing ran on a physical Windows PC or Mac: installers, SmartScreen,
+  Gatekeeper, permission prompts, Start menu and Applications launch remain
+  unrecorded. **No reviewed click or keystroke was sent to a real
+  application** in this release's testing.
+- No physical Linux desktop, GPU driver or Wayland session; no microphone,
+  so Talk and Dictate were not exercised.
+- No screen reader, and no human usability or accessibility study.
+- LM Studio was not tested. Model answers are a handful of samples on one
+  CPU-only machine, not a benchmark.
+- The release workflow's publishing, signing and attestation steps have not
+  run, because no release tag was pushed and no certificates exist.
+
+
 ## End-user readiness session (2026-10-12)
 
 This change added a first-run screen that finds a local model server, plain-language errors, an app icon, crash reports, and installable packages for all three systems. It also fixed a macOS-only race in `james-loopback` that CI exposed.
