@@ -421,6 +421,34 @@ fn the_keyboard_alone_reaches_every_main_control() {
 }
 
 #[test]
+fn release_notes_appear_once_after_an_upgrade() {
+    let dir = session::scratch_dir("upgrade");
+    let path = dir.join("session.json");
+    let older = SavedSession {
+        port: closed_port(),
+        model: "gemma3:4b".into(),
+        setup: Some(Setup {
+            step: SetupStep::Done,
+            test_passed: true,
+        }),
+        last_version: "0.3.0".into(),
+        ..SavedSession::default()
+    };
+    session::save(&path, &older).unwrap();
+    let mut h = harness(JamesApp::new(path.clone()));
+    assert!(h.state().whats_new.is_some());
+    h.get_by_label("Got it").click();
+    frames(&mut h, 2);
+    assert!(h.state().whats_new.is_none());
+    assert!(h.query_by_label("Got it").is_none());
+    let saved = session::load(&path);
+    assert_eq!(saved.last_version, env!("CARGO_PKG_VERSION"));
+    // The next start is not an upgrade.
+    assert!(JamesApp::new(path).whats_new.is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn shortcuts_switch_pages_and_show_their_own_list() {
     let mut h = harness(james(Some("gemma3:4b")));
     h.press_key_modifiers(egui::Modifiers::COMMAND, egui::Key::Num5);

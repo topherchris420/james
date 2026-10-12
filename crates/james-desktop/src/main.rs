@@ -37,6 +37,10 @@ const HELP_URL: &str = "https://github.com/topherchris420/james/blob/main/docs/G
 const TROUBLE_URL: &str = "https://github.com/topherchris420/james/blob/main/docs/GETTING_STARTED.md#if-something-goes-wrong";
 const ISSUES_URL: &str = "https://github.com/topherchris420/james/issues/new/choose";
 const RELEASES_URL: &str = "https://github.com/topherchris420/james/releases";
+/// Where relative links in the release notes lead once shown inside James.
+const SOURCE_URL: &str = "https://github.com/topherchris420/james/blob/main/";
+/// The release notes built into this copy of James.
+const CHANGELOG: &str = include_str!("../../../CHANGELOG.md");
 const ICON_PNG: &[u8] = include_bytes!("../assets/james-256.png");
 /// Screenshots are scaled down to this longest side before a model sees
 /// them: small enough for local vision models to read quickly, large enough
@@ -222,6 +226,45 @@ fn app_icon() -> Option<egui::IconData> {
         height: image.height(),
         rgba: image.into_raw(),
     })
+}
+/// This version's release notes when a different version last saved the
+/// session: shown once after an upgrade, never on a first run.
+fn upgrade_notes(last_version: &str, version: &str, changelog: &str) -> Option<String> {
+    if last_version.is_empty() || last_version == version {
+        return None;
+    }
+    release_notes(changelog, version)
+}
+/// The changelog section for `version`, without its heading, with relative
+/// links made absolute so they open in a browser. `None` when there is none.
+fn release_notes(changelog: &str, version: &str) -> Option<String> {
+    let mut lines = changelog.lines();
+    lines.find(|line| {
+        line.strip_prefix("## ")
+            .and_then(|heading| heading.strip_prefix(version))
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
+    })?;
+    let body = lines
+        .take_while(|line| !line.starts_with("## "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let body = body.trim();
+    (!body.is_empty()).then(|| absolute_links(body))
+}
+fn absolute_links(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("](") {
+        let (before, after) = rest.split_at(at + 2);
+        out.push_str(before);
+        // Web addresses and in-page anchors stay as written.
+        if !(after.starts_with("http") || after.starts_with('#')) {
+            out.push_str(SOURCE_URL);
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 fn numeric_port(value: &str) -> Result<u16, String> {
     value
@@ -476,6 +519,8 @@ struct JamesApp {
     keep_history: bool,
     /// An internal error report from an earlier run, until the user dismisses it.
     crash_report: Option<PathBuf>,
+    /// This version's release notes, shown once after an upgrade until dismissed.
+    whats_new: Option<String>,
     show_shortcuts: bool,
     confirm_clear: bool,
     confirm_delete: bool,
@@ -495,6 +540,7 @@ impl JamesApp {
             whisper_model: optional_path(&saved.whisper_model),
         };
         let crash_report = Some(session::crash_report_path(&session)).filter(|p| p.is_file());
+        let whats_new = upgrade_notes(&saved.last_version, env!("CARGO_PKG_VERSION"), CHANGELOG);
         let setup = saved.setup();
         let status = if saved.model.trim().is_empty() {
             "Welcome. Connect a model on this computer to begin.".into()
@@ -551,6 +597,7 @@ impl JamesApp {
             applied: None,
             keep_history: saved.keep_history,
             crash_report,
+            whats_new,
             show_shortcuts: false,
             confirm_clear: false,
             confirm_delete: false,
@@ -595,12 +642,18 @@ impl JamesApp {
             keep_history: self.keep_history,
             preferences: self.prefs.clone(),
             setup: Some(self.setup.clone()),
+            last_version: env!("CARGO_PKG_VERSION").into(),
         };
         if let Err(e) = session::save(&self.session, &saved) {
             self.fail(format!(
                 "Could not save your settings on this computer: {e}"
             ));
         }
+    }
+    /// Closes the release notes for good: saving records this version.
+    fn dismiss_whats_new(&mut self) {
+        self.whats_new = None;
+        self.save_session();
     }
     /// Facts about the current model, if the server has answered for it.
     fn info_now(&self) -> Option<&ModelInfo> {
@@ -1455,6 +1508,8 @@ impl JamesApp {
                 self.confirm_delete = false;
             } else if self.show_shortcuts {
                 self.show_shortcuts = false;
+            } else if self.whats_new.is_some() {
+                self.dismiss_whats_new();
             } else {
                 self.stop();
             }
@@ -1630,6 +1685,27 @@ impl JamesApp {
                 });
             if !open {
                 self.show_shortcuts = false;
+            }
+        }
+        if let Some(notes) = &self.whats_new {
+            let mut open = true;
+            let mut done = false;
+            egui::Window::new(format!("What's new in James {}", env!("CARGO_PKG_VERSION")))
+                .open(&mut open)
+                .collapsible(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    egui::ScrollArea::vertical()
+                        .max_height(360.0)
+                        .show(ui, |ui| markdown::show(ui, notes, "whats-new"));
+                    ui.add_space(6.0);
+                    ui.horizontal_wrapped(|ui| {
+                        done = ui.button("Got it").clicked();
+                        ui.hyperlink_to("All releases", RELEASES_URL);
+                    });
+                });
+            if !open || done {
+                self.dismiss_whats_new();
             }
         }
         if self.confirm_clear {

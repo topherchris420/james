@@ -11,6 +11,15 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ## Unreleased
 
+### Added
+
+- **What's new after an upgrade.** The first time an upgraded James starts,
+  it shows this version's notes from this changelog, built into the app.
+  Got it, Esc or the close button dismisses them for good. James still never
+  connects to the internet to look for updates. The saved session now records
+  the version that saved it; sessions saved by older versions load unchanged
+  and show no notes.
+
 ### Changed
 
 - **Screenshots wait for James to leave the picture** (Windows). After the

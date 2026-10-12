@@ -5,6 +5,36 @@ use super::*;
 mod gui;
 
 #[test]
+fn release_notes_show_once_after_an_upgrade() {
+    let changelog = "# Changelog\n\nIntro.\n\n## Unreleased\n\n- Next.\n\n\
+        ## 1.2.0 — 2026-01-01\n\nSee [the guide](docs/GUIDE.md) or [the site](https://x.org/).\n\n\
+        ### Added\n\n- A thing.\n\n## 1.1.0 — 2025-12-01\n\n- Older.\n";
+    let notes = release_notes(changelog, "1.2.0").unwrap();
+    assert!(
+        notes.starts_with(&format!("See [the guide]({SOURCE_URL}docs/GUIDE.md)")),
+        "{notes}"
+    );
+    assert!(notes.contains("[the site](https://x.org/)"), "{notes}");
+    assert!(notes.ends_with("- A thing."), "{notes}");
+    // A version matches whole: 1.2 is not 1.2.0.
+    assert_eq!(release_notes(changelog, "1.2"), None);
+    assert_eq!(release_notes(changelog, "9.9.9"), None);
+    // Only an upgrade shows them: not a first run, and not a restart.
+    assert!(upgrade_notes("1.1.0", "1.2.0", changelog).is_some());
+    assert_eq!(upgrade_notes("", "1.2.0", changelog), None);
+    assert_eq!(upgrade_notes("1.2.0", "1.2.0", changelog), None);
+}
+
+#[test]
+fn this_version_ships_its_release_notes() {
+    let version = env!("CARGO_PKG_VERSION");
+    assert!(
+        release_notes(CHANGELOG, version).is_some(),
+        "CHANGELOG.md needs a \"## {version}\" section before this version is built"
+    );
+}
+
+#[test]
 fn stop_before_the_connection_exists_still_closes_it_at_once() {
     use std::io::{Read, Write};
     // A model server that accepts, then says nothing for ten seconds.

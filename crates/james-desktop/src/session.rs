@@ -118,6 +118,9 @@ pub struct SavedSession {
     pub preferences: Preferences,
     /// Absent in sessions saved before guided setup existed.
     pub setup: Option<Setup>,
+    /// The James version that last saved this session; empty in sessions
+    /// saved before James recorded it.
+    pub last_version: String,
 }
 
 impl Default for SavedSession {
@@ -133,6 +136,7 @@ impl Default for SavedSession {
             keep_history: true,
             preferences: Preferences::default(),
             setup: None,
+            last_version: String::new(),
         }
     }
 }
@@ -415,6 +419,7 @@ mod tests {
                 step: SetupStep::Test,
                 test_passed: false,
             }),
+            last_version: "0.4.0".into(),
             ..SavedSession::default()
         };
         save(&path, &session).unwrap();
@@ -423,6 +428,7 @@ mod tests {
         assert_eq!(loaded.messages, session.messages);
         assert_eq!(loaded.preferences, session.preferences);
         assert_eq!(loaded.setup().step, SetupStep::Test);
+        assert_eq!(loaded.last_version, "0.4.0");
 
         // Without history, a stray message in the file is not restored either.
         let unsaved = SavedSession {
