@@ -22,6 +22,13 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
   the picture, beyond step three or repeated are ignored. A model that leaves
   the line out still gives the same written steps.
 
+### Fixed
+
+- **Guide me, Plan and voice conversations failed with some models**, such as
+  Qwen 3.5 in LM Studio, whose chat template accepts only one system message
+  ("System message must be at the beginning"). James now sends all its
+  instructions as one system message.
+
 ## 0.4.0-preview.1 — 2026-10-12
 
 The first published build of 0.4.0, released as a prerelease because it is a
