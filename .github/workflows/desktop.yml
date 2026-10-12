@@ -162,7 +162,8 @@ jobs:
           apt-get install -y ./dist/james_*_amd64.deb
           james --version
           dpkg -L james
-          grep -q '^eframe ' /usr/share/doc/james/THIRD-PARTY-NOTICES.txt
+          # Read from the package: this minimal container image skips /usr/share/doc on install.
+          dpkg-deb --fsys-tarfile dist/james_*_amd64.deb | tar -xO ./usr/share/doc/james/THIRD-PARTY-NOTICES.txt | grep -q '^eframe '
       - name: Upload Linux packages
         uses: actions/upload-artifact@v4
         with:
