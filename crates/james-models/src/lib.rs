@@ -10,13 +10,16 @@
 //! a loopback server may relay to a cloud model. James reports the endpoint it
 //! talked to; the server's own configuration decides the rest.
 
+mod capabilities;
+
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+pub use capabilities::{ModelInfo, Support};
 pub use james_loopback::AbortHandle;
 use james_loopback::{Client, Error as HttpError, Limits, Timeouts};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Discovery and non-streaming bodies.
 const MAX_REPLY_BYTES: usize = 1_048_576;
@@ -36,6 +39,10 @@ const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 /// is only judged gone when it falls silent for this long; a long reply that
 /// keeps arriving is never cut off by a total timeout.
 pub const REPLY_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
+/// The longest James waits for one whole reply, however steadily it arrives.
+/// The 32 KiB reply cap already bounds the text; this bounds a server that
+/// trickles bytes forever.
+pub const REPLY_TOTAL_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatMessage {
@@ -75,6 +82,92 @@ impl fmt::Display for ApiError {
 
 impl std::error::Error for ApiError {}
 
+/// The kind of trouble behind an [`ApiError`], so the desktop can say what to
+/// do next in plain words. It is read from the error and the server's own
+/// message; when nothing matches, the server's words are shown as they are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Problem {
+    /// Nothing is listening on the port.
+    NotRunning,
+    /// The server does not have the requested model, or has none loaded.
+    ModelMissing,
+    /// The conversation does not fit in the model's context window.
+    ContextFull,
+    /// The model cannot read the attached image.
+    NoImages,
+    /// The model is not a chat model (for example, an embedding model).
+    NotAChatModel,
+    /// The server is still loading the model.
+    StillLoading,
+    /// The server stopped sending, or the reply took too long overall.
+    TooSlow,
+    /// The server wants a sign-in or key, as Ollama does for cloud models.
+    /// James never signs in or stores credentials.
+    NeedsSignIn,
+    Other,
+}
+
+impl ApiError {
+    pub fn problem(&self) -> Problem {
+        if matches!(self, Self::Unreachable(_)) {
+            return Problem::NotRunning;
+        }
+        let text = self.to_string().to_ascii_lowercase();
+        let any = |needles: &[&str]| needles.iter().any(|n| text.contains(n));
+        // Context first: Ollama's context message also says "longer than".
+        if any(&[
+            "context size",
+            "context length",
+            "context window",
+            "exceeds the available context",
+            "n_ctx",
+            "prompt is too long",
+            "too many tokens",
+        ]) {
+            Problem::ContextFull
+        } else if any(&[
+            "image input is not supported",
+            "does not support image",
+            "does not support vision",
+            "multimodal data provided",
+            "vision is not supported",
+            "images are not supported",
+            "mmproj",
+        ]) {
+            Problem::NoImages
+        } else if any(&[
+            "does not support chat",
+            "does not support generate",
+            "does not support completion",
+        ]) {
+            Problem::NotAChatModel
+        } else if any(&["loading model", "model is loading", "still loading"]) {
+            Problem::StillLoading
+        } else if any(&[
+            "no models loaded",
+            "model_not_found",
+            "not found, try pulling",
+            "model not found",
+            "no model loaded",
+        ]) || (text.contains("model") && text.contains("not found"))
+        {
+            Problem::ModelMissing
+        } else if any(&["went silent", "took longer than", "timed out"]) {
+            Problem::TooSlow
+        } else if any(&[
+            "http 401",
+            "http 403",
+            "unauthorized",
+            "forbidden",
+            "api key",
+        ]) {
+            Problem::NeedsSignIn
+        } else {
+            Problem::Other
+        }
+    }
+}
+
 /// What a streaming request reports while it runs.
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
@@ -84,6 +177,9 @@ pub enum StreamEvent {
     /// One piece of assistant text, in order. Concatenating every delta gives
     /// exactly the text the call returns.
     Delta(String),
+    /// The model is reasoning before it answers. Its reasoning text is not
+    /// kept or shown; this only tells the user that work is happening.
+    Thinking,
 }
 
 /// User-selected API protocol. Other OpenAI-compatible servers use the same
@@ -137,6 +233,17 @@ pub struct FoundServer {
     pub port: u16,
     /// What the server offers. Empty means it is running with no model available.
     pub models: Vec<String>,
+    /// The listed models the server itself says run on another computer.
+    pub remote: Vec<String>,
+}
+
+/// A server's model list.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModelList {
+    pub models: Vec<String>,
+    /// Models the server says run elsewhere (Ollama cloud models). James
+    /// shows them but never selects one on the user's behalf.
+    pub remote: Vec<String>,
 }
 
 /// Asks every candidate loopback port, all at once, for its model list and
@@ -149,13 +256,14 @@ pub fn find_servers(candidates: &[(LocalProvider, u16)]) -> Vec<FoundServer> {
         .iter()
         .map(|&(provider, port)| {
             std::thread::spawn(move || {
-                let models = LocalClient::for_provider(provider, port)
-                    .and_then(|client| client.models())
+                let list = LocalClient::for_provider(provider, port)
+                    .and_then(|client| client.list())
                     .ok()?;
                 Some(FoundServer {
                     provider,
                     port,
-                    models,
+                    models: list.models,
+                    remote: list.remote,
                 })
             })
         })
@@ -168,12 +276,14 @@ pub fn find_servers(candidates: &[(LocalProvider, u16)]) -> Vec<FoundServer> {
 
 /// The model to select when the user has not picked one: the first that does
 /// not look like an embedding model, which cannot chat. Falls back to the
-/// first model so an unusual naming scheme still gets a choice.
-pub fn preferred_chat_model(models: &[String]) -> Option<&String> {
-    models
-        .iter()
+/// first model so an unusual naming scheme still gets a choice. A model in
+/// `remote` (one the server says runs elsewhere) is never chosen: sending a
+/// conversation off this computer must be the user's own decision.
+pub fn preferred_chat_model<'a>(models: &'a [String], remote: &[String]) -> Option<&'a String> {
+    let local = || models.iter().filter(|id| !remote.contains(id));
+    local()
         .find(|id| !id.to_ascii_lowercase().contains("embed"))
-        .or_else(|| models.first())
+        .or_else(|| local().next())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -215,7 +325,13 @@ impl LocalClient {
             .map_err(map_http_error)
     }
 
+    /// Model IDs the server lists, sorted.
     pub fn models(&self) -> Result<Vec<String>, ApiError> {
+        self.list().map(|list| list.models)
+    }
+
+    /// The model list, with models the server says run elsewhere marked.
+    pub fn list(&self) -> Result<ModelList, ApiError> {
         let ollama = self.provider == LocalProvider::Ollama;
         let path = if ollama { "/api/tags" } else { "/v1/models" };
         let response = self
@@ -233,9 +349,15 @@ impl LocalClient {
             .map_err(map_http_error)?;
         let body = read_ok_body(response)?;
         if ollama {
-            parse_ollama_models(&body)
+            Ok(ModelList {
+                models: parse_ollama_models(&body)?,
+                remote: parse_ollama_remote(&body),
+            })
         } else {
-            parse_models(&body)
+            Ok(ModelList {
+                models: parse_models(&body)?,
+                remote: Vec::new(),
+            })
         }
     }
 
@@ -270,6 +392,7 @@ impl LocalClient {
         png: Option<&[u8]>,
         mut on_event: impl FnMut(StreamEvent),
     ) -> Result<String, ApiError> {
+        let started = Instant::now();
         let ollama = self.provider == LocalProvider::Ollama;
         let request = if ollama {
             build_ollama_request(model, messages, png)?
@@ -286,7 +409,7 @@ impl LocalClient {
                 Timeouts {
                     connect: CONNECT_TIMEOUT,
                     idle: REPLY_IDLE_TIMEOUT,
-                    total: None,
+                    total: Some(REPLY_TOTAL_TIMEOUT),
                 },
                 MAX_STREAM_BYTES,
             )?
@@ -298,7 +421,7 @@ impl LocalClient {
             .body("application/json", request.as_bytes())
             .on_connect(|handle| on_event(StreamEvent::Connected(handle)))
             .send()
-            .map_err(map_http_error)?;
+            .map_err(|error| stream_error(error, started))?;
         if response.status() != 200 {
             return Err(status_error(response));
         }
@@ -307,7 +430,10 @@ impl LocalClient {
 
         // Skip leading blank lines, then look at the first real one.
         let first = loop {
-            match body.next_line(MAX_FRAME_BYTES).map_err(map_http_error)? {
+            match body
+                .next_line(MAX_FRAME_BYTES)
+                .map_err(|error| stream_error(error, started))?
+            {
                 None => return Err(no_content(ollama)),
                 Some(line) if line.iter().all(u8::is_ascii_whitespace) => continue,
                 Some(line) => break utf8_line(line)?,
@@ -317,7 +443,10 @@ impl LocalClient {
             // Not an event stream: the server sent one JSON document instead.
             let mut whole = first.into_bytes();
             whole.push(b'\n');
-            whole.extend(body.read_to_end(MAX_REPLY_BYTES).map_err(map_http_error)?);
+            whole.extend(
+                body.read_to_end(MAX_REPLY_BYTES)
+                    .map_err(|error| stream_error(error, started))?,
+            );
             let whole = String::from_utf8(whole)
                 .map_err(|_| ApiError::Protocol("Local model response was not UTF-8".into()))?;
             let content = parse_chat(&whole)?;
@@ -327,13 +456,14 @@ impl LocalClient {
 
         let mut content = String::new();
         let mut pending = Some(first);
+        let mut thinking_reported: Option<Instant> = None;
         loop {
             let line = match pending.take() {
                 Some(line) => line,
                 None => match body.next_line(MAX_FRAME_BYTES) {
                     Ok(Some(line)) => utf8_line(line)?,
                     Ok(None) => break,
-                    Err(error) => return Err(map_http_error(error)),
+                    Err(error) => return Err(stream_error(error, started)),
                 },
             };
             let frame = if ollama {
@@ -352,6 +482,14 @@ impl LocalClient {
                     content.push_str(&delta);
                     on_event(StreamEvent::Delta(delta));
                 }
+            }
+            // Reasoning text is not kept; only report, at most twice a
+            // second, that the model is working before it answers.
+            if frame.thinking
+                && thinking_reported.is_none_or(|at| at.elapsed() >= Duration::from_millis(500))
+            {
+                thinking_reported = Some(Instant::now());
+                on_event(StreamEvent::Thinking);
             }
             if frame.finished {
                 break;
@@ -382,6 +520,26 @@ fn utf8_line(line: Vec<u8>) -> Result<String, ApiError> {
 struct Frame {
     text: Option<String>,
     finished: bool,
+    /// The frame carried reasoning (llama.cpp `reasoning_content`, other
+    /// servers' `reasoning`, Ollama's `thinking`) rather than answer text.
+    thinking: bool,
+}
+
+fn has_text(value: Option<&Value>) -> bool {
+    value
+        .and_then(Value::as_str)
+        .is_some_and(|text| !text.is_empty())
+}
+
+/// The idle limit and the total limit both surface as a timeout; say which.
+fn stream_error(error: HttpError, started: Instant) -> ApiError {
+    if error == HttpError::TimedOut && started.elapsed() >= REPLY_TOTAL_TIMEOUT {
+        return ApiError::Transport(format!(
+            "The reply took longer than {} minutes, so James stopped waiting. Try a shorter question or a smaller model.",
+            REPLY_TOTAL_TIMEOUT.as_secs() / 60
+        ));
+    }
+    map_http_error(error)
 }
 
 /// One line of a `text/event-stream` body from an OpenAI-compatible server.
@@ -402,8 +560,8 @@ fn parse_sse_line(line: &str) -> Result<Frame, ApiError> {
     let payload = value.trim();
     if payload == "[DONE]" {
         return Ok(Frame {
-            text: None,
             finished: true,
+            ..Frame::default()
         });
     }
     let value: Value = serde_json::from_str(payload)
@@ -421,6 +579,8 @@ fn parse_sse_line(line: &str) -> Result<Frame, ApiError> {
             .and_then(Value::as_str)
             .map(str::to_owned),
         finished: false,
+        thinking: has_text(value.pointer("/choices/0/delta/reasoning_content"))
+            || has_text(value.pointer("/choices/0/delta/reasoning")),
     })
 }
 
@@ -445,6 +605,7 @@ fn parse_ndjson_line(line: &str) -> Result<Frame, ApiError> {
             .and_then(Value::as_str)
             .map(str::to_owned),
         finished: value.get("done").and_then(Value::as_bool).unwrap_or(false),
+        thinking: has_text(value.pointer("/message/thinking")),
     })
 }
 
@@ -654,6 +815,33 @@ pub fn parse_ollama_models(body: &str) -> Result<Vec<String>, ApiError> {
     Ok(models)
 }
 
+/// The Ollama models that run on another computer: entries with a
+/// `remote_host` (how Ollama lists cloud models), or a `-cloud` / `:cloud`
+/// tag, Ollama's naming for them.
+pub fn parse_ollama_remote(body: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<Value>(body) else {
+        return Vec::new();
+    };
+    let mut remote: Vec<String> = value
+        .get("models")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let name = item.get("name").and_then(Value::as_str)?;
+            let host = item
+                .get("remote_host")
+                .and_then(Value::as_str)
+                .is_some_and(|host| !host.trim().is_empty());
+            let tag = name.rsplit(':').next().unwrap_or(name);
+            (host || tag == "cloud" || tag.ends_with("-cloud")).then(|| name.to_owned())
+        })
+        .collect();
+    remote.sort();
+    remote.dedup();
+    remote
+}
+
 /// Native Ollama /api/chat result. Tool-only responses are not misrepresented
 /// as visible answers or executable actions.
 pub fn parse_ollama_chat(body: &str) -> Result<String, ApiError> {
@@ -809,6 +997,7 @@ mod tests {
                 handle = Some(abort);
             }
             StreamEvent::Delta(text) => deltas.push(text),
+            StreamEvent::Thinking => {}
         });
         (result, deltas, handle)
     }
@@ -1107,6 +1296,7 @@ mod tests {
                 |event| match event {
                     StreamEvent::Connected(abort) => *handle.lock().unwrap() = Some(abort),
                     StreamEvent::Delta(text) => deltas.lock().unwrap().push(text),
+                    StreamEvent::Thinking => {}
                 },
             );
         assert!(matches!(result, Err(ApiError::Transport(_))), "{result:?}");
@@ -1161,8 +1351,8 @@ mod tests {
         assert_eq!(
             parse_sse_line("data: [DONE]").unwrap(),
             Frame {
-                text: None,
-                finished: true
+                finished: true,
+                ..Frame::default()
             }
         );
         assert_eq!(
@@ -1184,14 +1374,15 @@ mod tests {
             parse_ndjson_line(r#"{"message":{"content":"a"},"done":false}"#).unwrap(),
             Frame {
                 text: Some("a".into()),
-                finished: false
+                ..Frame::default()
             }
         );
         assert_eq!(
             parse_ndjson_line(r#"{"message":{"content":""},"done":true}"#).unwrap(),
             Frame {
                 text: Some(String::new()),
-                finished: true
+                finished: true,
+                ..Frame::default()
             }
         );
         assert!(parse_ndjson_line("{").is_err());
@@ -1328,11 +1519,13 @@ mod tests {
                     provider: LocalProvider::Ollama,
                     port: ollama,
                     models: vec!["gemma3:4b".into(), "qwen3:4b".into()],
+                    remote: Vec::new(),
                 },
                 FoundServer {
                     provider: LocalProvider::LlamaCpp,
                     port: empty,
                     models: Vec::new(),
+                    remote: Vec::new(),
                 },
             ]
         );
@@ -1382,12 +1575,142 @@ mod tests {
         let models: Vec<String> = ["nomic-embed-text:latest", "Text-Embedding-3", "qwen3:4b"]
             .map(String::from)
             .into();
-        assert_eq!(preferred_chat_model(&models).unwrap(), "qwen3:4b");
+        assert_eq!(preferred_chat_model(&models, &[]).unwrap(), "qwen3:4b");
         let only_embeddings = vec!["nomic-embed-text:latest".to_owned()];
         assert_eq!(
-            preferred_chat_model(&only_embeddings).unwrap(),
+            preferred_chat_model(&only_embeddings, &[]).unwrap(),
             "nomic-embed-text:latest"
         );
-        assert_eq!(preferred_chat_model(&[]), None);
+        assert_eq!(preferred_chat_model(&[], &[]), None);
+    }
+
+    #[test]
+    fn a_remote_model_is_never_chosen_for_the_user() {
+        let models: Vec<String> = ["gpt-oss:120b-cloud", "qwen3:4b"].map(String::from).into();
+        let remote = vec!["gpt-oss:120b-cloud".to_owned()];
+        assert_eq!(preferred_chat_model(&models, &remote).unwrap(), "qwen3:4b");
+        // Only cloud models listed: nothing is selected automatically.
+        assert_eq!(preferred_chat_model(&remote, &remote), None);
+    }
+
+    #[test]
+    fn ollama_cloud_models_are_recognised_in_the_listing() {
+        let body = r#"{"models":[
+            {"name":"gemma3:4b","model":"gemma3:4b","capabilities":["completion","vision"]},
+            {"name":"gpt-oss:120b-cloud","remote_model":"gpt-oss:120b","remote_host":"https://ollama.com:443"},
+            {"name":"deepseek-v3.1:671b-cloud"},
+            {"name":"mystery:latest","remote_host":"  "},
+            {"name":"cloud-helper:7b"}]}"#;
+        assert_eq!(
+            parse_ollama_remote(body),
+            vec!["deepseek-v3.1:671b-cloud", "gpt-oss:120b-cloud"]
+        );
+        assert!(parse_ollama_remote("not json").is_empty());
+
+        let (port, worker) = serve(reply(body));
+        let list = LocalClient::for_provider(LocalProvider::Ollama, port)
+            .unwrap()
+            .list()
+            .unwrap();
+        assert_eq!(list.models.len(), 5);
+        assert_eq!(list.remote.len(), 2);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn errors_are_sorted_into_problems_a_person_can_fix() {
+        let cases = [
+            (ApiError::Unreachable("refused".into()), Problem::NotRunning),
+            // llama.cpp, LM Studio and Ollama phrasings.
+            (
+                ApiError::Transport("Local model server returned HTTP 400: request (5000 tokens) exceeds the available context size (4096 tokens), try increasing it".into()),
+                Problem::ContextFull,
+            ),
+            (
+                ApiError::Protocol("Local model server reported: the prompt is longer than the context length currently available to the model".into()),
+                Problem::ContextFull,
+            ),
+            (
+                ApiError::Transport("Local model server returned HTTP 400: image input is not supported - hint: if this is unexpected, you may need to provide the mmproj".into()),
+                Problem::NoImages,
+            ),
+            (
+                ApiError::Transport("Local model server returned HTTP 404: model 'gemma3:4b' not found".into()),
+                Problem::ModelMissing,
+            ),
+            (
+                ApiError::Transport("Local model server returned HTTP 400: No models loaded. Please load a model in the developer page or use the `lms load` command.".into()),
+                Problem::ModelMissing,
+            ),
+            (
+                ApiError::Transport("Local model server returned HTTP 503: Loading model".into()),
+                Problem::StillLoading,
+            ),
+            (
+                ApiError::Transport("The local model server went silent for 120 seconds.".into()),
+                Problem::TooSlow,
+            ),
+            (
+                ApiError::Transport("The reply took longer than 30 minutes, so James stopped waiting.".into()),
+                Problem::TooSlow,
+            ),
+            // Recorded from Ollama 0.40.3: an embedding model asked to chat,
+            // and a text-only model sent an image.
+            (
+                ApiError::Transport("Local model server returned HTTP 400: \"nomic-embed-text:latest\" does not support chat".into()),
+                Problem::NotAChatModel,
+            ),
+            (
+                ApiError::Transport("Local model server returned HTTP 400: Multimodal data provided, but model does not support multimodal requests.".into()),
+                Problem::NoImages,
+            ),
+            // Recorded from Ollama 0.40.3 for a cloud model without sign-in.
+            (
+                ApiError::Transport("Local model server returned HTTP 401: Unauthorized".into()),
+                Problem::NeedsSignIn,
+            ),
+            (ApiError::Protocol("Malformed JSON in chat response".into()), Problem::Other),
+        ];
+        for (error, problem) in cases {
+            assert_eq!(error.problem(), problem, "{error}");
+        }
+    }
+
+    #[test]
+    fn reasoning_frames_signal_thinking_without_becoming_the_answer() {
+        let frame =
+            parse_sse_line(r#"data: {"choices":[{"delta":{"reasoning_content":"Let me think"}}]}"#)
+                .unwrap();
+        assert!(frame.thinking && frame.text.is_none());
+        let frame = parse_ndjson_line(
+            r#"{"message":{"role":"assistant","content":"","thinking":"Hmm"},"done":false}"#,
+        )
+        .unwrap();
+        assert!(frame.thinking);
+        assert_eq!(frame.text.as_deref(), Some(""));
+
+        let mut stream = NDJSON_HEAD.to_vec();
+        for line in [
+            r#"{"message":{"role":"assistant","content":"","thinking":"Weighing it up"},"done":false}"#,
+            r#"{"message":{"role":"assistant","content":"Answer."},"done":false}"#,
+            r#"{"message":{"role":"assistant","content":""},"done":true}"#,
+        ] {
+            stream.extend(chunk(format!("{line}\n").as_bytes()));
+        }
+        stream.extend_from_slice(b"0\r\n\r\n");
+        let (port, worker) = serve(vec![Step::Write(stream)]);
+        let client = LocalClient::for_provider(LocalProvider::Ollama, port).unwrap();
+        let mut events = Vec::new();
+        let result =
+            client.chat_stream("qwen3", &[ChatMessage::new("user", "Go")], None, |event| {
+                events.push(match event {
+                    StreamEvent::Connected(_) => "connected".to_owned(),
+                    StreamEvent::Delta(text) => text,
+                    StreamEvent::Thinking => "thinking".to_owned(),
+                })
+            });
+        assert_eq!(result.unwrap(), "Answer.");
+        assert_eq!(events, ["connected", "thinking", "Answer."]);
+        worker.join().unwrap();
     }
 }

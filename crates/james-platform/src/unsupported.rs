@@ -1,5 +1,5 @@
 //! Fallback for platforms without desktop helpers.
-use crate::{Action, Cancellation, Error, Listening, Screenshot, VoiceConfig};
+use crate::{Action, Cancellation, Error, Listening, Screenshot, Target, VoiceConfig};
 use std::{path::PathBuf, time::Duration};
 
 const MESSAGE: &str = "This capability is not available on this platform.";
@@ -22,6 +22,12 @@ pub fn dictate(_: Duration, _: &VoiceConfig, _: &Cancellation) -> Result<String,
 pub fn speak(_: &str, _: &Cancellation) -> Result<(), Error> {
     Err(Error::Unsupported(MESSAGE))
 }
-pub fn execute(_: &Action, _: u32, _: u32, _: &Cancellation) -> Result<(), Error> {
+pub fn execute(
+    _: &Action,
+    _: u32,
+    _: u32,
+    _: Option<&Target>,
+    _: &Cancellation,
+) -> Result<(), Error> {
     Err(Error::Unsupported(MESSAGE))
 }

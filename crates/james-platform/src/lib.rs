@@ -84,6 +84,48 @@ pub struct Screenshot {
     pub png: Vec<u8>,
     pub width: u32,
     pub height: u32,
+    /// The window in front while the screenshot was taken, where the OS can
+    /// say (Windows). James is minimized during capture, so this is the app
+    /// the person chose to show.
+    pub target: Option<Target>,
+}
+
+/// One top-level window, as Windows identified it at capture time. Input is
+/// only sent while this same window is in front.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Target {
+    /// The window handle, as a number.
+    pub window: i64,
+    pub process_id: u32,
+    pub process_name: String,
+    pub title: String,
+}
+
+impl Target {
+    /// Keeps OS-supplied names printable and short before they are shown or stored.
+    pub fn sanitized(mut self) -> Self {
+        let clean = |text: &str, max: usize| -> String {
+            text.chars()
+                .map(|c| if c.is_control() { ' ' } else { c })
+                .take(max)
+                .collect::<String>()
+                .trim()
+                .to_owned()
+        };
+        self.process_name = clean(&self.process_name, 64);
+        self.title = clean(&self.title, 120);
+        self
+    }
+
+    /// How the window is named to a person: title and program.
+    pub fn describe(&self) -> String {
+        match (self.title.is_empty(), self.process_name.is_empty()) {
+            (false, false) => format!("“{}” ({})", self.title, self.process_name),
+            (false, true) => format!("“{}”", self.title),
+            (true, false) => format!("a {} window", self.process_name),
+            (true, true) => "an untitled window".into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -133,18 +175,42 @@ pub struct ReviewedAction {
     action: Action,
     width: u32,
     height: u32,
+    target: Option<Target>,
 }
 impl ReviewedAction {
-    pub fn approve(action: Action, width: u32, height: u32) -> Result<Self, Error> {
+    /// `target` is the window the screenshot showed in front. When present,
+    /// the input helper refuses to send unless that window is in front.
+    pub fn approve(
+        action: Action,
+        width: u32,
+        height: u32,
+        target: Option<Target>,
+    ) -> Result<Self, Error> {
         action.validate(width, height)?;
+        if target
+            .as_ref()
+            .is_some_and(|t| t.process_id == std::process::id())
+        {
+            return Err(Error::InvalidInput(
+                "The screenshot shows James itself in front. Capture the app you want to act in."
+                    .into(),
+            ));
+        }
         Ok(Self {
             action,
             width,
             height,
+            target,
         })
     }
     pub fn action(&self) -> &Action {
         &self.action
+    }
+    pub fn target(&self) -> Option<&Target> {
+        self.target.as_ref()
+    }
+    pub fn screen(&self) -> (u32, u32) {
+        (self.width, self.height)
     }
 }
 
@@ -205,11 +271,18 @@ pub fn speak(text: &str, cancel: &Cancellation) -> Result<(), Error> {
     sys::speak(text, cancel)
 }
 
-/// Executes exactly one consumed review. Revalidates the live screen dimensions.
-/// The target application must be foreground when this is invoked.
+/// Executes exactly one consumed review. Revalidates the live screen
+/// dimensions and, where the review names a target window, that this window
+/// is in front (and, for a click, under the pointer) immediately before input.
 pub fn execute(review: ReviewedAction, cancel: &Cancellation) -> Result<(), Error> {
     review.action.validate(review.width, review.height)?;
-    sys::execute(&review.action, review.width, review.height, cancel)
+    sys::execute(
+        &review.action,
+        review.width,
+        review.height,
+        review.target.as_ref(),
+        cancel,
+    )
 }
 
 /// Reads width and height from a PNG's IHDR chunk.
@@ -318,9 +391,54 @@ mod tests {
     use super::*;
     #[test]
     fn clicks_must_be_within_screen() {
-        assert!(ReviewedAction::approve(Action::Click { x: 1919, y: 1079 }, 1920, 1080).is_ok());
-        assert!(ReviewedAction::approve(Action::Click { x: 1920, y: 1079 }, 1920, 1080).is_err());
-        assert!(ReviewedAction::approve(Action::Click { x: 0, y: 0 }, 0, 1080).is_err());
+        assert!(
+            ReviewedAction::approve(Action::Click { x: 1919, y: 1079 }, 1920, 1080, None).is_ok()
+        );
+        assert!(
+            ReviewedAction::approve(Action::Click { x: 1920, y: 1079 }, 1920, 1080, None).is_err()
+        );
+        assert!(ReviewedAction::approve(Action::Click { x: 0, y: 0 }, 0, 1080, None).is_err());
+    }
+
+    fn target(process_id: u32) -> Target {
+        Target {
+            window: 0x1234,
+            process_id,
+            process_name: "notepad".into(),
+            title: "Untitled - Notepad".into(),
+        }
+    }
+
+    #[test]
+    fn james_itself_is_never_the_target() {
+        let tab = || Action::Key { key: Key::Tab };
+        assert!(
+            ReviewedAction::approve(tab(), 1920, 1080, Some(target(std::process::id()))).is_err()
+        );
+        let review =
+            ReviewedAction::approve(tab(), 1920, 1080, Some(target(std::process::id() + 1)))
+                .unwrap();
+        assert_eq!(review.target().unwrap().process_name, "notepad");
+        assert_eq!(review.screen(), (1920, 1080));
+    }
+
+    #[test]
+    fn window_names_are_printable_and_bounded() {
+        let named = Target {
+            title: format!("Evil\u{1b}[2J{}", "x".repeat(500)),
+            process_name: "app\nname".into(),
+            ..target(1)
+        }
+        .sanitized();
+        assert!(!named.title.chars().any(char::is_control));
+        assert_eq!(named.title.chars().count(), 120);
+        assert_eq!(named.process_name, "app name");
+        assert_eq!(target(1).describe(), "“Untitled - Notepad” (notepad)");
+        let untitled = Target {
+            title: String::new(),
+            ..target(1)
+        };
+        assert_eq!(untitled.describe(), "a notepad window");
     }
     #[test]
     fn text_cannot_submit_or_escape_review() {
@@ -419,6 +537,52 @@ mod tests {
         assert!(screen.width > 0 && screen.height > 0);
         assert!(screen.png.starts_with(b"\x89PNG\r\n\x1a\n"));
     }
+    #[cfg(any(windows, unix))]
+    #[test]
+    #[ignore = "Captures the screen in memory; run only with user authorization"]
+    fn desktop_capture_names_the_window_in_front() {
+        let screen = capture_screen(&Cancellation::default()).expect("screen capture");
+        if cfg!(windows) {
+            // A desktop session always has some window in front, even if it is the shell.
+            let target = screen.target.expect("the window in front");
+            assert!(target.window != 0 && target.process_id != 0, "{target:?}");
+            println!("In front at capture: {}", target.describe());
+        } else {
+            assert!(screen.target.is_none());
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "Runs the Windows input helper; it must refuse before sending anything"]
+    fn windows_input_refuses_when_the_target_is_not_in_front() {
+        // A window handle no real window has: the helper must refuse before input.
+        let review = ReviewedAction::approve(
+            Action::Key { key: Key::Escape },
+            1,
+            1,
+            Some(Target {
+                window: 0x7fff_fff1,
+                process_id: u32::MAX - 1,
+                process_name: "nobody".into(),
+                title: "No such window".into(),
+            }),
+        )
+        .unwrap();
+        // The primary screen is not 1x1, so the size check also refuses; use the
+        // real size so the target check is what decides.
+        let screen = capture_screen(&Cancellation::default()).expect("screen capture");
+        let review = ReviewedAction {
+            width: screen.width,
+            height: screen.height,
+            ..review
+        };
+        let error = execute(review, &Cancellation::default())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("nothing was sent"), "{error}");
+    }
+
     #[cfg(windows)]
     #[test]
     #[ignore = "Starts Windows speech helpers; run explicitly on a desktop"]

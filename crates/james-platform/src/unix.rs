@@ -1,7 +1,9 @@
 //! macOS and Linux helpers built on standard system tools. Tools are resolved
 //! only from fixed system directories, never through the search path. Text to
 //! speak travels over stdin (or as one argument after `--`), never a shell.
-use crate::{Action, Cancellation, Error, Listening, Screenshot, VoiceConfig, png_size, supervise};
+use crate::{
+    Action, Cancellation, Error, Listening, Screenshot, Target, VoiceConfig, png_size, supervise,
+};
 use std::{
     os::unix::fs::DirBuilderExt,
     path::{Path, PathBuf},
@@ -93,7 +95,12 @@ pub fn capture_screen(cancel: &Cancellation) -> Result<Screenshot, Error> {
     let (width, height) = png_size(&png).ok_or_else(|| {
         Error::Failed("Screen capture did not return a PNG image. On macOS, allow Screen Recording for James in System Settings.".into())
     })?;
-    Ok(Screenshot { png, width, height })
+    Ok(Screenshot {
+        png,
+        width,
+        height,
+        target: None,
+    })
 }
 
 fn capture_linux(cancel: &Cancellation) -> Result<Vec<u8>, Error> {
@@ -172,7 +179,13 @@ pub fn speak(text: &str, cancel: &Cancellation) -> Result<(), Error> {
     ))
 }
 
-pub fn execute(_: &Action, _: u32, _: u32, _: &Cancellation) -> Result<(), Error> {
+pub fn execute(
+    _: &Action,
+    _: u32,
+    _: u32,
+    _: Option<&Target>,
+    _: &Cancellation,
+) -> Result<(), Error> {
     Err(Error::Unsupported(
         "Reviewed clicks and typing are available on Windows only for now.",
     ))
@@ -209,6 +222,7 @@ mod tests {
                 &Action::Click { x: 1, y: 1 },
                 10,
                 10,
+                None,
                 &Cancellation::default()
             ),
             Err(Error::Unsupported(_))

@@ -1,6 +1,6 @@
 //! Windows helpers: embedded PowerShell scripts launched from the absolute
 //! SystemRoot path, with all variable input passed as JSON on stdin.
-use crate::{Action, Cancellation, Error, Listening, Screenshot, VoiceConfig, supervise};
+use crate::{Action, Cancellation, Error, Listening, Screenshot, Target, VoiceConfig, supervise};
 use base64::Engine;
 use serde::Deserialize;
 use std::{os::windows::process::CommandExt, path::PathBuf, process::Command, time::Duration};
@@ -23,6 +23,8 @@ pub fn capture_screen(cancel: &Cancellation) -> Result<Screenshot, Error> {
         png: String,
         width: u32,
         height: u32,
+        #[serde(default)]
+        target: Option<Target>,
     }
     let value = run(
         include_str!("capture.ps1"),
@@ -41,6 +43,11 @@ pub fn capture_screen(cancel: &Cancellation) -> Result<Screenshot, Error> {
         png,
         width: response.width,
         height: response.height,
+        // A window handle of 0 means Windows could not say which was in front.
+        target: response
+            .target
+            .filter(|t| t.window != 0 && t.process_id != 0)
+            .map(Target::sanitized),
     })
 }
 
@@ -68,15 +75,34 @@ pub fn execute(
     action: &Action,
     width: u32,
     height: u32,
+    target: Option<&Target>,
     cancel: &Cancellation,
 ) -> Result<(), Error> {
     run(
         include_str!("input.ps1"),
-        &serde_json::json!({"action": action, "width": width, "height": height}),
+        &input_request(action, width, height, target),
         Duration::from_secs(15),
         cancel,
     )
     .map(|_| ())
+}
+
+/// What the input helper receives on stdin: the action, the screen it was
+/// reviewed on, the window that must be in front, and James's own process so
+/// input is never typed into James itself.
+pub(crate) fn input_request(
+    action: &Action,
+    width: u32,
+    height: u32,
+    target: Option<&Target>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "action": action,
+        "width": width,
+        "height": height,
+        "target": target.map(|t| serde_json::json!({"window": t.window, "process_id": t.process_id})),
+        "james_process_id": std::process::id(),
+    })
 }
 
 fn run(
