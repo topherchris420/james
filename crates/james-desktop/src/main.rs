@@ -879,14 +879,15 @@ impl JamesApp {
             context.push(ChatMessage::new("system", VOICE_CONTEXT));
         }
         self.sent_image = None;
-        if let (Ask::Plan | Ask::Guide, Some((_, width, height))) = (mode, &image) {
+        // Requests that ask the model for pixel coordinates in the screenshot.
+        let points = match mode {
+            Ask::Plan => Some(PLAN_CONTEXT),
+            Ask::Guide if self.prefs.guide_marks => Some(guide::MARKS_CONTEXT),
+            _ => None,
+        };
+        if let (Some(ask), Some((_, width, height))) = (points, &image) {
             let sent = scaled_size(*width, *height, MAX_IMAGE_SIDE);
             self.sent_image = Some(sent);
-            let ask = if mode == Ask::Plan {
-                PLAN_CONTEXT
-            } else {
-                guide::MARKS_CONTEXT
-            };
             context.push(ChatMessage::new(
                 "system",
                 format!(

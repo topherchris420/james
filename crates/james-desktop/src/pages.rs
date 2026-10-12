@@ -126,7 +126,7 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
                 &shown.marks,
                 (screen.capture.width, screen.capture.height),
             );
-            ui.small("The numbers mark the steps in James's last Guide me answer.");
+            ui.small("The numbers mark the steps in James's last Guide me answer. Your model placed them, and they may be off.");
         }
         discard = ui.button("Discard screenshot").clicked();
     } else {
@@ -375,6 +375,8 @@ pub fn settings(app: &mut JamesApp, ui: &mut egui::Ui) {
     ui.separator();
     voice_settings(app, ui);
     ui.separator();
+    guide_settings(app, ui);
+    ui.separator();
     privacy(app, ui);
     ui.separator();
     help(app, ui);
@@ -551,6 +553,17 @@ fn voice_settings(app: &mut JamesApp, ui: &mut egui::Ui) {
     if james_platform::uses_whisper() {
         whisper_settings(app, ui);
     }
+}
+
+fn guide_settings(app: &mut JamesApp, ui: &mut egui::Ui) {
+    ui.label(RichText::new("Guide me").size(18.0).strong());
+    if ui
+        .checkbox(&mut app.prefs.guide_marks, "Number the steps on my screenshot")
+        .changed()
+    {
+        app.save_session();
+    }
+    ui.label("Your model decides where each number goes, and smaller models often put them in the wrong place. The written steps are the same either way: find the label each step names before you click.");
 }
 
 /// whisper.cpp setup for macOS and Linux: optional explicit paths, a check
