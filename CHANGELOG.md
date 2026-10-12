@@ -9,7 +9,10 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 0.4.0 were never published as releases. A version with a suffix, such as
 `0.4.0-preview.1`, is published as a prerelease.
 
-## Unreleased
+## 0.4.0-preview.3 — 2026-10-12
+
+Guide me's step numbers become a setting, off by default, after a real
+model placed them well away from the buttons it meant.
 
 ### Changed
 
