@@ -55,6 +55,9 @@ impl ChatMessage {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApiError {
     InvalidConfig(String),
+    /// Nothing accepted a connection on the port: usually the server is not
+    /// running, or it listens on another port.
+    Unreachable(String),
     Transport(String),
     Protocol(String),
 }
@@ -62,7 +65,10 @@ pub enum ApiError {
 impl fmt::Display for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidConfig(s) | Self::Transport(s) | Self::Protocol(s) => f.write_str(s),
+            Self::InvalidConfig(s)
+            | Self::Unreachable(s)
+            | Self::Transport(s)
+            | Self::Protocol(s) => f.write_str(s),
         }
     }
 }
@@ -113,6 +119,61 @@ impl LocalProvider {
             Self::LlamaCpp => 8080,
         }
     }
+    /// Where [`find_servers`] looks by default, in order of preference. The
+    /// generic OpenAI-compatible preset shares LM Studio's port and protocol,
+    /// so it is not probed separately.
+    pub fn detectable() -> Vec<(Self, u16)> {
+        [Self::LmStudio, Self::Ollama, Self::LlamaCpp]
+            .into_iter()
+            .map(|provider| (provider, provider.default_port()))
+            .collect()
+    }
+}
+
+/// A local server that answered model discovery.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FoundServer {
+    pub provider: LocalProvider,
+    pub port: u16,
+    /// What the server offers. Empty means it is running with no model available.
+    pub models: Vec<String>,
+}
+
+/// Asks every candidate loopback port, all at once, for its model list and
+/// returns the servers that answered with one, in candidate order. Only the
+/// discovery request is sent. A port that refuses the connection or answers
+/// with something other than a model list is skipped, so an unrelated web
+/// server on a default port is never mistaken for a model server.
+pub fn find_servers(candidates: &[(LocalProvider, u16)]) -> Vec<FoundServer> {
+    let probes: Vec<_> = candidates
+        .iter()
+        .map(|&(provider, port)| {
+            std::thread::spawn(move || {
+                let models = LocalClient::for_provider(provider, port)
+                    .and_then(|client| client.models())
+                    .ok()?;
+                Some(FoundServer {
+                    provider,
+                    port,
+                    models,
+                })
+            })
+        })
+        .collect();
+    probes
+        .into_iter()
+        .filter_map(|probe| probe.join().ok().flatten())
+        .collect()
+}
+
+/// The model to select when the user has not picked one: the first that does
+/// not look like an embedding model, which cannot chat. Falls back to the
+/// first model so an unusual naming scheme still gets a choice.
+pub fn preferred_chat_model(models: &[String]) -> Option<&String> {
+    models
+        .iter()
+        .find(|id| !id.to_ascii_lowercase().contains("embed"))
+        .or_else(|| models.first())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -445,7 +506,7 @@ fn build_ollama_request(
 
 fn map_http_error(error: HttpError) -> ApiError {
     match error {
-        HttpError::Unreachable(detail) => ApiError::Transport(format!(
+        HttpError::Unreachable(detail) => ApiError::Unreachable(format!(
             "Cannot reach the selected local model server: {detail}"
         )),
         HttpError::TimedOut => ApiError::Transport(format!(
@@ -1222,15 +1283,111 @@ mod tests {
     }
 
     #[test]
-    fn nothing_listening_is_a_transport_error() {
+    fn nothing_listening_is_reported_as_unreachable() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
         drop(listener);
         let err = LocalClient::new(port).unwrap().models().unwrap_err();
-        assert!(matches!(err, ApiError::Transport(_)), "{err:?}");
+        assert!(matches!(err, ApiError::Unreachable(_)), "{err:?}");
         assert!(
             err.to_string()
                 .starts_with("Cannot reach the selected local model server")
         );
+    }
+
+    fn closed_port() -> u16 {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.local_addr().unwrap().port()
+    }
+
+    fn reply(body: &str) -> Vec<Step> {
+        vec![Step::Write(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .into_bytes(),
+        )]
+    }
+
+    #[test]
+    fn find_servers_reports_answering_servers_in_candidate_order() {
+        let (ollama, ollama_worker) = serve(reply(
+            r#"{"models":[{"name":"qwen3:4b"},{"name":"gemma3:4b"}]}"#,
+        ));
+        let (empty, empty_worker) = serve(reply(r#"{"data":[]}"#));
+        let found = find_servers(&[
+            (LocalProvider::LmStudio, closed_port()),
+            (LocalProvider::Ollama, ollama),
+            (LocalProvider::LlamaCpp, empty),
+        ]);
+        assert_eq!(
+            found,
+            vec![
+                FoundServer {
+                    provider: LocalProvider::Ollama,
+                    port: ollama,
+                    models: vec!["gemma3:4b".into(), "qwen3:4b".into()],
+                },
+                FoundServer {
+                    provider: LocalProvider::LlamaCpp,
+                    port: empty,
+                    models: Vec::new(),
+                },
+            ]
+        );
+        assert!(
+            String::from_utf8(ollama_worker.join().unwrap())
+                .unwrap()
+                .starts_with("GET /api/tags ")
+        );
+        assert!(
+            String::from_utf8(empty_worker.join().unwrap())
+                .unwrap()
+                .starts_with("GET /v1/models ")
+        );
+    }
+
+    #[test]
+    fn find_servers_skips_a_port_that_is_not_a_model_server() {
+        let page = "<html>a development web server</html>";
+        let (port, worker) = serve(vec![Step::Write(
+            format!(
+                "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
+                page.len()
+            )
+            .into_bytes(),
+        )]);
+        assert!(find_servers(&[(LocalProvider::LlamaCpp, port)]).is_empty());
+        worker.join().unwrap();
+        let (port, worker) = serve(reply(r#"{"status":"ok"}"#));
+        assert!(find_servers(&[(LocalProvider::LmStudio, port)]).is_empty());
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn default_detection_covers_each_provider_on_its_own_port() {
+        assert_eq!(
+            LocalProvider::detectable(),
+            vec![
+                (LocalProvider::LmStudio, 1234),
+                (LocalProvider::Ollama, 11434),
+                (LocalProvider::LlamaCpp, 8080),
+            ]
+        );
+    }
+
+    #[test]
+    fn preferred_model_skips_embedding_models() {
+        let models: Vec<String> = ["nomic-embed-text:latest", "Text-Embedding-3", "qwen3:4b"]
+            .map(String::from)
+            .into();
+        assert_eq!(preferred_chat_model(&models).unwrap(), "qwen3:4b");
+        let only_embeddings = vec!["nomic-embed-text:latest".to_owned()];
+        assert_eq!(
+            preferred_chat_model(&only_embeddings).unwrap(),
+            "nomic-embed-text:latest"
+        );
+        assert_eq!(preferred_chat_model(&[]), None);
     }
 }
