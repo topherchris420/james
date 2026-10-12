@@ -558,7 +558,10 @@ fn voice_settings(app: &mut JamesApp, ui: &mut egui::Ui) {
 fn guide_settings(app: &mut JamesApp, ui: &mut egui::Ui) {
     ui.label(RichText::new("Guide me").size(18.0).strong());
     if ui
-        .checkbox(&mut app.prefs.guide_marks, "Number the steps on my screenshot")
+        .checkbox(
+            &mut app.prefs.guide_marks,
+            "Number the steps on my screenshot",
+        )
         .changed()
     {
         app.save_session();
