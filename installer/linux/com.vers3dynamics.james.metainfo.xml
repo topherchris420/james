@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.vers3dynamics.james</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>James</name>
+  <summary>Desktop AI companion that asks before it touches anything</summary>
+  <developer id="com.vers3dynamics">
+    <name>Vers3Dynamics</name>
+  </developer>
+  <description>
+    <p>
+      James talks to an AI model running on your own computer, through LM Studio,
+      Ollama, llama.cpp or another OpenAI-compatible server. It connects only to
+      that app on this computer and has no internet connection of its own.
+    </p>
+    <ul>
+      <li>Guided first-run setup that ends with a real reply from your model</li>
+      <li>Shows your screen to a vision model only when you ask</li>
+      <li>Talk and dictation with tools on this computer</li>
+      <li>Read-only view of R.A.I.N. Lab research results</li>
+    </ul>
+    <p>
+      James is an early preview. Answers come from the model you choose and can be wrong.
+    </p>
+  </description>
+  <launchable type="desktop-id">james.desktop</launchable>
+  <url type="homepage">https://github.com/topherchris420/james</url>
+  <url type="bugtracker">https://github.com/topherchris420/james/issues</url>
+  <url type="help">https://github.com/topherchris420/james/blob/main/docs/GETTING_STARTED.md</url>
+  <url type="vcs-browser">https://github.com/topherchris420/james</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>A conversation with a model running on the same computer</caption>
+      <image>https://raw.githubusercontent.com/topherchris420/james/main/docs/assets/james-conversation.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <provides>
+    <binary>james</binary>
+  </provides>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">760</display_length>
+  </requires>
+  <releases>
+    <release version="0.4.0" date="2026-10-12">
+      <description>
+        <p>Guided setup, model capability checks, Markdown replies, themes and accessibility settings, privacy controls and safer reviewed input.</p>
+      </description>
+    </release>
+  </releases>
+</component>

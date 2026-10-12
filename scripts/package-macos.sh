@@ -4,8 +4,15 @@
 #   dist/James-<version>-macos-universal.zip (and .sha256)
 #
 # The app runs natively on Apple silicon and Intel Macs with macOS 11 or newer.
-# It is ad-hoc signed, not notarized, so the first launch needs Open Anyway in
-# System Settings > Privacy & Security.
+#
+# Without credentials it is ad-hoc signed and not notarized, so the first
+# launch needs Open Anyway in System Settings > Privacy & Security. With a
+# Developer ID it is signed with the hardened runtime:
+#
+#   MACOS_SIGNING_IDENTITY   "Developer ID Application: Name (TEAMID)", in the keychain
+#   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   also notarize and staple
+#
+# Signing is never faked: a configured identity that fails stops the build.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,7 +44,15 @@ sed "s/@BUNDLE_VERSION@/${version%%-*}/g" installer/macos/Info.plist > "${app}/C
 plutil -lint "${app}/Contents/Info.plist"
 cp installer/james.icns "${app}/Contents/Resources/james.icns"
 cp LICENSE "${app}/Contents/Resources/LICENSE"
-codesign --force --deep --sign - "$app"
+identity="${MACOS_SIGNING_IDENTITY:-}"
+if [[ -n "$identity" ]]; then
+    codesign --force --options runtime --timestamp \
+        --entitlements installer/macos/James.entitlements --sign "$identity" "$app"
+    echo "Signed with ${identity}."
+else
+    codesign --force --deep --sign - "$app"
+    echo "Ad-hoc signed: no Developer ID configured."
+fi
 codesign --verify --deep --strict "$app"
 lipo "${app}/Contents/MacOS/james" -verify_arch arm64 x86_64
 "${app}/Contents/MacOS/james" --version
@@ -47,6 +62,17 @@ mkdir -p "$dist"
 archive="James-${version}-macos-universal.zip"
 rm -f "${dist}/${archive}"
 ditto -c -k --sequesterRsrc --keepParent "$app" "${dist}/${archive}"
+if [[ -n "$identity" && -n "${APPLE_ID:-}" && -n "${APPLE_TEAM_ID:-}" && -n "${APPLE_APP_PASSWORD:-}" ]]; then
+    xcrun notarytool submit "${dist}/${archive}" --apple-id "$APPLE_ID" \
+        --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+    xcrun stapler staple "$app"
+    xcrun stapler validate "$app"
+    spctl --assess --type execute --verbose "$app"
+    # Ship the stapled app, so Gatekeeper can check it offline.
+    rm -f "${dist}/${archive}"
+    ditto -c -k --sequesterRsrc --keepParent "$app" "${dist}/${archive}"
+    echo "Notarized and stapled."
+fi
 (cd "$dist" && shasum -a 256 "$archive" > "${archive}.sha256")
 echo "Packaged James ${version} for macOS:"
 ls -l "$dist"

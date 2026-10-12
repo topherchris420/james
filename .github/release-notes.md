@@ -15,6 +15,10 @@ James needs a local model app on the same computer, such as [LM Studio](https://
 - **macOS:** open the zip and drag **James** into Applications, then open it. When macOS says it could not verify James, choose **Done**, open **System Settings → Privacy & Security**, and choose **Open Anyway**.
 - **Linux:** open the `.deb` with your software installer, or run `sudo apt install ./james_@VERSION@_amd64.deb`. For the archive, extract it and run `./install.sh`.
 
-To check a download, compare it with `SHA256SUMS.txt`.
+### Check your download
 
-James is a preview. Chat, screen questions and voice work on all three systems; reviewed clicks and typing work on Windows only. The [validation ledger](https://github.com/topherchris420/james/blob/main/docs/VALIDATION.md) records what has been tested on real systems and what has not.
+- Compare the file's SHA-256 checksum with `SHA256SUMS.txt` (on Windows: `Get-FileHash <file>`; on a Mac or Linux: `shasum -a 256 <file>`).
+- Every file also has a build-provenance attestation from this repository's release workflow. With the GitHub CLI: `gh attestation verify <file> --repo topherchris420/james`.
+- `release-metadata.json` records the commit, the workflow run and whether any file was code-signed.
+
+James is a **developer preview** ([what that means](https://github.com/topherchris420/james/blob/main/docs/END_USER_READINESS.md)). Chat, screen questions and voice work on all three systems; reviewed clicks and typing work on Windows only. See the [changelog](https://github.com/topherchris420/james/blob/main/CHANGELOG.md) for what's new. The [validation ledger](https://github.com/topherchris420/james/blob/main/docs/VALIDATION.md) records what has been tested on real systems and what has not.

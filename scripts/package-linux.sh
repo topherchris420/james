@@ -46,6 +46,7 @@ mkdir -p "$folder"
 install -m 0755 "$binary" "${folder}/james"
 install -m 0755 installer/linux/install.sh "${folder}/install.sh"
 install -m 0644 installer/linux/james.desktop installer/linux/README.txt LICENSE "${folder}/"
+install -m 0644 installer/linux/com.vers3dynamics.james.metainfo.xml "${folder}/"
 install -m 0644 installer/james-512.png "${folder}/james.png"
 tar -czf "${dist}/${product}.tar.gz" -C "$stage" --owner=0 --group=0 "$product"
 
@@ -58,7 +59,18 @@ install -D -m 0755 "$binary" "${package}/usr/bin/james"
 install -D -m 0644 installer/linux/james.desktop "${package}/usr/share/applications/james.desktop"
 install -D -m 0644 installer/james-512.png "${package}/usr/share/icons/hicolor/512x512/apps/james.png"
 install -D -m 0644 crates/james-desktop/assets/james-256.png "${package}/usr/share/icons/hicolor/256x256/apps/james.png"
+install -D -m 0644 installer/linux/com.vers3dynamics.james.metainfo.xml "${package}/usr/share/metainfo/com.vers3dynamics.james.metainfo.xml"
 mkdir -p "${package}/usr/share/doc/james"
+# A Debian changelog entry pointing at the full release notes.
+release_date="$(date -u -R -d "@${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct 2>/dev/null || date +%s)}")"
+{
+    echo "james (${deb_version}) stable; urgency=medium"
+    echo
+    echo "  * James ${version}. Release notes are in CHANGELOG.md upstream."
+    echo
+    echo " -- James contributors <https://github.com/topherchris420/james/issues>  ${release_date}"
+} | gzip -9n > "${package}/usr/share/doc/james/changelog.gz"
+chmod 0644 "${package}/usr/share/doc/james/changelog.gz"
 {
     echo "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/"
     echo "Upstream-Name: James"

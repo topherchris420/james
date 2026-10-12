@@ -11,6 +11,23 @@ Set-StrictMode -Version Latest
 if ($env:OS -ne 'Windows_NT') { throw 'The James installer must be built on Windows.' }
 $sourceRoot = Split-Path -Parent $PSScriptRoot
 
+# Signs a file with Authenticode only when a maintainer provides a real
+# certificate: WINDOWS_CERTIFICATE_PFX (path to a .pfx file) and
+# WINDOWS_CERTIFICATE_PASSWORD, optionally WINDOWS_TIMESTAMP_URL. Without them
+# the build stays unsigned and says so; signing is never faked.
+function Invoke-CodeSign([string]$Path) {
+    if (-not $env:WINDOWS_CERTIFICATE_PFX) { return $false }
+    $signtool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+        Sort-Object FullName -Descending | Select-Object -First 1
+    if (-not $signtool) { throw 'WINDOWS_CERTIFICATE_PFX is set, but signtool.exe was not found.' }
+    $timestamp = if ($env:WINDOWS_TIMESTAMP_URL) { $env:WINDOWS_TIMESTAMP_URL } else { 'http://timestamp.digicert.com' }
+    & $signtool.FullName sign /fd SHA256 /td SHA256 /tr $timestamp /f $env:WINDOWS_CERTIFICATE_PFX /p $env:WINDOWS_CERTIFICATE_PASSWORD $Path | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "Code signing failed for $Path" }
+    & $signtool.FullName verify /pa $Path | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $Path" }
+    return $true
+}
+
 if (-not $IsccPath) {
     $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
     if ($compiler) { $IsccPath = $compiler.Source }
@@ -44,12 +61,15 @@ try {
     if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
         throw "Release binary missing: $binary. Build for $target first."
     }
+    $signed = Invoke-CodeSign $binary
     $outputPath = Join-Path $sourceRoot 'target\installer'
     New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
     & $IsccPath "/DAppVersion=$version" "/DSourceRoot=$sourceRoot" "/DAppBinary=$binary" "/DOutputPath=$outputPath" (Join-Path $sourceRoot 'installer\james.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
     $installerPath = Join-Path $outputPath "James-$version-windows-x64-setup.exe"
     if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) { throw 'Installer output missing.' }
+    if ($signed) { [void](Invoke-CodeSign $installerPath) }
+    Write-Output $(if ($signed) { 'Signed with the configured Authenticode certificate.' } else { 'Not code-signed: no certificate configured.' })
     $checksum = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
     "$checksum  $([System.IO.Path]::GetFileName($installerPath))" |
         Set-Content -LiteralPath "$installerPath.sha256" -Encoding ascii

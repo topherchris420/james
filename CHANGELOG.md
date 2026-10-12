@@ -1,0 +1,99 @@
+# Changelog
+
+James follows [semantic versioning](https://semver.org/). Before 1.0, a minor
+version (0.4, 0.5…) may change behaviour or saved-data formats; each entry
+says when it does and how older data is handled.
+
+Releases are published only from an explicit `v<version>` tag, by the
+workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
+0.4.0 were never published as releases.
+
+## 0.4.0 — 2026-10-12
+
+The first version prepared for people who are not developers. See
+[docs/END_USER_READINESS.md](docs/END_USER_READINESS.md) for what has and has
+not been verified; the release classification is **developer preview**.
+
+### Added
+
+- **Guided first-run setup** in five steps: what James is, how to get LM
+  Studio or Ollama on your operating system, Find my model server, a real
+  test message, and what screen capture, permissions and reviewed input mean.
+  Progress is saved after every step and resumes after a restart.
+- **What a model can do**, asked of its own server: whether it reads images,
+  whether it can chat, its context window and whether it is loaded (Ollama,
+  LM Studio, llama.cpp). Screen features are switched off when the server
+  says a model cannot read images.
+- **Cloud models are flagged.** Ollama models that run on another computer
+  are labelled, warned about, and never chosen automatically.
+- **Conversation:** Markdown rendering with copyable code blocks, Copy, Ask
+  again, Try again, a prominent Stop, a "thinking" indicator for reasoning
+  models, example questions, and the model and app in the title bar.
+- **Appearance and accessibility:** light, dark and system themes, high
+  contrast, text size from 80% to 200%, reduced motion, keyboard shortcuts
+  (F1 lists them) and screen-reader support through AccessKit.
+- **Privacy controls:** keep conversations off disk, clear a conversation, or
+  delete all James data (an unchecked action record is kept until checked).
+  On macOS and Linux, James's folder and files are readable only by you.
+- **Action recovery** shows exactly what an interrupted action was, where,
+  when, and what is known about whether it happened, on every platform.
+- **Windows target check:** a screenshot records the window in front; input
+  is refused unless that same window is in front (and, for a click, under
+  the point), and never sent to James itself.
+- **R.A.I.N. Lab:** Find the Lab, plain-language results that say whether
+  each is supported in the simulator and whether it was replayed, model
+  hypotheses labelled as such, the Lab build, gentle retries while offline,
+  and a preview of exactly what would be shared with the model.
+- `cargo run -p james-models --example probe`: check any local model server
+  from a terminal on any operating system.
+- Linux packages include AppStream metadata for software centres; the
+  Windows uninstaller asks whether to delete your conversations (default:
+  keep them).
+- Release builds can be Authenticode-signed (Windows) and signed and
+  notarized with a Developer ID (macOS) when a maintainer configures real
+  credentials; releases carry build-provenance attestations and a
+  `release-metadata.json` that states whether signing happened.
+
+### Changed
+
+- Clear errors with a next step for: a server not running, a missing or
+  unloaded model, a full context window, a model that cannot read images or
+  chat, a model still loading, and a model that needs a sign-in. The
+  server's own words are always shown too.
+- Screenshots are scaled to at most 1600 pixels before a model sees them;
+  suggested clicks are mapped back to full-screen coordinates for review.
+- Conversation history is trimmed to fit a known context window, and James
+  says when older messages were left out.
+- A reply may take at most 30 minutes in total, in addition to the existing
+  two-minute silence limit.
+- The action record format is now `james-action-intent/v2` (id, time,
+  screen, target window and outcome). A v1 record from 0.3 is still read and
+  still blocks new actions until checked.
+- The session file gains `keep_history`, `preferences` and `setup`. Sessions
+  from 0.3 load unchanged; one with a model already chosen skips setup.
+
+### Fixed
+
+- The Lab's `report` field, a file path inside the Lab, is no longer shown
+  as if it were the report's text.
+- Characters the bundled font cannot draw no longer appear in the interface.
+
+### Security
+
+- Files James writes are created owner-only and written atomically, with
+  their folder synced; older, looser files are tightened when loaded.
+- Model proposals are tested against duplicate fields, look-alike action
+  names, key chords, action lists, self-approval fields and out-of-range
+  numbers. None can produce an approval.
+
+## Before 0.4.0 (unreleased development)
+
+- **0.3.0:** screen capture, Windows voice and reviewed Windows input, live
+  read-only Lab context and the Windows installer; then Ollama, llama.cpp and
+  OpenAI-compatible providers, voice conversations, Guide me and whisper.cpp
+  listening on macOS and Linux, the `james-loopback` transport (a port is the
+  whole address), streamed replies with a Stop that closes the connection,
+  Find my model server, crash reports, and packages for macOS and Linux.
+- **0.2.0:** the native Rust desktop with LM Studio integration.
+- **0.1.0:** the `james-core` supervision contracts: one-use approvals,
+  policies, budgets and journaled dispatch.
