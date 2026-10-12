@@ -5,9 +5,7 @@
   <project_license>MIT</project_license>
   <name>James</name>
   <summary>Desktop AI companion that asks before it touches anything</summary>
-  <developer id="com.vers3dynamics">
-    <name>Vers3Dynamics</name>
-  </developer>
+  <developer_name>Vers3Dynamics</developer_name>
   <description>
     <p>
       James talks to an AI model running on your own computer, through LM Studio,
@@ -28,7 +26,6 @@
   <url type="homepage">https://github.com/topherchris420/james</url>
   <url type="bugtracker">https://github.com/topherchris420/james/issues</url>
   <url type="help">https://github.com/topherchris420/james/blob/main/docs/GETTING_STARTED.md</url>
-  <url type="vcs-browser">https://github.com/topherchris420/james</url>
   <screenshots>
     <screenshot type="default">
       <caption>A conversation with a model running on the same computer</caption>
