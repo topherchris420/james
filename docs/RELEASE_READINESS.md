@@ -14,8 +14,8 @@
 | --- | --- |
 | Workspace formatting, Clippy, tests | Must pass on the target commit in GitHub Actions |
 | Windows x64 optimized executable and Inno Setup installer | Require successful artifact jobs and checksum verification |
-| macOS host-runner binary | New pipeline must pass; note the exact runner architecture and validate actual launch |
-| Linux host-runner binary | New pipeline must pass; note the exact architecture and validate actual desktop launch |
+| macOS universal `James.app` | CI builds both slices, signs ad hoc and runs the arm64 slice with `--version`; launch, Gatekeeper and permission prompts on real Apple silicon and Intel Macs still need recording |
+| Linux `.deb` and portable archive | CI builds them on Ubuntu 22.04, installs both and runs `--version` there; the `.deb` window has opened on Ubuntu 24.04 under Xvfb. Real desktops (X11 and Wayland, GPU drivers) still need recording |
 | Windows ARM64, Linux ARM64 and other macOS architecture | No independent device validation yet |
 | Actual LM Studio/Qwen text and vision | Run and record on a real loaded model. This environment cannot assume access to the user's own localhost |
 | Ollama/llama.cpp genuine server responses | Native fixtures added; run real servers and record failures before compatibility claims |
@@ -24,10 +24,11 @@
 | Native macOS/Linux screen capture, speech and whisper.cpp listening | Implemented with unit tests; real-device validation (permissions, microphones, recognition quality, display servers) required |
 | Native macOS/Linux computer input | **Not implemented**; explicitly disabled in UI |
 | Voice conversation (Talk) and Guide me | Implemented; hands-on conversation, latency and guidance-quality tests with real models required |
+| First-run setup | **Find my model server** and its no-server, no-model and found outcomes exercised through the real UI against scripted servers; needs a run against real LM Studio and Ollama installs |
 | User experience/accessibility | Human test with keyboard, screen reader, high contrast, DPI scaling, reduced motion, initial setup |
 | Installer upgrade/uninstall | Clean-machine tests including retained history and unresolved-action recovery |
 | PWA and mobile companion | Not implemented; independent design/security validation required |
-| Signed, notarized macOS distribution | Signing credentials and actual notarization required |
+| Signed Windows and notarized macOS distribution | Code-signing certificate, Apple Developer ID and actual notarization required |
 | Privacy and independent security review | Threat model, action safety, current-process focus, persistence, provider logging and sensitive text retention |
 
 Use [ACCEPTANCE_TESTS.md](ACCEPTANCE_TESTS.md) to capture real results instead of inventing benchmarks. Do not check off a gate based solely on Rust compilation or an endpoint fixture. The release workflow only publishes on an explicit `v*` tag after its jobs pass; neither this document nor a pushed branch creates a signed public release.

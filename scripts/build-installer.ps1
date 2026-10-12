@@ -55,6 +55,13 @@ try {
         Set-Content -LiteralPath "$installerPath.sha256" -Encoding ascii
     Write-Output "Installer: $installerPath"
     Write-Output "SHA256: $checksum"
+    # The same executable, named so a downloaded copy says what it is.
+    $portablePath = Join-Path $outputPath "James-$version-windows-x64-portable.exe"
+    Copy-Item -LiteralPath $binary -Destination $portablePath -Force
+    $portableChecksum = (Get-FileHash -LiteralPath $portablePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$portableChecksum  $([System.IO.Path]::GetFileName($portablePath))" |
+        Set-Content -LiteralPath "$portablePath.sha256" -Encoding ascii
+    Write-Output "Portable: $portablePath"
 }
 finally {
     Pop-Location

@@ -409,7 +409,12 @@ impl Clock {
     // cloned socket is shut down. Poll in small slices so the cancellation
     // flag is observed promptly, while retaining the original idle and
     // exchange-wide deadlines.
-    fn arm(&self, stream: &TcpStream, last_progress: Instant) -> Result<(), Error> {
+    fn arm(
+        &self,
+        stream: &TcpStream,
+        last_progress: Instant,
+        abort: &AbortHandle,
+    ) -> Result<(), Error> {
         let elapsed_idle = last_progress.elapsed();
         if elapsed_idle >= self.timeouts.idle {
             return Err(Error::TimedOut);
@@ -422,8 +427,18 @@ impl Clock {
             }
             wait = wait.min(total - elapsed);
         }
-        stream.set_read_timeout(Some(wait.max(Duration::from_millis(1))))?;
-        Ok(())
+        // macOS refuses every socket option once a socket is shut down in both
+        // directions (EINVAL). When Stop lands between the caller's abort check
+        // and this call, that refusal is the Stop, not a transport failure.
+        stream
+            .set_read_timeout(Some(wait.max(Duration::from_millis(1))))
+            .map_err(|error| {
+                if abort.is_aborted() {
+                    Error::Closed
+                } else {
+                    error.into()
+                }
+            })
     }
 }
 
@@ -444,7 +459,7 @@ fn read_line(
         if abort.is_aborted() {
             return Err(Error::Closed);
         }
-        clock.arm(reader.get_ref(), last_progress)?;
+        clock.arm(reader.get_ref(), last_progress, abort)?;
         let available = match reader.fill_buf() {
             Ok(bytes) => bytes,
             Err(error)
@@ -827,7 +842,8 @@ impl Body {
             if self.abort.is_aborted() {
                 return Err(Error::Closed);
             }
-            self.clock.arm(self.inner.get_ref(), last_progress)?;
+            self.clock
+                .arm(self.inner.get_ref(), last_progress, &self.abort)?;
             match self.inner.read(buf) {
                 Ok(read) => {
                     if self.abort.is_aborted() {
@@ -944,6 +960,32 @@ impl Body {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arming_a_socket_that_stop_already_shut_down_reports_the_stop() {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let _peer = listener.accept().unwrap();
+        let abort = AbortHandle {
+            stream: Arc::new(stream.try_clone().unwrap()),
+            aborted: Arc::new(AtomicBool::new(false)),
+        };
+        let clock = Clock {
+            started: Instant::now(),
+            timeouts: Timeouts {
+                connect: Duration::from_secs(1),
+                idle: Duration::from_secs(5),
+                total: None,
+            },
+        };
+        // Stop arrives after the read loop checked the flag but before it armed
+        // the next read. On macOS the socket option is then refused.
+        abort.abort();
+        match clock.arm(&stream, Instant::now(), &abort) {
+            Ok(()) | Err(Error::Closed) => {}
+            other => panic!("Stop must not surface as a transport error: {other:?}"),
+        }
+    }
 
     #[test]
     fn the_only_two_addresses_are_loopback() {

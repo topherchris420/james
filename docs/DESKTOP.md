@@ -4,9 +4,7 @@ James has a native Rust interface for local-model chat, optional screen context,
 
 ## Install or run
 
-The [desktop workflow](https://github.com/topherchris420/james/actions/workflows/desktop.yml) is configured to produce a portable `James-Windows-x64` artifact and a `James-Windows-x64-installer` artifact containing setup and a checksum. Download from a successful run containing these changes; a v0.3 public release is not implied. GitHub may require sign-in.
-
-Run the setup executable and choose **Install**, then open James from the Start menu. Alternatively, extract the portable executable and open `james.exe`. Neither distribution includes LM Studio, model weights or the Lab. Setup is per-user; signing and clean-machine install/upgrade/uninstall validation remain outstanding. See [INSTALLER.md](INSTALLER.md).
+Download the installer or package for your system from the [Releases page](https://github.com/topherchris420/james/releases): a per-user Windows installer (or portable `.exe`), a universal `James.app` for macOS 11 and newer, or a `.deb` and portable archive for 64-bit Linux. The [getting started guide](GETTING_STARTED.md) covers installation, the first-launch warnings for unsigned builds, connecting a model and troubleshooting in plain language. No download includes a model server, model weights or the Lab. Builds are unsigned, and clean-machine install, upgrade and uninstall validation remain outstanding. See [INSTALLER.md](INSTALLER.md).
 
 For source builds, install Rust stable and native build tools (MSVC plus Visual Studio C++ Build Tools on Windows):
 
@@ -18,6 +16,8 @@ cargo run -p james-desktop --locked
 Screen capture, Guide me, speech and listening run on Windows, macOS and Linux; reviewed computer input is Windows-only and returns an unsupported-capability error elsewhere. See [PLATFORM_SUPPORT.md](PLATFORM_SUPPORT.md). A successful cross-platform compile does not prove those features work on a given device.
 
 ## Connect a model
+
+On first run, Conversation shows a welcome card. **Find my model server** (also in **Settings**) asks LM Studio's, Ollama's and llama.cpp's default loopback ports (1234, 11434 and 8080) for their model lists, all at once and only when pressed. It selects the first server that offers a model, preferring a chat model over an embedding model, and saves the choice. A port that answers with something other than a model list is ignored. If no server answers, or one answers with no models, James says which and what to do. To configure a server by hand:
 
 1. Start a local model server and load a model:
    - [LM Studio](https://lmstudio.ai/): load a model and enable its local server (default port **1234**).
@@ -68,6 +68,12 @@ Microphone permissions and device configuration must permit capture. Missing com
 Start the separate Lab development server. In **Lab**, enter its port (normally **5173**) and choose **Connect to Lab**. James polls `/api/rain/discovery` every five seconds, displays the current research state, and can include a bounded snapshot in a model request when you enable the attachment. Snapshots older than 15 seconds or unavailable snapshots block an attached request rather than silently reusing stale context. Disconnect clears the local snapshot and attachment selection.
 
 This is the upstream `rain-discovery-view/v1` endpoint, verified against a real local Lab server. It is read-only: no experiment is authorized, started, stopped or modified by James. It does not synchronize research memory or turn simulator findings into real-world evidence. See [LAB.md](LAB.md) for source provenance, limits and reproduction.
+
+## Errors and crash reports
+
+When the selected server does not accept a connection, James names the provider and port and says how to start it (for example, LM Studio's Developer tab or `ollama serve`). Other errors quote the server's own explanation.
+
+If James panics on any thread, it writes `crash.log` beside the session file before exiting or stopping the background task. The report holds the James version, operating system, thread name, error location and a backtrace; it contains no conversation text and is never sent anywhere. On the next launch, Conversation offers a link to report the problem and a button that deletes the report. `james --version` prints the version without opening a window.
 
 ## Storage and privacy
 

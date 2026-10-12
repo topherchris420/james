@@ -1,5 +1,35 @@
 # Implementation validation
 
+## End-user readiness session (2026-10-12)
+
+This change added a first-run screen that finds a local model server, plain-language errors, an app icon, crash reports, and installable packages for all three systems. It also fixed a macOS-only race in `james-loopback` that CI exposed.
+
+**Automated checks** on Linux x64 with Rust 1.97.0 stable:
+
+| Check | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | Passed |
+| `cargo test --workspace --all-targets --locked` | 138 passed, 1 ignored (the opt-in screen capture smoke test) |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed |
+
+New tests: four in `james-models` (servers found in candidate order with the right route per provider, a 404 page and a non-model JSON reply ignored, default ports, embedding models skipped when choosing a default); four in the desktop (the "can't reach" message and passthrough of server errors, choosing a server with a chat model, a panic on a worker thread writing `crash.log`, the bundled icon decoding); one in `james-loopback` (arming a read after Stop reports the Stop).
+
+**UI session.** A debug build ran under Xvfb (1400×1000, Mesa software OpenGL) with a scratch `HOME`. Python scripts played LM Studio on port 1234 (an empty `/v1/models`) and Ollama on port 11434 (`/api/tags` listing `nomic-embed-text:latest` and `gemma3:4b`, and a streamed `/api/chat`). Input came from `xdotool`.
+
+1. With no session file, Conversation showed the welcome card. **Find my model server** with nothing listening reported that no server answered on ports 1234, 11434 and 8080.
+2. With only the empty LM Studio stand-in running, it reported "LM Studio is running on port 1234, but it has no models yet" and how to fix it.
+3. With both running, it chose Ollama (the server with a model), selected `gemma3:4b` over the embedding model, and saved provider, port and model to `session.json`. A typed question streamed back a reply.
+4. With the Ollama stand-in stopped, **Send** reported "James can't reach Ollama on port 11434. Make sure Ollama is running…".
+5. With a `crash.log` placed beside the session file, the next launch showed the internal-error notice; **Dismiss and delete the report** removed the file.
+
+**Packages.** `scripts/package-linux.sh` on Ubuntu 24.04 produced a `.deb` and archive whose checksums verified. `apt install` of the `.deb` resolved its dependencies, `desktop-file-validate` accepted the menu entry, and the installed `/usr/bin/james` opened its window under Xvfb, then `apt remove` removed it. The archive's `install.sh` installed into a scratch home, the installed copy ran `--version`, and `install.sh --uninstall` removed the binary, menu entry and icon.
+
+In CI on GitHub-hosted runners: the Linux job built in an `ubuntu:22.04` container, installed both packages there and ran `james --version`; the Windows job built the installer with the new icon settings and the renamed portable executable; the macOS job built both architectures, assembled and ad-hoc signed `James.app`, verified the signature and both slices, and ran `--version`.
+
+**Found along the way.** A Linux binary built on Ubuntu 24.04 records a non-weak requirement for `GLIBC_2.39` (from optional `pidfd_spawnp`), so it would not start on Ubuntu 22.04, Mint 21 or Debian 12; Linux packages are now built on 22.04. On macOS, Stop arriving between a read loop's abort check and arming the next read made `setsockopt` fail with `EINVAL`, which surfaced as an I/O error instead of a clean stop; this flaked `abort_from_another_thread_unblocks_a_waiting_read_at_once` in macOS CI and is fixed.
+
+**What this does not establish.** The model servers were scripts, not LM Studio or Ollama. No Windows or macOS installer or app was opened interactively, so SmartScreen, Gatekeeper, **Open Anyway**, permission prompts, Start menu and Applications launch remain unrecorded. The Intel slice of the macOS app was compiled, not run. No real Linux desktop (X11 or Wayland session, GPU driver) launched the packaged app.
+
 ## Streaming and Stop session (2026-10-12)
 
 This change moved every network request onto `james-loopback`, a new dependency-free HTTP/1.1 client whose only address input is a port. It also made model replies stream and made **Stop** close the connection.

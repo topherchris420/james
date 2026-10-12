@@ -5,7 +5,9 @@ mod timing;
 mod voice;
 use eframe::egui::{self, Color32, RichText};
 use james_lab::{LabClient, ResearchContext};
-use james_models::{AbortHandle, ChatMessage, LocalClient, LocalProvider, StreamEvent};
+use james_models::{
+    AbortHandle, ApiError, ChatMessage, FoundServer, LocalClient, LocalProvider, StreamEvent,
+};
 use james_platform::{Action, Cancellation, Key, ReviewedAction, Screenshot};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -24,6 +26,9 @@ const GUIDE_CONTEXT: &str = "The user is stuck and attached one snapshot of thei
 const GUIDE_QUESTION: &str = "I'm stuck. What should I do next on this screen?";
 const VOICE_CONTEXT: &str = "This turn is a spoken conversation. Answer conversationally in a few sentences unless asked for detail; your reply will be read aloud.";
 const MAX_SAVED_MESSAGES: usize = 80;
+const HELP_URL: &str = "https://github.com/topherchris420/james/blob/main/docs/GETTING_STARTED.md";
+const ISSUES_URL: &str = "https://github.com/topherchris420/james/issues/new/choose";
+const ICON_PNG: &[u8] = include_bytes!("../assets/james-256.png");
 
 /// What a model request is for. Only `Plan` can produce an action proposal,
 /// and even that proposal still waits for Allow once.
@@ -94,6 +99,120 @@ fn copyable(ui: &mut egui::Ui, text: &str) {
         }
     });
 }
+/// What to do when a provider's server does not answer at all.
+fn start_hint(provider: LocalProvider) -> &'static str {
+    match provider {
+        LocalProvider::LmStudio => {
+            "Open LM Studio, load a model, and start its server on the Developer tab."
+        }
+        LocalProvider::Ollama => {
+            "Make sure Ollama is running: open the Ollama app, or run ollama serve."
+        }
+        LocalProvider::LlamaCpp => {
+            "Start llama-server with your model, for example: llama-server -m model.gguf"
+        }
+        LocalProvider::OpenAiCompatible => "Start your model server and check its port.",
+    }
+}
+/// What to do when a provider's server answers but offers no model.
+fn no_model_hint(provider: LocalProvider) -> &'static str {
+    match provider {
+        LocalProvider::LmStudio => "Download and load a model in LM Studio, then try again.",
+        LocalProvider::Ollama => "Download one with ollama pull gemma3:4b, then try again.",
+        LocalProvider::LlamaCpp | LocalProvider::OpenAiCompatible => {
+            "Start the server with a model, then try again."
+        }
+    }
+}
+/// Turns the failure a new user meets most (no server running) into a next
+/// step. Every other error keeps the server's own explanation.
+fn explain(provider: LocalProvider, port: u16, error: ApiError) -> String {
+    match error {
+        ApiError::Unreachable(_) => format!(
+            "James can't reach {} on port {port}. {} Or use Find my model server in Settings.",
+            provider.label(),
+            start_hint(provider)
+        ),
+        other => other.to_string(),
+    }
+}
+/// Picks the first server that offers a model and says in plain words what
+/// happened. A server with no models is only chosen when nothing is set up
+/// yet, so pressing Find never replaces a working model with an empty server.
+fn describe_found(servers: &[FoundServer], has_model: bool) -> (Option<&FoundServer>, String) {
+    let with_model = servers.iter().find(|s| !s.models.is_empty());
+    let shown = with_model.or_else(|| servers.first());
+    let chosen = with_model.or(shown.filter(|_| !has_model));
+    let mut note = match shown {
+        None => {
+            let ports = LocalProvider::detectable()
+                .iter()
+                .map(|(_, port)| port.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "No model server answered on this computer (ports {ports}). Start LM Studio or Ollama with a model, then try again. If your server uses a different port, enter it in Settings."
+            )
+        }
+        Some(found) => match james_models::preferred_chat_model(&found.models) {
+            Some(model) => format!(
+                "Connected to {} on port {}. James will use {model}; you can choose another model in Settings.",
+                found.provider.label(),
+                found.port
+            ),
+            None => format!(
+                "{} is running on port {}, but it has no models yet. {}",
+                found.provider.label(),
+                found.port,
+                no_model_hint(found.provider)
+            ),
+        },
+    };
+    if shown.is_some() && chosen.is_none() {
+        note.push_str(" Your current model settings are unchanged.");
+    }
+    (chosen, note)
+}
+/// Where an internal error report is kept for the user to attach to a bug report.
+fn crash_report_path(session: &std::path::Path) -> PathBuf {
+    session.with_file_name("crash.log")
+}
+/// Windows builds have no console and the window may simply vanish, so a
+/// panic on any thread is written down before the default handler runs. The
+/// report holds the version, platform, panic message, location and backtrace;
+/// James's own panic messages carry no conversation text.
+fn record_panics(path: PathBuf) {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let seconds = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or_default();
+        let report = format!(
+            "James {} on {} {} (Unix time {seconds}, thread {})\n{info}\n\n{}\n",
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            std::thread::current().name().unwrap_or("unnamed"),
+            std::backtrace::Backtrace::force_capture()
+        );
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, report);
+        default(info);
+    }));
+}
+fn app_icon() -> Option<egui::IconData> {
+    let image = image::load_from_memory_with_format(ICON_PNG, image::ImageFormat::Png)
+        .ok()?
+        .to_rgba8();
+    Some(egui::IconData {
+        width: image.width(),
+        height: image.height(),
+        rgba: image.into_raw(),
+    })
+}
 fn numeric_port(value: &str) -> Result<u16, String> {
     value
         .parse::<u16>()
@@ -111,6 +230,7 @@ enum Page {
 }
 enum WorkerResult {
     Models(Result<Vec<String>, String>),
+    Found(Vec<FoundServer>),
     /// One streamed piece of the reply in progress. Never final.
     Delta(String),
     Chat(Result<String, String>, Ask),
@@ -222,6 +342,10 @@ struct JamesApp {
     whisper_program: String,
     whisper_model: String,
     listening: james_platform::Listening,
+    /// The outcome of the last Find my model server, shown on the welcome card.
+    setup_note: Option<String>,
+    /// An internal error report from an earlier run, until the user dismisses it.
+    crash_report: Option<PathBuf>,
 }
 impl Default for JamesApp {
     fn default() -> Self {
@@ -233,8 +357,9 @@ impl Default for JamesApp {
             whisper_program: optional_path(&saved.whisper_program),
             whisper_model: optional_path(&saved.whisper_model),
         };
+        let crash_report = Some(crash_report_path(&session)).filter(|p| p.is_file());
         let status = if saved.model.trim().is_empty() {
-            "Choose a local model provider in Settings to begin.".into()
+            "Welcome. Connect a model on this computer to begin.".into()
         } else {
             format!(
                 "Ready · {} on {} at 127.0.0.1:{}",
@@ -288,6 +413,8 @@ impl Default for JamesApp {
             listening: james_platform::listening(&voice_config),
             whisper_program: saved.whisper_program,
             whisper_model: saved.whisper_model,
+            setup_note: None,
+            crash_report,
         }
     }
 }
@@ -386,11 +513,22 @@ impl JamesApp {
                     WorkerResult::Models(
                         LocalClient::for_provider(provider, port)
                             .and_then(|c| c.models())
-                            .map_err(|e| e.to_string()),
+                            .map_err(|e| explain(provider, port, e)),
                     )
                 });
             }
         }
+    }
+    /// Asks the default loopback ports of the known providers which models
+    /// they offer, then selects the first server with a model.
+    fn find_server(&mut self) {
+        if self.busy() {
+            return;
+        }
+        self.setup_note = None;
+        self.launch_model("Looking for a model server on this computer...", |_| {
+            WorkerResult::Found(james_models::find_servers(&LocalProvider::detectable()))
+        });
     }
     fn send(&mut self, mode: Ask) {
         if self.busy() {
@@ -500,7 +638,7 @@ impl JamesApp {
                                 StreamEvent::Delta(text) => job.send(WorkerResult::Delta(text)),
                             })
                         })
-                        .map_err(|e| e.to_string()),
+                        .map_err(|e| explain(provider, port, e)),
                     mode,
                 )
             },
@@ -708,13 +846,38 @@ impl JamesApp {
             WorkerResult::Models(Ok(models)) => {
                 self.available_models = models;
                 if !self.available_models.contains(&self.model) {
-                    self.model = self.available_models.first().cloned().unwrap_or_default();
+                    self.model = james_models::preferred_chat_model(&self.available_models)
+                        .cloned()
+                        .unwrap_or_default();
                 }
-                self.status = format!(
-                    "Local server connected · {} models",
-                    self.available_models.len()
-                );
+                self.status = if self.available_models.is_empty() {
+                    format!(
+                        "{} is running, but it has no models yet. {}",
+                        self.provider.label(),
+                        no_model_hint(self.provider)
+                    )
+                } else {
+                    format!(
+                        "Local server connected · {} models",
+                        self.available_models.len()
+                    )
+                };
                 self.save_session();
+            }
+            WorkerResult::Found(servers) => {
+                let has_model = !self.model.trim().is_empty();
+                let (chosen, note) = describe_found(&servers, has_model);
+                if let Some(found) = chosen {
+                    self.provider = found.provider;
+                    self.port = found.port.to_string();
+                    self.available_models = found.models.clone();
+                    self.model = james_models::preferred_chat_model(&found.models)
+                        .cloned()
+                        .unwrap_or_default();
+                    self.save_session();
+                }
+                self.status = note.clone();
+                self.setup_note = Some(note);
             }
             WorkerResult::Delta(_) => unreachable!("deltas are applied in receive()"),
             WorkerResult::Chat(Ok(reply), mode) => {
@@ -881,14 +1044,104 @@ impl JamesApp {
             });
         }
     }
+    /// Shown in place of the conversation until a model is chosen: how to get
+    /// a local model running, and a button that finds it.
+    fn welcome_ui(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(24.0);
+        ui.label(RichText::new("Welcome to James").size(23.0));
+        ui.label("James talks to an AI model that runs on your own computer, so what you say stays here. Three steps to get going:");
+        ui.add_space(12.0);
+        ui.label(
+            RichText::new("1   Install a local AI app")
+                .strong()
+                .color(TEAL),
+        );
+        ui.horizontal_wrapped(|ui| {
+            ui.hyperlink_to("LM Studio", "https://lmstudio.ai/");
+            ui.label("is the easiest place to start.");
+            ui.hyperlink_to("Ollama", "https://ollama.com/download");
+            ui.label("works too. Both are free.");
+        });
+        ui.add_space(10.0);
+        ui.label(
+            RichText::new("2   Download a model and start it")
+                .strong()
+                .color(TEAL),
+        );
+        ui.label("LM Studio: search for a model such as Gemma 3 4B, download and load it, then start the server on the Developer tab.");
+        ui.label("Ollama: its server starts by itself. Download a model with:");
+        copyable(ui, "ollama pull gemma3:4b");
+        ui.small("A model with vision, like Gemma 3, also lets James answer questions about your screen. Expect a download of a few gigabytes.");
+        ui.add_space(10.0);
+        ui.label(RichText::new("3   Let James find it").strong().color(TEAL));
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    !self.busy(),
+                    egui::Button::new(
+                        RichText::new("Find my model server")
+                            .strong()
+                            .color(Color32::BLACK),
+                    )
+                    .fill(TEAL),
+                )
+                .clicked()
+            {
+                self.find_server();
+            }
+            if ui.button("Set up by hand in Settings").clicked() {
+                self.page = Page::Settings;
+            }
+        });
+        ui.small("James checks ports 1234 (LM Studio), 11434 (Ollama) and 8080 (llama.cpp) on this computer only.");
+        if let Some(note) = &self.setup_note {
+            ui.add_space(6.0);
+            ui.colored_label(Color32::YELLOW, note);
+        }
+        ui.add_space(10.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Stuck?");
+            ui.hyperlink_to("Read the getting started guide", HELP_URL);
+        });
+    }
+    /// A notice about an internal error in an earlier run, with the saved
+    /// report so the user can choose to include it in a bug report.
+    fn crash_notice_ui(&mut self, ui: &mut egui::Ui) {
+        let Some(path) = &self.crash_report else {
+            return;
+        };
+        let mut dismiss = false;
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.colored_label(
+                Color32::YELLOW,
+                "James ran into an internal error in an earlier session.",
+            );
+            ui.label("A short report was saved on this computer. It contains the James version, your operating system and where the error happened, not your conversations. Nothing was sent anywhere.");
+            ui.small(format!("Report: {}", path.display()));
+            ui.horizontal(|ui| {
+                ui.hyperlink_to("Report the problem", ISSUES_URL);
+                if ui.button("Dismiss and delete the report").clicked() {
+                    dismiss = true;
+                }
+            });
+        });
+        if dismiss && let Some(path) = self.crash_report.take() {
+            let _ = std::fs::remove_file(path);
+        }
+        ui.add_space(8.0);
+    }
     fn conversation_ui(&mut self, ui: &mut egui::Ui) {
         ui.heading("Conversation");
         ui.small("Model output is not verified scientific evidence.");
         ui.separator();
-        if self.messages.is_empty() && self.streaming.is_none() {
+        self.crash_notice_ui(ui);
+        if self.model.trim().is_empty() {
+            self.welcome_ui(ui);
+            ui.separator();
+        } else if self.messages.is_empty() && self.streaming.is_none() {
             ui.add_space(35.0);
             ui.label(RichText::new("A laboratory without walls.").size(23.0));
-            ui.label("Choose a local model provider in Settings. Talk with James, ask Guide me when you're stuck, or connect the read-only R.A.I.N. Lab whenever you need context.");
+            ui.label(format!("You're connected to {}. Type a question below and press Send. Press Guide me when you're stuck on something on screen, or Talk to have a spoken conversation.", self.model));
         }
         for m in &self.messages {
             ui.add_space(12.0);
@@ -1252,12 +1505,22 @@ impl JamesApp {
             ui.label("127.0.0.1 port");
             ui.text_edit_singleline(&mut self.port);
         });
-        if ui
-            .add_enabled(!self.busy(), egui::Button::new("Discover models"))
-            .clicked()
-        {
-            self.discover();
-        }
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(!self.busy(), egui::Button::new("Discover models"))
+                .on_hover_text("List the models offered by the provider and port above.")
+                .clicked()
+            {
+                self.discover();
+            }
+            if ui
+                .add_enabled(!self.busy(), egui::Button::new("Find my model server"))
+                .on_hover_text("Check the usual ports of LM Studio, Ollama and llama.cpp on this computer and use the first server with a model.")
+                .clicked()
+            {
+                self.find_server();
+            }
+        });
         ui.small("Only numeric loopback ports are supported. No automatic cloud connection or authentication. Images require a compatible vision model.");
         ui.label("Model ID");
         ui.text_edit_singleline(&mut self.model);
@@ -1398,6 +1661,12 @@ impl eframe::App for JamesApp {
                 if self.recovery_needed {
                     ui.colored_label(Color32::YELLOW, "Verify last action");
                 }
+                ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                    ui.add_space(10.0);
+                    ui.small(format!("James {}", env!("CARGO_PKG_VERSION")));
+                    ui.hyperlink_to("Report a problem", ISSUES_URL);
+                    ui.hyperlink_to("Help", HELP_URL);
+                });
             });
         egui::TopBottomPanel::bottom("composer").show(ctx, |ui| {
             ui.add_space(5.0);
@@ -1405,10 +1674,16 @@ impl eframe::App for JamesApp {
                 egui::TextEdit::multiline(&mut self.draft)
                     .desired_rows(2)
                     .desired_width(f32::INFINITY)
-                    .hint_text("Ask James…"),
+                    .hint_text(if cfg!(target_os = "macos") {
+                        "Ask James… (⌘ Return sends)"
+                    } else {
+                        "Ask James… (Ctrl+Enter sends)"
+                    }),
             );
             let shortcut = compose.has_focus()
-                && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.ctrl);
+                && ui.input(|i| {
+                    i.key_pressed(egui::Key::Enter) && (i.modifiers.ctrl || i.modifiers.command)
+                });
             ui.horizontal_wrapped(|ui| {
                 let enabled = !self.busy();
                 if ui.add_enabled(enabled, egui::Button::new("Send")).clicked()
@@ -1535,10 +1810,24 @@ impl eframe::App for JamesApp {
     }
 }
 fn main() -> eframe::Result<()> {
+    // Lets support requests and packaging checks confirm the build without a display.
+    if std::env::args()
+        .skip(1)
+        .any(|a| a == "--version" || a == "-V")
+    {
+        println!("James {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    record_panics(crash_report_path(&session_path()));
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([1120.0, 820.0])
+        .with_min_inner_size([800.0, 620.0])
+        .with_app_id("james");
+    if let Some(icon) = app_icon() {
+        viewport = viewport.with_icon(icon);
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1120.0, 820.0])
-            .with_min_inner_size([800.0, 620.0]),
+        viewport,
         ..Default::default()
     };
     eframe::run_native(
@@ -1629,6 +1918,90 @@ mod tests {
         job.send(WorkerResult::Delta("late".into()));
         assert!(rx.try_recv().is_err());
         drop(server);
+    }
+
+    #[test]
+    fn a_server_that_is_not_running_gets_a_next_step() {
+        let message = explain(
+            LocalProvider::LmStudio,
+            1234,
+            ApiError::Unreachable("port 1234: connection refused".into()),
+        );
+        assert!(message.starts_with("James can't reach LM Studio on port 1234."));
+        assert!(message.contains("Developer tab"));
+        assert!(!message.contains("refused"), "{message}");
+        // The server's own explanation is kept for everything else.
+        let message = explain(
+            LocalProvider::Ollama,
+            11434,
+            ApiError::Transport("Local model server returned HTTP 404: model not found".into()),
+        );
+        assert_eq!(
+            message,
+            "Local model server returned HTTP 404: model not found"
+        );
+    }
+
+    #[test]
+    fn find_prefers_a_server_with_a_chat_model() {
+        let (chosen, note) = describe_found(&[], false);
+        assert!(chosen.is_none());
+        assert!(note.contains("1234, 11434, 8080"), "{note}");
+
+        let empty = FoundServer {
+            provider: LocalProvider::LmStudio,
+            port: 1234,
+            models: Vec::new(),
+        };
+        let (chosen, note) = describe_found(std::slice::from_ref(&empty), false);
+        assert_eq!(chosen, Some(&empty));
+        assert!(note.contains("no models yet"), "{note}");
+        // A working setup is never swapped for a server with nothing to run.
+        let (chosen, note) = describe_found(std::slice::from_ref(&empty), true);
+        assert!(chosen.is_none());
+        assert!(
+            note.ends_with("Your current model settings are unchanged."),
+            "{note}"
+        );
+
+        let ollama = FoundServer {
+            provider: LocalProvider::Ollama,
+            port: 11434,
+            models: vec!["nomic-embed-text:latest".into(), "qwen3:4b".into()],
+        };
+        let servers = [empty, ollama.clone()];
+        let (chosen, note) = describe_found(&servers, true);
+        assert_eq!(chosen, Some(&ollama));
+        assert!(note.contains("Ollama on port 11434"), "{note}");
+        assert!(note.contains("qwen3:4b"), "{note}");
+    }
+
+    #[test]
+    fn a_panic_on_any_thread_leaves_a_report() {
+        let dir = std::env::temp_dir().join(format!("james-crash-test-{}", std::process::id()));
+        let path = crash_report_path(&dir.join("session.json"));
+        let _ = std::fs::remove_file(&path);
+        record_panics(path.clone());
+        let result = std::thread::Builder::new()
+            .name("worker".into())
+            .spawn(|| panic!("simulated failure"))
+            .unwrap()
+            .join();
+        // Restore the default hook for the rest of the test binary.
+        drop(std::panic::take_hook());
+        assert!(result.is_err());
+        let report = std::fs::read_to_string(&path).unwrap();
+        assert!(report.starts_with(&format!("James {} on ", env!("CARGO_PKG_VERSION"))));
+        assert!(report.contains("thread worker"), "{report}");
+        assert!(report.contains("simulated failure"), "{report}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_bundled_icon_decodes() {
+        let icon = app_icon().expect("icon");
+        assert_eq!((icon.width, icon.height), (256, 256));
+        assert_eq!(icon.rgba.len(), 256 * 256 * 4);
     }
 
     #[test]

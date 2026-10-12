@@ -28,7 +28,8 @@ MinVersion=10.0
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableWelcomePage=yes
-UninstallDisplayIcon={app}\james.exe
+SetupIconFile={#SourceRoot}\installer\james.ico
+UninstallDisplayIcon={app}\james.ico
 OutputDir={#OutputPath}
 OutputBaseFilename=James-{#AppVersion}-windows-x64-setup
 Compression=lzma2
@@ -41,13 +42,14 @@ SetupLogging=yes
 [Files]
 Source: "{#AppBinary}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\installer\james.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 
 [Icons]
-Name: "{group}\James"; Filename: "{app}\james.exe"
-Name: "{autodesktop}\James"; Filename: "{app}\james.exe"; Tasks: desktopicon
+Name: "{group}\James"; Filename: "{app}\james.exe"; IconFilename: "{app}\james.ico"
+Name: "{autodesktop}\James"; Filename: "{app}\james.exe"; IconFilename: "{app}\james.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\james.exe"; Description: "Open James"; Flags: nowait postinstall skipifsilent

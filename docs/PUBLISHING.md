@@ -1,6 +1,6 @@
 # Publication preparation
 
-The [James repository](https://github.com/topherchris420/james) now contains the original authorization core and a working desktop text-chat preview. Crates remain `publish = false`; there is no crates.io release or signed desktop installer. A portable Windows binary is published as a temporary [CI artifact](https://github.com/topherchris420/james/actions/workflows/desktop.yml).
+The [James repository](https://github.com/topherchris420/james) now contains the original authorization core and a working desktop text-chat preview. Crates remain `publish = false`; there is no crates.io release or signed desktop installer. Unsigned installers and packages for Windows, macOS and Linux are built by the [desktop workflow](https://github.com/topherchris420/james/actions/workflows/desktop.yml) and published to [GitHub Releases](https://github.com/topherchris420/james/releases) when a `v<version>` tag is pushed.
 
 ## Prepared
 
@@ -27,4 +27,4 @@ The repository license does not authorize redistribution of reference artifacts.
 
 ## Desktop preview distribution
 
-The Windows desktop job builds `target/release/james.exe` and uploads `James-Windows-x64` using GitHub Actions. Downloading the artifact requires extracting the archive and separately setting up LM Studio with model weights. It is unsigned, is not an MSI installer, and is not tested against all Windows configurations. No third-party reference installer is redistributed. See [DESKTOP.md](DESKTOP.md).
+Each desktop workflow run builds a per-user Windows installer and portable executable, a universal macOS `James.app`, and a Linux `.deb` and portable archive, with checksums. A `v<version>` tag publishes them as a GitHub release whose notes explain which file to download and how to open an unsigned build; [INSTALLER.md](INSTALLER.md) lists the steps. Users still install a local model server and model weights separately; [GETTING_STARTED.md](GETTING_STARTED.md) walks them through it. Builds are unsigned and not tested against all configurations of any system. No third-party reference installer is redistributed.
