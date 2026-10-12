@@ -1314,18 +1314,23 @@ impl JamesApp {
                             ),
                             egui::TextureOptions::LINEAR,
                         );
+                        let shows_james = if capture.james_hidden == Some(false) {
+                            " James was still on screen when it was taken, so it may appear in the picture."
+                        } else {
+                            ""
+                        };
                         self.screen = Some(Screen {
                             capture,
                             texture,
                             at: Instant::now(),
                         });
                         if std::mem::take(&mut self.setup_capture) {
-                            self.info("Screenshot taken. It stays in memory; discard it whenever you like.");
+                            self.info(format!("Screenshot taken. It stays in memory; discard it whenever you like.{shows_james}"));
                         } else {
                             self.page = Page::Screen;
-                            self.info(
-                                "Screen captured in memory. Review it before attaching it to a question.",
-                            );
+                            self.info(format!(
+                                "Screen captured in memory. Review it before attaching it to a question.{shows_james}"
+                            ));
                         }
                         if std::mem::take(&mut self.guide_after_capture) {
                             self.send(Ask::Guide);

@@ -88,6 +88,10 @@ pub struct Screenshot {
     /// say (Windows). James is minimized during capture, so this is the app
     /// the person chose to show.
     pub target: Option<Target>,
+    /// Whether none of James's own windows covered the captured screen when
+    /// the picture was taken, where the OS can say (Windows). `Some(false)`
+    /// means James may appear in the picture.
+    pub james_hidden: Option<bool>,
 }
 
 /// One top-level window, as Windows identified it at capture time. Input is
@@ -547,9 +551,30 @@ mod tests {
             let target = screen.target.expect("the window in front");
             assert!(target.window != 0 && target.process_id != 0, "{target:?}");
             println!("In front at capture: {}", target.describe());
+            // A test process has no windows, so nothing of "James" can cover the screen.
+            assert_eq!(screen.james_hidden, Some(true));
         } else {
-            assert!(screen.target.is_none());
+            assert!(screen.target.is_none() && screen.james_hidden.is_none());
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn capture_waits_for_james_within_a_bound() {
+        let request = sys::capture_request();
+        assert_eq!(request["james_process_id"], std::process::id());
+        let ms = |key: &str| request[key].as_u64().expect(key);
+        let composition: u64 = request["composition_ms"]
+            .as_array()
+            .expect("composition_ms")
+            .iter()
+            .map(|wait| wait.as_u64().expect("milliseconds"))
+            .sum();
+        // Two frames and a margin: enough for the compositor, too short to notice.
+        assert!((32..=250).contains(&composition));
+        assert!(ms("stable_polls") >= 2 && ms("poll_ms") > 0);
+        // The whole wait stays far inside the helper's 60-second deadline.
+        assert!(ms("ceiling_ms") + ms("poll_ms") + composition < 5_000);
     }
 
     #[cfg(windows)]

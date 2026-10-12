@@ -100,6 +100,7 @@ pub fn capture_screen(cancel: &Cancellation) -> Result<Screenshot, Error> {
         width,
         height,
         target: None,
+        james_hidden: None,
     })
 }
 
