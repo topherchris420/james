@@ -25,10 +25,11 @@ pub fn capture_screen(cancel: &Cancellation) -> Result<Screenshot, Error> {
         height: u32,
         #[serde(default)]
         target: Option<Target>,
+        james_hidden: bool,
     }
     let value = run(
         include_str!("capture.ps1"),
-        &serde_json::json!({}),
+        &capture_request(),
         // Cold Windows PowerShell/Add-Type startup can exceed 20 seconds while
         // the host is busy. Cancellation remains responsive during this bound.
         Duration::from_secs(60),
@@ -48,6 +49,23 @@ pub fn capture_screen(cancel: &Cancellation) -> Result<Screenshot, Error> {
             .target
             .filter(|t| t.window != 0 && t.process_id != 0)
             .map(Target::sanitized),
+        james_hidden: Some(response.james_hidden),
+    })
+}
+
+/// What the capture helper receives on stdin. Minimizing is asynchronous: the
+/// window animates away and the compositor drops it only from a later frame,
+/// so a picture taken too early can still show James. The helper checks
+/// James's own windows every `poll_ms` until none has covered the screen for
+/// `stable_polls` checks in a row (giving up after `ceiling_ms`), then waits
+/// `composition_ms` — two frames and a margin — before it captures.
+pub(crate) fn capture_request() -> serde_json::Value {
+    serde_json::json!({
+        "james_process_id": std::process::id(),
+        "poll_ms": 50,
+        "stable_polls": 2,
+        "ceiling_ms": 1500,
+        "composition_ms": [16, 16, 100],
     })
 }
 

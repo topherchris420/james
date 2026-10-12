@@ -118,6 +118,9 @@ pub struct SavedSession {
     pub preferences: Preferences,
     /// Absent in sessions saved before guided setup existed.
     pub setup: Option<Setup>,
+    /// The James version that last saved this session; empty in sessions
+    /// saved before James recorded it.
+    pub last_version: String,
 }
 
 impl Default for SavedSession {
@@ -133,6 +136,7 @@ impl Default for SavedSession {
             keep_history: true,
             preferences: Preferences::default(),
             setup: None,
+            last_version: String::new(),
         }
     }
 }
@@ -325,13 +329,17 @@ pub fn delete_all(session: &Path) -> Result<Vec<PathBuf>, String> {
 
 #[cfg(test)]
 pub(crate) fn scratch_dir(name: &str) -> PathBuf {
+    // The clock alone can repeat: Windows counts in 100 ns steps, and tests
+    // that start together then share a folder and collide on its files.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let dir = std::env::temp_dir().join(format!(
-        "james-{name}-{}-{}",
+        "james-{name}-{}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     let _ = std::fs::remove_dir_all(&dir);
     dir
@@ -411,6 +419,7 @@ mod tests {
                 step: SetupStep::Test,
                 test_passed: false,
             }),
+            last_version: "0.4.0".into(),
             ..SavedSession::default()
         };
         save(&path, &session).unwrap();
@@ -419,6 +428,7 @@ mod tests {
         assert_eq!(loaded.messages, session.messages);
         assert_eq!(loaded.preferences, session.preferences);
         assert_eq!(loaded.setup().step, SetupStep::Test);
+        assert_eq!(loaded.last_version, "0.4.0");
 
         // Without history, a stray message in the file is not restored either.
         let unsaved = SavedSession {

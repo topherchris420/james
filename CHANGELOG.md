@@ -9,6 +9,25 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 0.4.0 were never published as releases. A version with a suffix, such as
 `0.4.0-preview.1`, is published as a prerelease.
 
+## Unreleased
+
+### Added
+
+- **What's new after an upgrade.** The first time an upgraded James starts,
+  it shows this version's notes from this changelog, built into the app.
+  Got it, Esc or the close button dismisses them for good. James still never
+  connects to the internet to look for updates. The saved session now records
+  the version that saved it; sessions saved by older versions load unchanged
+  and show no notes.
+
+### Changed
+
+- **Screenshots wait for James to leave the picture** (Windows). After the
+  three-second delay, the capture helper checks that none of James's windows
+  still covers the screen, waits for the display to finish redrawing, and only
+  then takes the picture. If James is still visible after 1.5 seconds, the
+  picture is taken anyway and James says it may appear in it.
+
 ## 0.4.0-preview.1 — 2026-10-12
 
 The first published build of 0.4.0, released as a prerelease because it is a
