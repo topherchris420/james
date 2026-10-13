@@ -9,7 +9,7 @@
 [![Core CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/ci.yml?branch=main&style=flat-square&label=core%20CI)](https://github.com/topherchris420/james/actions/workflows/ci.yml)
 [![Desktop CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/desktop.yml?branch=main&style=flat-square&label=desktop%20CI)](https://github.com/topherchris420/james/actions/workflows/desktop.yml)
 [![Rust 1.88+](https://img.shields.io/badge/Rust-1.88%2B-dea584?style=flat-square&logo=rust&logoColor=white)](Cargo.toml)
-[![safe forbidden](https://img.shields.io/badge/unsafe-forbidden-3EC1B2?style=flat-square)](Cargo.toml)
+[![safe forbidden](https://img.shields.io/badge/safe-forbidden-3EC1B2?style=flat-square)](Cargo.toml)
 [![Status: developer preview](https://img.shields.io/badge/status-developer%20preview-F2C14E?style=flat-square)](docs/END_USER_READINESS.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-0B5D63?style=flat-square)](LICENSE)
 
