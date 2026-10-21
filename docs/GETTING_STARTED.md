@@ -164,7 +164,14 @@ setup again from **Settings → Help, updates and about**.
 - **Stop.** **Stop (Esc)** ends an answer at once and keeps what arrived,
   marked as incomplete.
 - **Copy, Ask again, Read aloud** sit beside each answer. **Ask again** sends
-  your last question again and replaces the answer.
+  your last question again and replaces the answer, keeping any new question
+  you've started writing and its screenshot attachment for later.
+- **Keep a copy or start fresh.** **Copy conversation**, above the chat,
+  copies the messages as Markdown for you to paste into a document. It leaves
+  out screenshots and your unsent draft. **New conversation** (Ctrl+N; ⌘N on
+  a Mac) asks before clearing the messages, draft, screenshot, attachments
+  and any unapproved action proposal. These controls stay above the messages
+  while you scroll; stop a running reply before using them.
 - **Guide me.** Stuck on something on screen? Press **Guide me**. James hides
   for three seconds, takes one picture of your screen, and suggests up to three
   things you can try. It never clicks or types for you. This needs a model that
@@ -200,6 +207,10 @@ James explains what happened in the line of text under the message box, says
 what to do, and shows the model app's own words in brackets. A red message
 also has a **Troubleshooting** link back to this table.
 
+If James cannot save your conversation or settings, a warning stays above
+every page until saving succeeds. Check free disk space and that your
+account can write to James's data folder, then choose **Retry saving**.
+
 | James says | What to do |
 | --- | --- |
 | *No model server answered on this computer* | Make sure LM Studio or Ollama is open with its server started, then press **Find my model server** again. If your model app uses an unusual port, set it in **Settings**. |
@@ -208,7 +219,7 @@ also has a **Troubleshooting** link back to this table.
 | *… doesn't have the model “…” ready* | The model was removed or renamed in the model app. Download or load it again, or choose another model in **Settings**. |
 | *“…” can't read images* | That model can't see pictures. For screen questions and **Guide me**, choose a vision model such as Gemma 3. |
 | *“…” isn't a chat model* | You picked an embedding model (for example `nomic-embed-text`). Choose another model in **Settings**. |
-| *This conversation no longer fits in the model's context window* | **Settings → Clear conversation…**, or load the model with a larger context length in your model app. James already leaves out old messages when it knows the model's window, and tells you when it does. |
+| *This conversation no longer fits in the model's context window* | Choose **New conversation** above the chat, or load the model with a larger context length in your model app. James already leaves out old messages when it knows the model's window, and tells you when it does. |
 | *… is still loading “…”* | Wait a moment and send again. |
 | *… needs a sign-in or key, as cloud models do* | That is a cloud model. Choose a model that runs on this computer. |
 | *… says this model runs on …, not on this computer* | Your model app sends this model's conversations to another computer. Choose a local model if you want everything to stay here. |
@@ -233,6 +244,9 @@ also has a **Troubleshooting** link back to this table.
   and Linux. Only your user account can read it (on Mac and Linux James makes
   sure of that). The files are **not encrypted**; turn on BitLocker, FileVault
   or disk encryption to protect them if your computer is lost.
+  James keeps up to 80 recent messages within a 512 KiB text budget. Messages
+  over 32 KiB are shortened with a visible note. Copy a conversation before
+  it reaches these limits if you want to keep every message.
 - In **Settings → Privacy and your data** you can:
   - turn off **Keep my conversations on this computer** (they then disappear
     when you close James);

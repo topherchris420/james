@@ -9,6 +9,33 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 0.4.0 were never published as releases. A version with a suffix, such as
 `0.4.0-preview.1`, is published as a prerelease.
 
+## Unreleased
+
+### Added
+
+- **Copy conversation** and **New conversation** above the chat, reachable
+  even after scrolling through a long answer. Copy produces a Markdown
+  transcript without screenshots or the unsent draft. New conversation
+  (Ctrl+N, or ⌘N on Mac) asks before clearing messages, draft, screenshot,
+  attachments and any unapproved action proposal. Settings and unresolved
+  approved-action records stay.
+
+### Fixed
+
+- **Save failures stay visible** above every page, with **Retry saving**.
+  A later status cannot hide them, and clearing a conversation or turning
+  history off no longer reports success when writing the file fails.
+- **Ask again** keeps an unsent draft and its screenshot attachment. The
+  screenshot selected for that draft is never sent with the retry.
+- **Long messages no longer disappear when saved.** A message over 32 KiB
+  is shortened at a character boundary with a visible note, including when
+  an interruption label puts a partial answer over the limit.
+- **History stays reloadable.** The newest 80 messages are limited to
+  512 KiB of text so escaped JSON stays below the 4 MiB read limit.
+  Oversized settings leave the previous file intact. The file writer also
+  enforces history-off itself, so callers cannot accidentally save messages
+  when retention is disabled. Existing session files remain compatible.
+
 ## 0.4.0-preview.3 — 2026-10-12
 
 Guide me's step numbers become a setting, off by default, after a real

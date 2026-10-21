@@ -15,7 +15,11 @@ use std::path::{Path, PathBuf};
 
 pub const MAX_SAVED_MESSAGES: usize = 80;
 pub const MAX_MESSAGE_BYTES: usize = 32_768;
+// JSON can use six bytes for one control character ("\u0000"). Leave
+// room for that expansion, settings and formatting below the load limit.
+const MAX_HISTORY_BYTES: usize = 512 * 1024;
 const MAX_SESSION_BYTES: u64 = 4 * 1024 * 1024;
+const SHORTENED: &str = "\n\n[Message shortened to fit the conversation limit.]";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -107,7 +111,7 @@ pub struct Setup {
     pub test_passed: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SavedSession {
     pub port: u16,
@@ -181,14 +185,30 @@ pub fn crash_report_path(session: &Path) -> PathBuf {
 
 /// Keeps only well-formed, bounded conversation turns, newest last.
 pub fn bounded(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
-    let kept: Vec<ChatMessage> = messages
+    let mut bytes = 0;
+    let mut kept: Vec<ChatMessage> = messages
         .into_iter()
-        .filter(|m| {
-            matches!(m.role.as_str(), "user" | "assistant") && m.content.len() <= MAX_MESSAGE_BYTES
+        .rev()
+        .filter(|m| matches!(m.role.as_str(), "user" | "assistant"))
+        .take(MAX_SAVED_MESSAGES)
+        .map(|mut m| {
+            if m.content.len() > MAX_MESSAGE_BYTES {
+                let mut end = MAX_MESSAGE_BYTES - SHORTENED.len();
+                while !m.content.is_char_boundary(end) {
+                    end -= 1;
+                }
+                m.content.truncate(end);
+                m.content.push_str(SHORTENED);
+            }
+            m
+        })
+        .take_while(|m| {
+            bytes += m.content.len();
+            bytes <= MAX_HISTORY_BYTES
         })
         .collect();
-    let skip = kept.len().saturating_sub(MAX_SAVED_MESSAGES);
-    kept.into_iter().skip(skip).collect()
+    kept.reverse();
+    kept
 }
 
 /// Reads the saved session. A missing, oversized or unreadable file starts
@@ -222,7 +242,20 @@ pub fn load(path: &Path) -> SavedSession {
 /// owner-only permissions. Without `keep_history`, no conversation text is
 /// written at all.
 pub fn save(path: &Path, session: &SavedSession) -> std::io::Result<()> {
-    let bytes = serde_json::to_vec_pretty(session).map_err(std::io::Error::other)?;
+    // Enforce retention here, even if a caller forgets to strip messages.
+    let mut saved = session.clone();
+    saved.messages = if saved.keep_history {
+        bounded(saved.messages)
+    } else {
+        Vec::new()
+    };
+    let bytes = serde_json::to_vec_pretty(&saved).map_err(std::io::Error::other)?;
+    if bytes.len() as u64 > MAX_SESSION_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Settings exceed the saved-session size limit; the previous file was kept",
+        ));
+    }
     write_private(path, &bytes)
 }
 
@@ -374,7 +407,6 @@ mod tests {
     #[test]
     fn saved_messages_are_bounded_and_well_formed() {
         let mut messages = vec![ChatMessage::new("system", "never restored")];
-        messages.push(ChatMessage::new("user", "x".repeat(MAX_MESSAGE_BYTES + 1)));
         for i in 0..100 {
             messages.push(ChatMessage::new("user", format!("q{i}")));
         }
@@ -441,7 +473,73 @@ mod tests {
             ..session
         };
         save(&path, &unsaved).unwrap();
+        assert!(
+            !std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("A question"),
+            "history must be absent on disk, not merely ignored on load"
+        );
         assert!(load(&path).messages.is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn oversized_unicode_messages_are_shortened_instead_of_disappearing() {
+        let messages = bounded(vec![
+            ChatMessage::new("system", "never restored"),
+            ChatMessage::new("user", "A question"),
+            ChatMessage::new("assistant", "🧪".repeat(MAX_MESSAGE_BYTES)),
+        ]);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].content, "A question");
+        let answer = &messages[1].content;
+        assert!(answer.starts_with("🧪"));
+        assert!(answer.ends_with(SHORTENED));
+        assert!(answer.len() <= MAX_MESSAGE_BYTES);
+        assert_eq!(
+            bounded(messages.clone()),
+            messages,
+            "bounding is idempotent"
+        );
+    }
+
+    #[test]
+    fn escaped_history_stays_loadable_and_keeps_the_newest_messages() {
+        let dir = scratch_dir("escaped-history");
+        let path = dir.join("session.json");
+        let saved = SavedSession {
+            model: "still configured".into(),
+            messages: (0..MAX_SAVED_MESSAGES)
+                .map(|i| ChatMessage::new("user", format!("{i}:{}", "\0".repeat(32_000))))
+                .collect(),
+            ..SavedSession::default()
+        };
+        save(&path, &saved).unwrap();
+        assert!(std::fs::metadata(&path).unwrap().len() <= MAX_SESSION_BYTES);
+        let loaded = load(&path);
+        assert_eq!(loaded.model, saved.model);
+        assert!(!loaded.messages.is_empty());
+        assert!(loaded.messages.len() < saved.messages.len());
+        assert_eq!(loaded.messages.last(), saved.messages.last());
+        assert_eq!(loaded.messages, bounded(saved.messages));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn oversized_settings_do_not_replace_a_valid_session() {
+        let dir = scratch_dir("oversized-settings");
+        let path = dir.join("session.json");
+        save(&path, &SavedSession::default()).unwrap();
+        let original = std::fs::read(&path).unwrap();
+        let saved = SavedSession {
+            model: "x".repeat(MAX_SESSION_BYTES as usize),
+            ..SavedSession::default()
+        };
+        assert_eq!(
+            save(&path, &saved).unwrap_err().kind(),
+            std::io::ErrorKind::InvalidData
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), original);
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -5,6 +5,57 @@ use super::*;
 mod gui;
 
 #[test]
+fn transcript_only_includes_conversation_roles() {
+    let text = chat::transcript(&[
+        ChatMessage::new("system", "private instructions"),
+        ChatMessage::new("user", "Question"),
+        ChatMessage::new("assistant", "```rust\nlet x = 1;\n```"),
+        ChatMessage::new("tool", "internal record"),
+    ]);
+    assert_eq!(
+        text,
+        "# Conversation with James\n\n## You\n\nQuestion\n\n## James\n\n```rust\nlet x = 1;\n```\n"
+    );
+}
+
+#[test]
+fn a_failed_retry_restores_the_conversation_draft_and_attachment() {
+    let dir = session::scratch_dir("retry-failure");
+    let mut app = JamesApp::new(dir.join("session.json"));
+    app.messages = vec![
+        ChatMessage::new("user", "An earlier question"),
+        ChatMessage::new("assistant", "An earlier answer"),
+    ];
+    app.draft = "My next question".into();
+    app.attach_screen = true;
+    let messages = app.messages.clone();
+    // No model is selected, so send refuses before launching a worker.
+    app.ask_again();
+    assert_eq!(app.messages, messages);
+    assert_eq!(app.draft, "My next question");
+    assert!(app.attach_screen);
+    assert!(!app.busy());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_partial_reply_at_the_message_limit_survives_saving_and_restart() {
+    let dir = session::scratch_dir("partial-limit");
+    let path = dir.join("session.json");
+    let mut app = JamesApp::new(path.clone());
+    app.messages.push(ChatMessage::new("user", "A question"));
+    app.asking = Some(Ask::Chat);
+    app.streaming = Some("x".repeat(session::MAX_MESSAGE_BYTES));
+    assert!(app.keep_partial_reply("Stopped by you before the reply finished."));
+    assert_eq!(app.messages.len(), 2);
+    let reply = &app.messages[1];
+    assert!(reply.content.len() <= session::MAX_MESSAGE_BYTES);
+    assert!(reply.content.contains("Message shortened"));
+    assert_eq!(session::load(&path).messages, app.messages);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn release_notes_show_once_after_an_upgrade() {
     let changelog = "# Changelog\n\nIntro.\n\n## Unreleased\n\n- Next.\n\n\
         ## 1.2.0 — 2026-01-01\n\nSee [the guide](docs/GUIDE.md) or [the site](https://x.org/).\n\n\

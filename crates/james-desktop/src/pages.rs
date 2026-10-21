@@ -627,8 +627,8 @@ fn privacy(app: &mut JamesApp, ui: &mut egui::Ui) {
         )
         .on_hover_text("When off, conversations exist only while James is open.")
         .changed()
+        && app.save_session()
     {
-        app.save_session();
         app.info(if app.keep_history {
             "Conversations will be saved on this computer."
         } else {
