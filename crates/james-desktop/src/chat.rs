@@ -1,7 +1,7 @@
 //! The conversation: who James is talking to, the messages, and the composer.
 use crate::{Ask, JamesApp, Page, Tone, guide, markdown, pages, theme, voice};
 use eframe::egui::{self, RichText};
-use james_models::Support;
+use james_models::{ChatMessage, Support};
 
 const EXAMPLES: [&str; 3] = [
     "Explain the difference between a hypothesis and a finding, with an example.",
@@ -228,13 +228,60 @@ fn crash_notice(app: &mut JamesApp, ui: &mut egui::Ui) {
     ui.add_space(8.0);
 }
 
-pub fn conversation(app: &mut JamesApp, ui: &mut egui::Ui) {
-    ui.heading("Conversation");
+/// A portable Markdown transcript of the visible conversation. Screenshots,
+/// unsent drafts, system prompts and action records are never included.
+pub fn transcript(messages: &[ChatMessage]) -> String {
+    let mut out = String::from("# Conversation with James\n");
+    for message in messages {
+        let name = match message.role.as_str() {
+            "user" => "You",
+            "assistant" => "James",
+            _ => continue,
+        };
+        out.push_str(&format!("\n## {name}\n\n{}\n", message.content));
+    }
+    out
+}
+
+/// Stays above the scroll area so conversation controls remain reachable
+/// even after a long reply.
+pub fn header(app: &mut JamesApp, ui: &mut egui::Ui) {
+    ui.horizontal_wrapped(|ui| {
+        ui.heading("Conversation");
+        if ui
+            .add_enabled(
+                !app.busy() && !app.messages.is_empty(),
+                egui::Button::new("Copy conversation"),
+            )
+            .on_hover_text(
+                "Copy every message as Markdown, without screenshots or your unsent draft",
+            )
+            .clicked()
+        {
+            ui.ctx().copy_text(transcript(&app.messages));
+            app.info("Conversation copied as Markdown.");
+        }
+        if ui
+            .add_enabled(
+                !app.busy() && app.has_conversation_context(),
+                egui::Button::new("New conversation"),
+            )
+            .on_hover_text(
+                "Start fresh after reviewing what will be cleared (Ctrl+N, or ⌘N on Mac)",
+            )
+            .clicked()
+        {
+            app.request_new_conversation();
+        }
+    });
     model_facts(app, ui);
     if !app.keep_history {
         ui.small("This conversation isn't saved: it disappears when you close James (Settings > Privacy).");
     }
     ui.separator();
+}
+
+pub fn conversation(app: &mut JamesApp, ui: &mut egui::Ui) {
     crash_notice(app, ui);
     if app.recovery.needs_check() {
         ui.horizontal_wrapped(|ui| {

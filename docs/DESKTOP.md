@@ -102,6 +102,16 @@ also has **Ask again**, which sends your last question again and replaces
 that answer (a screenshot is not sent again). Ctrl+Shift+C copies the last
 answer and Ctrl+L jumps to the message box.
 
+**Copy conversation** above the messages copies the chat as Markdown, with
+You and James headings and the original message formatting. Screenshots,
+the unsent draft and internal instructions are excluded. **New conversation**
+(Ctrl+N, or ⌘N on Mac) asks before clearing the messages, draft, screenshot,
+attachments and unapproved action proposal, then focuses the message box.
+Settings and unresolved approved-action records stay. Both controls remain
+above the scroll area and are disabled while a task is running. Retrying an
+answer preserves your unsent draft and its screenshot attachment; that
+screenshot is not sent with the retry.
+
 **Stop** (or Esc) closes the connection to the model server at once, even
 before the first word. The part of the reply that arrived stays, marked
 "[Stopped by you before the reply finished.]"; a reply cut short by an error
@@ -115,6 +125,19 @@ messages. When the server reports the model's context window, history is
 trimmed to fit it with room for the reply; otherwise it is capped at about
 160 KB. James says when older messages were left out. Guide me and Suggest
 one action send no history, only the screenshot and the question.
+
+**Retention.** James keeps at most 80 recent messages within 512 KiB of text.
+A message over 32 KiB is shortened at a character boundary and marked as
+shortened, rather than discarded. This also bounds the saved JSON below its
+4 MiB read limit, even when text contains characters JSON must escape.
+Oversized settings are refused without replacing the previous saved file.
+Turning history off is enforced by the file writer itself: conversation
+text is omitted from the saved file.
+
+If a save fails, a warning remains above every page until a later save
+succeeds. **Retry saving** writes the current conversation and settings
+again. Clearing a conversation and switching history off report success
+only after the file was written.
 
 **When something goes wrong**, James names the cause in plain words with a
 next step: the model app isn't running, the model isn't installed or

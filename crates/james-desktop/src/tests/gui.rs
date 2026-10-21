@@ -194,6 +194,27 @@ fn type_message(h: &mut Harness<'static, JamesApp>, text: &str) {
     frames(h, 1);
 }
 
+/// An in-memory screenshot with no input target. Its deliberately invalid
+/// PNG also makes an accidental resend fail instead of silently succeeding.
+fn with_screen(h: &mut Harness<'static, JamesApp>) {
+    let texture = h.ctx.load_texture(
+        "test-screen",
+        egui::ColorImage::new([4, 4], egui::Color32::WHITE),
+        egui::TextureOptions::LINEAR,
+    );
+    h.state_mut().screen = Some(Screen {
+        capture: Screenshot {
+            png: Vec::new(),
+            width: 100,
+            height: 100,
+            target: None,
+            james_hidden: Some(true),
+        },
+        texture,
+        at: Instant::now(),
+    });
+}
+
 #[test]
 fn typing_in_the_message_box_fills_the_draft() {
     let mut h = harness(james(Some("gemma3:4b")));
@@ -340,7 +361,11 @@ fn a_model_server_that_is_not_running_gets_advice_and_a_retry() {
 fn ask_again_replaces_the_last_answer() {
     let count = Arc::new(AtomicUsize::new(0));
     let seen = Arc::clone(&count);
-    let port = ollama(move |_| {
+    let port = ollama(move |body| {
+        assert!(
+            !body.contains("images"),
+            "a retry must not send the draft's screenshot"
+        );
         let n = seen.fetch_add(1, Ordering::SeqCst) + 1;
         ndjson(&[&format!("Answer number {n}.")], Duration::ZERO)
     });
@@ -350,6 +375,9 @@ fn ask_again_replaces_the_last_answer() {
     wait_until(&mut h, "the first answer", |app| {
         app.messages.len() == 2 && app.worker.is_none()
     });
+    type_message(&mut h, "A different question I haven't sent");
+    with_screen(&mut h);
+    h.state_mut().attach_screen = true;
     h.get_by_label("Ask again").click();
     wait_until(&mut h, "the second answer", |app| {
         app.worker.is_none()
@@ -361,6 +389,109 @@ fn ask_again_replaces_the_last_answer() {
     let messages = &h.state().messages;
     assert_eq!(messages.len(), 2, "{messages:?}");
     assert_eq!(messages[0].content, "Pick a number");
+    assert_eq!(h.state().draft, "A different question I haven't sent");
+    assert!(h.state().attach_screen);
+}
+
+#[test]
+fn conversation_controls_copy_messages_and_confirm_a_fresh_start() {
+    let mut app = james(Some("gemma3:4b"));
+    app.messages = vec![
+        ChatMessage::new("user", "How should I test this?"),
+        ChatMessage::new(
+            "assistant",
+            "Repeat the **experiment**.\n\n- Keep a control.",
+        ),
+    ];
+    app.draft = "An unsent question".into();
+    app.lab.include = true;
+    app.action_text = "unapproved text".into();
+    app.save_session();
+    let intent = session::intent_path(&app.session);
+    session::write_private(&intent, b"requires human verification").unwrap();
+    let mut h = harness(app);
+    with_screen(&mut h);
+    h.state_mut().attach_screen = true;
+    h.state_mut()
+        .propose(Action::Key { key: Key::Tab }, "Unapproved".into(), true);
+    h.state_mut().page = Page::Chat;
+    frames(&mut h, 2);
+    h.get_by_label("Copy conversation").click();
+    h.step();
+    assert!(h.output().platform_output.commands.iter().any(|command| {
+        matches!(command, egui::OutputCommand::CopyText(text)
+            if text == "# Conversation with James\n\n## You\n\nHow should I test this?\n\n## James\n\nRepeat the **experiment**.\n\n- Keep a control.\n")
+    }));
+    h.get_by_label("New conversation").click();
+    frames(&mut h, 2);
+    assert!(h.state().confirm_clear);
+    assert_eq!(h.state().messages.len(), 2);
+    h.get_by_label("Keep it").click();
+    frames(&mut h, 2);
+    assert_eq!(h.state().draft, "An unsent question");
+    assert!(h.state().pending.is_some());
+    h.press_key_modifiers(egui::Modifiers::COMMAND, egui::Key::N);
+    frames(&mut h, 2);
+    assert!(h.state().confirm_clear);
+    h.get_by_label("Clear conversation").click();
+    frames(&mut h, 3);
+    let app = h.state();
+    assert!(app.messages.is_empty() && app.draft.is_empty());
+    assert!(app.screen.is_none() && !app.attach_screen && !app.lab.include);
+    assert!(app.pending.is_none() && app.action_text.is_empty());
+    assert!(session::load(&app.session).messages.is_empty());
+    assert!(
+        intent.exists(),
+        "clearing never deletes an unresolved action record"
+    );
+    assert_eq!(app.model, "gemma3:4b");
+    assert!(h.get_by_label("Message to James").is_focused());
+}
+
+#[test]
+fn a_new_conversation_cannot_clear_a_running_reply() {
+    let port = ollama(|_| ndjson(&["A reply"], Duration::from_secs(1)));
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    type_message(&mut h, "Hello");
+    h.get_by_label("Send").click();
+    frames(&mut h, 2);
+    assert!(h.state().busy());
+    assert!(h.get_by_label("New conversation").is_disabled());
+    assert!(h.get_by_label("Copy conversation").is_disabled());
+    h.press_key_modifiers(egui::Modifiers::COMMAND, egui::Key::N);
+    frames(&mut h, 2);
+    assert!(!h.state().confirm_clear);
+    assert_eq!(h.state().messages.len(), 1);
+    h.state_mut().stop();
+}
+
+#[test]
+fn save_failures_stay_visible_and_can_be_retried() {
+    let mut app = james(Some("gemma3:4b"));
+    let dir = session::scratch_dir("save-retry");
+    std::fs::create_dir_all(&dir).unwrap();
+    let blocker = dir.join("blocked");
+    std::fs::write(&blocker, "a file cannot be a directory").unwrap();
+    app.session = blocker.join("session.json");
+    app.messages
+        .push(ChatMessage::new("user", "Don't lose this"));
+    assert!(!app.save_session());
+    app.info("A later status must not hide the save failure.");
+    let mut h = harness(app);
+    assert!(
+        h.query_by_label_contains("Your latest changes could not be saved.")
+            .is_some()
+    );
+    std::fs::remove_file(&blocker).unwrap();
+    h.get_by_label("Retry saving").click();
+    frames(&mut h, 2);
+    assert!(h.state().save_error.is_none());
+    assert!(h.query_by_label("Retry saving").is_none());
+    assert_eq!(
+        session::load(&h.state().session).messages,
+        h.state().messages
+    );
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
@@ -575,7 +706,13 @@ fn the_layout_holds_at_small_sizes_high_dpi_large_text_and_every_theme() {
             h.state_mut().page = Page::Chat;
             frames(&mut h, 2);
             // The core controls exist and fit inside the window.
-            for control in ["Message to James", "Guide me", "Settings"] {
+            for control in [
+                "Message to James",
+                "Guide me",
+                "Settings",
+                "Copy conversation",
+                "New conversation",
+            ] {
                 let node = h.get_by_label(control);
                 let bounds = node.bounding_box().expect("visible control");
                 let limit = (size.x * ppp, size.y * ppp);
@@ -733,25 +870,6 @@ fn every_character_the_interface_uses_can_be_drawn() {
 #[cfg(windows)]
 mod review_screen {
     use super::*;
-
-    fn with_screen(h: &mut Harness<'static, JamesApp>) {
-        let texture = h.ctx.load_texture(
-            "test-screen",
-            egui::ColorImage::new([4, 4], egui::Color32::WHITE),
-            egui::TextureOptions::LINEAR,
-        );
-        h.state_mut().screen = Some(Screen {
-            capture: Screenshot {
-                png: Vec::new(),
-                width: 100,
-                height: 100,
-                target: None,
-                james_hidden: Some(true),
-            },
-            texture,
-            at: Instant::now(),
-        });
-    }
 
     #[test]
     fn deny_sends_nothing_and_clears_the_review() {

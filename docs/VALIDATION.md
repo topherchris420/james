@@ -5,6 +5,34 @@ newest first. [END_USER_READINESS.md](END_USER_READINESS.md) turns it into a
 score and release classification; [ACCEPTANCE_TESTS.md](ACCEPTANCE_TESTS.md)
 lists the scenarios still to run.
 
+## Conversation reliability checks (2026-10-21)
+
+Automated checks on Windows using Rust 1.99.0 with the x64 GNU target:
+
+| Check | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | Passed |
+| `cargo test --workspace --all-targets --locked` | 207 passed, 0 failed, 4 ignored (opt-in screen capture, input-helper and voice tests) |
+| `cargo test -p james-desktop --locked` after the final lint adjustment | 76 passed |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed |
+
+New coverage checks the complete Copy conversation clipboard output,
+confirmation and cancellation of New conversation, Ctrl+N, clearing stale
+screen and proposal context while retaining an unresolved action record,
+refusing a fresh start during a running reply, preserving a draft and its
+screenshot attachment on successful and failed retries, persistent save
+errors and Retry saving, Unicode-safe message shortening, a partial reply
+at the message limit, escaped JSON within the reload limit, history-off
+on disk, and refusing oversized settings without replacing a valid file.
+The existing small-window/high-DPI/large-text layout checks now also check
+the new conversation controls.
+
+The GUI tests drive the real interface headlessly through its accessibility
+tree; model responses use scripted loopback servers. These checks do not
+establish hands-on desktop usability, real model compatibility, screen-reader
+support, installation, microphone operation or actual computer input. The
+end-user readiness classification remains developer preview.
+
 ## End-user release session (2026-10-12)
 
 James 0.4.0: guided setup, model capabilities, cloud-model warnings,

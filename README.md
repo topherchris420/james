@@ -48,7 +48,7 @@ while you check what happened.
 | | |
 | --- | --- |
 | **Guided setup** | Five short steps from "what is this?" to a real answer: how to get LM Studio or Ollama for your system, finding your model app, a test message, and what screen capture and permissions mean. Resumes where you left off. |
-| **Chat** | Replies stream in as the model writes them, with headings, lists, emphasis, and copyable code. **Stop** ends a reply at once and keeps what arrived, marked incomplete. Copy, Ask again, and Try again are one click away. |
+| **Chat** | Replies stream in as the model writes them, with headings, lists, emphasis, and copyable code. **Stop** keeps what arrived, marked incomplete. Copy a whole conversation as Markdown, start fresh from the chat header, or retry an answer while keeping your unsent draft. |
 | **Know your model** | James asks your model app what the model can do — read images, chat, its context window, whether it is loaded — and switches off features the model can't support, instead of letting them fail. |
 | **No silent cloud** | If your model app says a model runs on another computer (Ollama's cloud models), James labels it, warns you, and never picks it for you. |
 | **Screen help** | **Guide me** takes one picture of your screen, only when you press it, and suggests up to three next steps you take yourself. Turn on step numbers in Settings to have your model mark where each one is on the picture; small models often misplace them. Or capture, look at the preview, and attach it to a question. Needs a model that reads images. |

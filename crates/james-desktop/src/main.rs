@@ -128,7 +128,7 @@ fn explain(provider: LocalProvider, port: u16, model: &str, error: ApiError) -> 
             said(&error)
         ),
         Problem::ContextFull => format!(
-            "This conversation no longer fits in the model's context window. Start a new conversation (Settings > Clear conversation), or load the model with a larger context in {name}.{}",
+            "This conversation no longer fits in the model's context window. Choose New conversation above the chat, or load the model with a larger context in {name}.{}",
             said(&error)
         ),
         Problem::NoImages => format!(
@@ -520,6 +520,8 @@ struct JamesApp {
     prefs: Preferences,
     applied: Option<Preferences>,
     keep_history: bool,
+    /// Kept visible until a save succeeds, even when another status arrives.
+    save_error: Option<String>,
     /// An internal error report from an earlier run, until the user dismisses it.
     crash_report: Option<PathBuf>,
     /// This version's release notes, shown once after an upgrade until dismissed.
@@ -600,6 +602,7 @@ impl JamesApp {
             prefs: saved.preferences,
             applied: None,
             keep_history: saved.keep_history,
+            save_error: None,
             crash_report,
             whats_new,
             show_shortcuts: false,
@@ -629,7 +632,7 @@ impl JamesApp {
     fn setup_done(&self) -> bool {
         self.setup.step == SetupStep::Done
     }
-    fn save_session(&mut self) {
+    fn save_session(&mut self) -> bool {
         self.messages = session::bounded(std::mem::take(&mut self.messages));
         let saved = SavedSession {
             port: numeric_port(&self.port).unwrap_or(self.provider.default_port()),
@@ -649,9 +652,14 @@ impl JamesApp {
             last_version: env!("CARGO_PKG_VERSION").into(),
         };
         if let Err(e) = session::save(&self.session, &saved) {
+            self.save_error = Some(e.to_string());
             self.fail(format!(
-                "Could not save your settings on this computer: {e}"
+                "Could not save your conversation and settings on this computer: {e}"
             ));
+            false
+        } else {
+            self.save_error = None;
+            true
         }
     }
     /// Keeps a Guide me answer's marks, mapped to full-screen pixels, and
@@ -975,18 +983,58 @@ impl JamesApp {
             return;
         };
         self.draft = question.content;
+        // The screenshot selected for the unsent draft belongs to that
+        // draft, not to this retry of an earlier question.
+        let attach_screen = std::mem::replace(&mut self.attach_screen, false);
         if !self.send(Ask::Chat) {
             self.messages = saved;
-            self.draft = draft;
+        }
+        self.draft = draft;
+        self.attach_screen = attach_screen;
+    }
+    fn has_conversation_context(&self) -> bool {
+        !self.messages.is_empty()
+            || !self.draft.is_empty()
+            || self.screen.is_some()
+            || self.pending.is_some()
+            || self.lab.include
+    }
+    fn request_new_conversation(&mut self) {
+        if self.busy() || !self.setup_done() {
+            return;
+        }
+        self.page = Page::Chat;
+        if self.has_conversation_context() {
+            self.confirm_clear = true;
+        } else {
+            self.focus_composer = true;
         }
     }
     /// Starts a fresh conversation. The old one is gone from James.
     fn clear_conversation(&mut self) {
+        if self.busy() {
+            return;
+        }
         self.messages.clear();
+        self.draft.clear();
         self.streaming = None;
+        self.thinking = false;
+        self.asking = None;
         self.history_note = None;
-        self.save_session();
-        self.info("Conversation cleared.");
+        self.screen = None;
+        self.attach_screen = false;
+        self.sent_image = None;
+        self.guide_marks = None;
+        self.guide_after_capture = false;
+        self.pending = None;
+        self.action_text.clear();
+        self.lab.include = false;
+        self.voice = voice::Phase::Off;
+        self.page = Page::Chat;
+        self.focus_composer = true;
+        if self.save_session() {
+            self.info("Conversation cleared.");
+        }
     }
     /// Deletes everything James saved except an unresolved action record,
     /// and returns to first-run setup.
@@ -1006,6 +1054,7 @@ impl JamesApp {
                 self.setup_note = None;
                 self.prefs = Preferences::default();
                 self.keep_history = true;
+                self.save_error = None;
                 self.page = Page::Chat;
                 self.info(if self.recovery.needs_check() {
                     "Your conversations, settings and crash report were deleted. The record of the last approved action stays until you confirm you checked it."
@@ -1569,6 +1618,9 @@ impl JamesApp {
             self.page = Page::Chat;
             self.focus_composer = true;
         }
+        if pressed(M::COMMAND, K::N) {
+            self.request_new_conversation();
+        }
         if pressed(M::COMMAND | M::SHIFT, K::C)
             && let Some(reply) = self.messages.iter().rev().find(|m| m.role == "assistant")
         {
@@ -1709,6 +1761,7 @@ impl JamesApp {
                                 ("Esc".into(), "Stop: the reply, listening, speaking, capture or a pending action".into()),
                                 (format!("{cmd}1 … {cmd}5"), "Go to Conversation, Screen, Computer control, Lab, Settings".into()),
                                 (format!("{cmd}L"), "Jump to the message box".into()),
+                                (format!("{cmd}N"), "Start a new conversation (asks before clearing)".into()),
                                 (format!("{cmd}Shift+C"), "Copy James's last answer".into()),
                                 (format!("{cmd}+  /  {cmd}−  /  {cmd}0"), "Larger, smaller or normal text".into()),
                                 ("Tab / Shift+Tab".into(), "Move between controls".into()),
@@ -1752,7 +1805,7 @@ impl JamesApp {
             let modal = egui::Modal::new(egui::Id::new("confirm-clear")).show(ctx, |ui| {
                 ui.heading("Clear this conversation?");
                 ui.label(
-                    "James forgets every message in it, on screen and on disk. Your settings stay.",
+                    "This clears the messages, your unsent draft, screenshot, attachments and any unapproved action proposal. Your settings stay. Copy the conversation first if you want to keep it.",
                 );
                 ui.horizontal(|ui| {
                     if ui.add(theme::danger(ui, "Clear conversation")).clicked() {
@@ -1817,6 +1870,19 @@ impl JamesApp {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
         self.top_bar(ctx);
+        if let Some(error) = self.save_error.clone() {
+            egui::TopBottomPanel::top("save-error").show(ctx, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.colored_label(
+                        ui.visuals().error_fg_color,
+                        format!("Your latest changes could not be saved. {error}"),
+                    );
+                    if ui.button("Retry saving").clicked() && self.save_session() {
+                        self.info("Your conversation and settings were saved.");
+                    }
+                });
+            });
+        }
         self.sidebar(ctx);
         let in_setup = self.page == Page::Chat && !self.setup_done();
         if !in_setup {
@@ -1829,6 +1895,7 @@ impl JamesApp {
                         .id_salt("setup")
                         .show(ui, |ui| setup::ui(self, ui, ctx));
                 } else {
+                    chat::header(self, ui);
                     egui::ScrollArea::vertical()
                         .id_salt("conversation")
                         .stick_to_bottom(true)
