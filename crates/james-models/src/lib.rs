@@ -902,9 +902,10 @@ pub fn parse_chat(body: &str) -> Result<String, ApiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use socket2::{Domain, Socket, Type};
     use std::io::{BufRead, BufReader, Read, Write};
-    use std::net::TcpListener;
-    use std::sync::{Arc, Mutex};
+    use std::net::{SocketAddr, TcpListener};
+    use std::sync::{Arc, Mutex, PoisonError};
     use std::thread;
     use std::time::Instant;
 
@@ -1518,9 +1519,7 @@ mod tests {
 
     #[test]
     fn nothing_listening_is_reported_as_unreachable() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
+        let port = closed_port();
         let err = LocalClient::new(port).unwrap().models().unwrap_err();
         assert!(matches!(err, ApiError::Unreachable(_)), "{err:?}");
         assert!(
@@ -1529,9 +1528,26 @@ mod tests {
         );
     }
 
+    /// Sockets holding the ports `closed_port` handed out until the tests
+    /// end: bound, so no other bind is given the port, and not listening, so
+    /// connections to it are refused.
+    static RESERVED: Mutex<Vec<Socket>> = Mutex::new(Vec::new());
+
+    /// A loopback port with nothing listening, for the whole test run.
+    /// Binding a port and closing it isn't enough: Windows readily hands a
+    /// just-closed port to the next bind, so another test's server can land
+    /// on it.
     fn closed_port() -> u16 {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        listener.local_addr().unwrap().port()
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
+        socket
+            .bind(&SocketAddr::from(([127, 0, 0, 1], 0)).into())
+            .unwrap();
+        let port = socket.local_addr().unwrap().as_socket().unwrap().port();
+        RESERVED
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(socket);
+        port
     }
 
     fn reply(body: &str) -> Vec<Step> {

@@ -3,8 +3,10 @@
 //! Model and Lab servers are scripted sockets on random loopback ports.
 use super::super::*;
 use egui_kittest::{Harness, kittest::Queryable};
+use socket2::{Domain, Socket, Type};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpListener;
+use std::net::{SocketAddr, TcpListener};
+use std::sync::PoisonError;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 type Chunks = Vec<(Duration, Vec<u8>)>;
@@ -116,12 +118,25 @@ fn ollama(reply: impl Fn(&str) -> Chunks + Send + Sync + 'static) -> u16 {
     })
 }
 
+/// Sockets holding the ports `closed_port` handed out until the tests end:
+/// bound, so no other bind is given the port, and not listening, so
+/// connections to it are refused.
+static RESERVED: Mutex<Vec<Socket>> = Mutex::new(Vec::new());
+
+/// A loopback port with nothing listening, for the whole test run. Binding
+/// a port and closing it isn't enough: Windows readily hands a just-closed
+/// port to the next bind, so another test's fake server can land on it.
 fn closed_port() -> u16 {
-    TcpListener::bind(("127.0.0.1", 0))
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
+    socket
+        .bind(&SocketAddr::from(([127, 0, 0, 1], 0)).into())
+        .unwrap();
+    let port = socket.local_addr().unwrap().as_socket().unwrap().port();
+    RESERVED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(socket);
+    port
 }
 
 /// A James with its own scratch profile, set up with `model` on `port`.

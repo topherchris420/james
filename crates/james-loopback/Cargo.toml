@@ -7,5 +7,8 @@ license.workspace = true
 description = "The only network path out of James: a dependency-free HTTP/1.1 client that can connect to a loopback port and nowhere else"
 publish = false
 
+[dev-dependencies]
+socket2 = "0.6"
+
 [lints]
 workspace = true

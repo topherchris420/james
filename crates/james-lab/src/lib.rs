@@ -430,11 +430,35 @@ impl LabClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use socket2::{Domain, Socket, Type};
     use std::{
         io::{Read, Write},
-        net::TcpListener,
+        net::{SocketAddr, TcpListener},
+        sync::{Mutex, PoisonError},
         thread,
     };
+
+    /// Sockets holding the ports `closed_port` handed out until the tests
+    /// end: bound, so no other bind is given the port, and not listening, so
+    /// connections to it are refused.
+    static RESERVED: Mutex<Vec<Socket>> = Mutex::new(Vec::new());
+
+    /// A loopback port with nothing listening, for the whole test run.
+    /// Binding a port and closing it isn't enough: Windows readily hands a
+    /// just-closed port to the next bind, so another test's server can land
+    /// on it.
+    fn closed_port() -> u16 {
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
+        socket
+            .bind(&SocketAddr::from(([127, 0, 0, 1], 0)).into())
+            .unwrap();
+        let port = socket.local_addr().unwrap().as_socket().unwrap().port();
+        RESERVED
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(socket);
+        port
+    }
 
     fn server(
         status: &str,
@@ -605,10 +629,7 @@ mod tests {
             fixture(),
             "/api/rain/discovery",
         );
-        let closed = {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            listener.local_addr().unwrap().port()
-        };
+        let closed = closed_port();
         assert_eq!(find_lab(&[closed, page_port, lab.port]), Some(lab.port));
         page_join.join().unwrap();
         lab_join.join().unwrap();
@@ -617,9 +638,7 @@ mod tests {
 
     #[test]
     fn nothing_listening_is_reported_within_the_time_budget() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
+        let port = closed_port();
         let started = std::time::Instant::now();
         let error = LabClient::new(port).unwrap().context().unwrap_err();
         assert!(error.0.starts_with("Cannot reach R.A.I.N. Lab"), "{error}");
