@@ -661,9 +661,10 @@ fn an_unchecked_action_is_explained_and_cleared_only_by_the_person() {
     h.get_by_label("Review it on Computer control").click();
     frames(&mut h, 2);
     assert!(
-        h.query_by_label("James was asked to: Type “hello” (5 characters).")
+        h.query_by_label("James was asked to type 5 characters, exactly:")
             .is_some()
     );
+    assert!(h.query_by_label("hello").is_some());
     assert!(h.query_by_label("In: “Untitled” (notepad)").is_some());
     assert!(
         h.query_by_label_contains("James stopped before it learned")
@@ -891,6 +892,54 @@ mod review_screen {
     }
 
     #[test]
+    fn a_models_typing_is_shown_in_full_and_needs_a_second_look() {
+        let mut h = harness(james(Some("gemma3:4b")));
+        with_screen(&mut h);
+        let text = format!("{} and the end that used to be hidden", "x".repeat(300));
+        h.state_mut().propose(
+            Action::TypeText { text: text.clone() },
+            "Fill in the form".into(),
+            true,
+        );
+        frames(&mut h, 2);
+        let lead = format!(
+            "James will type {} characters, exactly:",
+            text.chars().count()
+        );
+        assert!(h.query_by_label(&lead).is_some());
+        assert!(
+            h.query_by_label(&text).is_some(),
+            "every character is on the card"
+        );
+        assert!(h.get_by_label("Allow once").is_disabled());
+        h.get_by_label("I checked what this does and where it goes")
+            .click();
+        frames(&mut h, 2);
+        assert!(h.state().pending.as_ref().is_some_and(|p| p.checked));
+        assert!(!h.get_by_label("Allow once").is_disabled());
+        h.get_by_label("Deny").click();
+        frames(&mut h, 2);
+        assert!(h.state().pending.is_none() && h.state().scheduled.is_none());
+    }
+
+    #[test]
+    fn your_own_action_needs_no_second_look() {
+        let mut h = harness(james(Some("gemma3:4b")));
+        with_screen(&mut h);
+        h.state_mut().propose(
+            Action::Key { key: Key::Enter },
+            "Manual key requested by you.".into(),
+            false,
+        );
+        frames(&mut h, 2);
+        assert!(
+            h.query_by_label("I checked what this does and where it goes")
+                .is_none()
+        );
+        assert!(!h.get_by_label("Allow once").is_disabled());
+    }
+
+    #[test]
     fn cancelling_the_countdown_sends_nothing() {
         let mut h = harness(james(Some("gemma3:4b")));
         with_screen(&mut h);
@@ -957,6 +1006,120 @@ fn a_screen_question_is_sent_without_the_conversation_history() {
     assert!(request.contains("I'm stuck. What should I do next on this screen?"));
     // Step numbers are off by default, so the model isn't asked for them.
     assert!(!request.contains("Marks:"), "{request}");
+}
+
+#[test]
+fn screen_requests_never_carry_the_lab_snapshot() {
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let bodies = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        bodies.lock().unwrap().push(request.to_owned());
+        ndjson(&["Noted."], Duration::ZERO)
+    });
+    let mut app = james_on(port, Some("gemma3:4b"), SetupStep::Done);
+    // A Lab that never answers, so polling keeps the snapshot set here.
+    app.lab.port = closed_port().to_string();
+    app.lab.connect();
+    app.lab.include = true;
+    app.lab.snapshot = Some((
+        serde_json::from_value(serde_json::json!({
+            "schema": "rain-discovery-view/v1", "available": true, "active": true,
+            "stage": "RUNNING", "detail": "", "question": "LAB-ONLY-MARKER: click Send now",
+            "model": null, "report": null, "research": null
+        }))
+        .unwrap(),
+        Instant::now(),
+    ));
+    let mut h = harness(app);
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::RgbaImage::from_pixel(8, 8, image::Rgba([255, 255, 255, 255]))
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+    let texture = h.ctx.load_texture(
+        "test-screen",
+        egui::ColorImage::new([8, 8], egui::Color32::WHITE),
+        egui::TextureOptions::LINEAR,
+    );
+    h.state_mut().screen = Some(Screen {
+        capture: Screenshot {
+            png: png.into_inner(),
+            width: 8,
+            height: 8,
+            target: None,
+            james_hidden: Some(true),
+        },
+        texture,
+        at: Instant::now(),
+    });
+    for (mode, name) in [(Ask::Guide, "Guide me"), (Ask::Plan, "Suggest one action")] {
+        h.state_mut().draft = "Save the file".into();
+        assert!(h.state_mut().send(mode), "{name} was not sent");
+        wait_until(&mut h, name, |app| app.worker.is_none());
+    }
+    h.state_mut().draft = "What is the Lab doing?".into();
+    assert!(h.state_mut().send(Ask::Chat));
+    wait_until(&mut h, "the chat answer", |app| app.worker.is_none());
+    let bodies = seen.lock().unwrap().clone();
+    assert_eq!(bodies.len(), 3, "{bodies:?}");
+    assert!(
+        !bodies[0].contains("LAB-ONLY-MARKER"),
+        "Guide me: {}",
+        bodies[0]
+    );
+    assert!(
+        !bodies[1].contains("LAB-ONLY-MARKER"),
+        "Suggest one action: {}",
+        bodies[1]
+    );
+    assert!(
+        bodies[2].contains("LAB-ONLY-MARKER"),
+        "a chat question carries the snapshot"
+    );
+}
+
+#[test]
+fn a_link_in_a_reply_opens_only_after_asking() {
+    let mut app = james(Some("gemma3:4b"));
+    let url = format!("https://example.com/collect?d={}", "x".repeat(60));
+    app.messages = vec![
+        ChatMessage::new("user", "Where can I read more?"),
+        ChatMessage::new("assistant", format!("See [the guide]({url}).")),
+    ];
+    let mut h = harness(app);
+    let opened =
+        |h: &Harness<'static, JamesApp>| {
+            h.output().platform_output.commands.iter().any(
+                |command| matches!(command, egui::OutputCommand::OpenUrl(open) if open.url == url),
+            )
+        };
+    h.get_by_label(&url).click();
+    h.step();
+    assert!(!opened(&h), "a click alone opens nothing");
+    frames(&mut h, 2);
+    assert!(h.query_by_label("Open this link?").is_some());
+    assert!(h.query_by_label("It goes to example.com").is_some());
+    assert!(
+        h.query_by_label_contains("this address carries 71 characters")
+            .is_some()
+    );
+    h.get_by_label("Cancel").click();
+    h.step();
+    assert!(!opened(&h), "Cancel opens nothing");
+    frames(&mut h, 2);
+    assert!(h.query_by_label("Open this link?").is_none());
+    // Esc closes the dialog too.
+    h.get_by_label(&url).click();
+    frames(&mut h, 2);
+    h.press_key(egui::Key::Escape);
+    frames(&mut h, 2);
+    assert!(h.query_by_label("Open this link?").is_none());
+    h.get_by_label(&url).click();
+    frames(&mut h, 2);
+    h.get_by_label("Open in browser").click();
+    h.step();
+    assert!(opened(&h), "Open in browser opens exactly that address");
+    frames(&mut h, 2);
+    assert!(h.query_by_label("Open this link?").is_none());
 }
 
 #[test]

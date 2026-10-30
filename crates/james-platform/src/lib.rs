@@ -110,7 +110,7 @@ impl Target {
     pub fn sanitized(mut self) -> Self {
         let clean = |text: &str, max: usize| -> String {
             text.chars()
-                .map(|c| if c.is_control() { ' ' } else { c })
+                .map(|c| if is_unreviewable(c) { ' ' } else { c })
                 .take(max)
                 .collect::<String>()
                 .trim()
@@ -149,6 +149,41 @@ pub enum Key {
     Space,
 }
 
+/// Invisible formatting characters, and the line and paragraph separators,
+/// that `char::is_control` lets through, as inclusive code point ranges:
+/// zero-width characters, text-direction marks, embeddings, overrides and
+/// isolates, fillers, tag characters and variation selectors that are not
+/// emoji's. In typed text they would hide or reorder what the review shows.
+/// The input helper refuses the same list (`$hidden` in input.ps1).
+const HIDDEN: [(u32, u32); 16] = [
+    (0x00AD, 0x00AD),   // soft hyphen
+    (0x034F, 0x034F),   // combining grapheme joiner
+    (0x061C, 0x061C),   // Arabic letter mark
+    (0x115F, 0x1160),   // Hangul fillers
+    (0x17B4, 0x17B5),   // Khmer inherent vowels
+    (0x180B, 0x180F),   // Mongolian variation selectors and vowel separator
+    (0x200B, 0x200F),   // zero-width space and joiners, direction marks
+    (0x2028, 0x202E),   // line and paragraph separators, embeddings, overrides
+    (0x2060, 0x206F),   // word joiner, invisible operators, isolates
+    (0x3164, 0x3164),   // Hangul filler
+    (0xFEFF, 0xFEFF),   // zero-width no-break space (byte order mark)
+    (0xFFA0, 0xFFA0),   // halfwidth Hangul filler
+    (0xFFF9, 0xFFFB),   // interlinear annotation
+    (0x1D173, 0x1D17A), // musical symbol formatting
+    (0xE0000, 0xE007F), // tag characters
+    (0xE0100, 0xE01EF), // variation selectors supplement
+];
+
+/// Whether a person cannot review `c` as itself on one line of text: a
+/// control character, a line or paragraph separator, or an invisible
+/// formatting character.
+pub fn is_unreviewable(c: char) -> bool {
+    c.is_control()
+        || HIDDEN
+            .iter()
+            .any(|&(first, last)| (first..=last).contains(&u32::from(c)))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
@@ -166,7 +201,7 @@ impl Action {
         }
         match self {
             Self::Click { x, y } if *x >= width || *y >= height => Err(Error::InvalidInput("Click is outside the primary screen".into())),
-            Self::TypeText { text } if text.is_empty() || text.chars().count() > 1000 || text.chars().any(char::is_control) => Err(Error::InvalidInput("Type 1–1000 printable characters; use a separate reviewed key action for Enter or Tab".into())),
+            Self::TypeText { text } if text.is_empty() || text.chars().count() > 1000 || text.chars().any(is_unreviewable) => Err(Error::InvalidInput("Type 1–1000 visible characters on one line, with no invisible formatting such as zero-width or text-direction marks; use a separate reviewed key action for Enter or Tab".into())),
             _ => Ok(()),
         }
     }
@@ -429,12 +464,12 @@ mod tests {
     #[test]
     fn window_names_are_printable_and_bounded() {
         let named = Target {
-            title: format!("Evil\u{1b}[2J{}", "x".repeat(500)),
+            title: format!("Evil\u{1b}[2J\u{202E}{}", "x".repeat(500)),
             process_name: "app\nname".into(),
             ..target(1)
         }
         .sanitized();
-        assert!(!named.title.chars().any(char::is_control));
+        assert!(!named.title.chars().any(is_unreviewable));
         assert_eq!(named.title.chars().count(), 120);
         assert_eq!(named.process_name, "app name");
         assert_eq!(target(1).describe(), "“Untitled - Notepad” (notepad)");
@@ -453,19 +488,85 @@ mod tests {
                     .is_err()
             );
         }
-        assert!(
-            Action::TypeText {
-                text: "{ENTER}+^% café".into()
+        for text in [
+            "{ENTER}+^% café",
+            "Grüße, 東京, مرحبا, 한국어",
+            // Emoji keep their presentation selector.
+            "thanks \u{1F44D} \u{2764}\u{FE0F}",
+        ] {
+            assert!(
+                Action::TypeText { text: text.into() }
+                    .validate(1920, 1080)
+                    .is_ok(),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn text_with_hidden_or_reordering_characters_is_refused() {
+        for text in [
+            "one\u{2028}two",          // line separator: a line break that isn't a control
+            "one\u{2029}two",          // paragraph separator
+            "pay\u{202E}gnp.exe",      // right-to-left override reorders what is shown
+            "a\u{2066}b\u{2069}",      // isolates
+            "\u{200B}",                // zero-width space, alone
+            "ab\u{200D}cd",            // zero-width joiner
+            "\u{FEFF}hello",           // byte order mark
+            "hello\u{E0041}\u{E0042}", // tag characters carry invisible ASCII
+            "soft\u{00AD}hyphen",
+            "\u{3164}", // Hangul filler, looks like a space
+        ] {
+            assert!(
+                Action::TypeText { text: text.into() }
+                    .validate(1920, 1080)
+                    .is_err(),
+                "accepted {text:?}"
+            );
+        }
+        // Every listed range is refused at both ends.
+        for (first, last) in HIDDEN {
+            for code in [first, last] {
+                let c = char::from_u32(code).unwrap();
+                assert!(is_unreviewable(c), "U+{code:04X}");
             }
-            .validate(1920, 1080)
-            .is_ok()
-        );
+        }
+        assert!(!is_unreviewable('a') && !is_unreviewable(' ') && !is_unreviewable('\u{FE0F}'));
+    }
+
+    #[test]
+    fn the_input_helper_refuses_the_same_characters() {
+        let script = include_str!("input.ps1");
+        let line = script
+            .lines()
+            .find(|line| line.trim_start().starts_with("$hidden = "))
+            .expect("input.ps1 lists the hidden ranges on one line");
+        let codes: Vec<u32> = line
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .filter_map(|token| token.strip_prefix("0x"))
+            .map(|hex| u32::from_str_radix(hex, 16).unwrap())
+            .collect();
+        let ranges: Vec<(u32, u32)> = codes.chunks(2).map(|pair| (pair[0], pair[1])).collect();
+        assert_eq!(ranges, HIDDEN);
+    }
+
+    #[test]
+    fn text_is_limited_to_a_thousand_characters() {
         assert!(
             Action::TypeText {
                 text: "a".repeat(1001)
             }
             .validate(1920, 1080)
             .is_err()
+        );
+        // Characters, not UTF-16 units: 1,000 emoji are 2,000 units, which
+        // is exactly the input helper's limit.
+        assert!(
+            Action::TypeText {
+                text: "\u{1F600}".repeat(1000)
+            }
+            .validate(1920, 1080)
+            .is_ok()
         );
     }
     #[test]

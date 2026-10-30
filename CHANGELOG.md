@@ -20,6 +20,35 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
   attachments and any unapproved action proposal. Settings and unresolved
   approved-action records stay.
 
+### Security
+
+- **The review shows every character James will type**, in a scrollable
+  box, instead of the first 200. The record of an unchecked action shows it
+  the same way. Only the countdown, which points back to that review,
+  shortens it.
+- **Typed text can't hide or reorder what the review shows.** James and the
+  Windows input helper both refuse the line and paragraph separators
+  (U+2028, U+2029) and invisible formatting characters: zero-width
+  characters, text-direction marks, embeddings, overrides and isolates, tag
+  characters and fillers. Emoji, accents and every script still type. Window
+  titles have the same characters replaced before they're shown.
+- **A second, deliberate step for risky model proposals.** When a model
+  proposes a click, typing, or Enter, Space, Delete or Backspace, Allow once
+  stays off until **I checked what this does and where it goes** is ticked.
+  Actions you set up yourself are unchanged.
+- **A model's reason is one plain line in its own frame**, with line breaks
+  and invisible characters removed, so it can't pass itself off as James's
+  text on the review card.
+- **The Lab snapshot goes only with chat questions.** Guide me and Suggest
+  one action send the screenshot and the question alone, so text from
+  whatever answers on the Lab port can't shape a proposed action.
+- **Links in replies ask before opening.** A dialog names the site the link
+  really goes to (a user name before `@` doesn't count), shows the full
+  address, and warns when it carries a lot of text after the site name,
+  which a model-written link could use to send conversation or screen text
+  away. The link opens only from **Open in browser**; Esc or Cancel closes
+  the dialog without stopping anything else.
+
 ### Fixed
 
 - **Save failures stay visible** above every page, with **Retry saving**.

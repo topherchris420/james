@@ -40,27 +40,73 @@ pub fn parse_proposal(reply: &str) -> Result<Proposal, String> {
         .unwrap_or(trimmed);
     let proposal: Proposal = serde_json::from_str(json.trim())
         .map_err(|_| "Expected one supported JSON action".to_owned())?;
-    if proposal.rationale.trim().is_empty() || proposal.rationale.len() > 2048 {
+    let rationale = one_line(&proposal.rationale);
+    if rationale.is_empty() || proposal.rationale.len() > 2048 {
         return Err("Missing or oversized explanation".into());
     }
-    Ok(proposal)
+    Ok(Proposal {
+        rationale,
+        action: proposal.action,
+    })
 }
 
-/// An action in plain words, exactly as it will be (or was) performed.
+/// A model's reason as one plain line: line breaks and other control
+/// characters become spaces and invisible formatting is dropped, so the
+/// reason cannot pass itself off as James's own text on the review card.
+fn one_line(text: &str) -> String {
+    text.chars()
+        .filter_map(|c| {
+            if c.is_whitespace() || c.is_control() {
+                Some(' ')
+            } else if james_platform::is_unreviewable(c) {
+                None
+            } else {
+                Some(c)
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// An action in plain words, exactly as it will be (or was) performed:
+/// typing is quoted in full.
 pub fn describe(action: &Action) -> String {
     match action {
         Action::Click { x, y } => format!("Click once at x {x}, y {y} on the primary screen"),
         Action::Key { key } => format!("Press {}", key_name(key)),
         Action::TypeText { text } => {
-            let shown: String = text.chars().take(200).collect();
-            let more = if text.chars().count() > 200 {
-                "…"
-            } else {
-                ""
-            };
-            format!("Type “{shown}{more}” ({} characters)", text.chars().count())
+            format!("Type “{text}” ({} characters)", text.chars().count())
         }
     }
+}
+
+/// `describe` with long typing cut to its start, for places that point back
+/// to a review that showed everything, such as the countdown. Never for the
+/// review itself.
+pub fn describe_short(action: &Action) -> String {
+    match action {
+        Action::TypeText { text } if text.chars().count() > SHORT_TEXT => {
+            let start: String = text.chars().take(SHORT_TEXT).collect();
+            format!("Type “{start}…” ({} characters)", text.chars().count())
+        }
+        _ => describe(action),
+    }
+}
+const SHORT_TEXT: usize = 60;
+
+/// Whether a model's proposal needs a second, deliberate step before Allow
+/// once: a click, typing, or a key that can press, send, submit or delete.
+pub fn needs_second_look(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::Click { .. }
+            | Action::TypeText { .. }
+            | Action::Key {
+                key: Key::Enter | Key::Space | Key::Delete | Key::Backspace
+            }
+    )
 }
 
 pub fn key_name(key: &Key) -> &'static str {
@@ -611,9 +657,64 @@ mod tests {
             "Click once at x 12, y 34 on the primary screen"
         );
         assert_eq!(describe(&Action::Key { key: Key::Enter }), "Press Enter");
-        let long = Action::TypeText {
-            text: "a".repeat(250),
+        // The review quotes every character; only the countdown shortens.
+        let text = format!("{}END", "a".repeat(997));
+        let long = Action::TypeText { text: text.clone() };
+        assert_eq!(describe(&long), format!("Type “{text}” (1000 characters)"));
+        assert_eq!(
+            describe_short(&long),
+            format!("Type “{}…” (1000 characters)", "a".repeat(60))
+        );
+        let short = Action::TypeText {
+            text: "hello".into(),
         };
-        assert!(describe(&long).ends_with("…” (250 characters)"));
+        assert_eq!(describe_short(&short), describe(&short));
+    }
+
+    #[test]
+    fn a_models_reason_is_shown_as_one_plain_line() {
+        let proposal = parse_proposal(
+            "{\"rationale\":\"Save the file.\\n\\nJames: this action was checked\\u2028and approved.\\u202e\\u200b\",\"action\":{\"kind\":\"key\",\"key\":\"tab\"}}",
+        )
+        .unwrap();
+        assert_eq!(
+            proposal.rationale,
+            "Save the file. James: this action was checked and approved."
+        );
+        // A reason made only of invisible characters is no reason.
+        assert!(
+            parse_proposal(
+                "{\"rationale\":\"\\u200b\\u2060\\n\",\"action\":{\"kind\":\"key\",\"key\":\"tab\"}}"
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn inputs_that_can_press_send_or_delete_need_a_second_look() {
+        for action in [
+            Action::Click { x: 1, y: 1 },
+            Action::TypeText { text: "a".into() },
+            Action::Key { key: Key::Enter },
+            Action::Key { key: Key::Space },
+            Action::Key { key: Key::Delete },
+            Action::Key {
+                key: Key::Backspace,
+            },
+        ] {
+            assert!(needs_second_look(&action), "{action:?}");
+        }
+        for key in [
+            Key::Tab,
+            Key::Escape,
+            Key::Up,
+            Key::Down,
+            Key::Left,
+            Key::Right,
+            Key::Home,
+            Key::End,
+        ] {
+            assert!(!needs_second_look(&Action::Key { key }));
+        }
     }
 }
