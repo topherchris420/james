@@ -2,9 +2,11 @@
 //! accessibility tree, the way a keyboard or screen-reader user reaches it.
 //! Model and Lab servers are scripted sockets on random loopback ports.
 use super::super::*;
-use super::{closed_port, listen};
 use egui_kittest::{Harness, kittest::Queryable};
+use socket2::{Domain, Socket, Type};
 use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{SocketAddr, TcpListener};
+use std::sync::PoisonError;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 type Chunks = Vec<(Duration, Vec<u8>)>;
@@ -13,7 +15,7 @@ type Handler = dyn Fn(&str, &str) -> Chunks + Send + Sync;
 /// A scripted local server. `handler` gets each request line and body and
 /// returns what to write, with an optional pause before each piece.
 fn fake_server(handler: impl Fn(&str, &str) -> Chunks + Send + Sync + 'static) -> u16 {
-    let listener = listen();
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let port = listener.local_addr().unwrap().port();
     let handler: Arc<Handler> = Arc::new(handler);
     std::thread::spawn(move || {
@@ -114,6 +116,27 @@ fn ollama(reply: impl Fn(&str) -> Chunks + Send + Sync + 'static) -> u16 {
             )]
         }
     })
+}
+
+/// Sockets holding the ports `closed_port` handed out until the tests end:
+/// bound, so no other bind is given the port, and not listening, so
+/// connections to it are refused.
+static RESERVED: Mutex<Vec<Socket>> = Mutex::new(Vec::new());
+
+/// A loopback port with nothing listening, for the whole test run. Binding
+/// a port and closing it isn't enough: Windows readily hands a just-closed
+/// port to the next bind, so another test's fake server can land on it.
+fn closed_port() -> u16 {
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
+    socket
+        .bind(&SocketAddr::from(([127, 0, 0, 1], 0)).into())
+        .unwrap();
+    let port = socket.local_addr().unwrap().as_socket().unwrap().port();
+    RESERVED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(socket);
+    port
 }
 
 /// A James with its own scratch profile, set up with `model` on `port`.

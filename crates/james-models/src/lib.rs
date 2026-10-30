@@ -902,44 +902,12 @@ pub fn parse_chat(body: &str) -> Result<String, ApiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use socket2::{Domain, Socket, Type};
     use std::io::{BufRead, BufReader, Read, Write};
-    use std::net::TcpListener;
-    use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+    use std::net::{SocketAddr, TcpListener};
+    use std::sync::{Arc, Mutex, PoisonError};
     use std::thread;
     use std::time::Instant;
-
-    /// Ports that tests rely on having nothing listening. Windows readily
-    /// hands a port that was just closed to the next bind, so without this a
-    /// test's server can land on a port another test checks is closed, and
-    /// both fail. A port is recorded while still bound, so no bind can take
-    /// it in between.
-    static CLOSED: Mutex<Vec<u16>> = Mutex::new(Vec::new());
-
-    fn closed() -> MutexGuard<'static, Vec<u16>> {
-        CLOSED.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// A loopback port with nothing listening, which `listen` never hands out.
-    fn closed_port() -> u16 {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let port = listener.local_addr().unwrap().port();
-        closed().push(port);
-        port
-    }
-
-    /// A loopback listener on a port no test expects to be closed.
-    fn listen() -> TcpListener {
-        // Refused ports stay bound until one is accepted, so each bind gets
-        // a different port.
-        let mut refused = Vec::new();
-        loop {
-            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-            if !closed().contains(&listener.local_addr().unwrap().port()) {
-                return listener;
-            }
-            refused.push(listener);
-        }
-    }
 
     enum Step {
         Write(Vec<u8>),
@@ -950,7 +918,7 @@ mod tests {
     /// (so closing never resets the client's send), then plays `steps` and
     /// returns the raw request for inspection.
     fn serve(steps: Vec<Step>) -> (u16, thread::JoinHandle<Vec<u8>>) {
-        let listener = listen();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
         let worker = thread::spawn(move || {
             let (mut socket, _) = listener.accept().unwrap();
@@ -1558,6 +1526,28 @@ mod tests {
             err.to_string()
                 .starts_with("Cannot reach the selected local model server")
         );
+    }
+
+    /// Sockets holding the ports `closed_port` handed out until the tests
+    /// end: bound, so no other bind is given the port, and not listening, so
+    /// connections to it are refused.
+    static RESERVED: Mutex<Vec<Socket>> = Mutex::new(Vec::new());
+
+    /// A loopback port with nothing listening, for the whole test run.
+    /// Binding a port and closing it isn't enough: Windows readily hands a
+    /// just-closed port to the next bind, so another test's server can land
+    /// on it.
+    fn closed_port() -> u16 {
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
+        socket
+            .bind(&SocketAddr::from(([127, 0, 0, 1], 0)).into())
+            .unwrap();
+        let port = socket.local_addr().unwrap().as_socket().unwrap().port();
+        RESERVED
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(socket);
+        port
     }
 
     fn reply(body: &str) -> Vec<Step> {

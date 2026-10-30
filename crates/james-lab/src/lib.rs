@@ -430,44 +430,34 @@ impl LabClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use socket2::{Domain, Socket, Type};
     use std::{
         io::{Read, Write},
-        net::TcpListener,
-        sync::{Mutex, MutexGuard, PoisonError},
+        net::{SocketAddr, TcpListener},
+        sync::{Mutex, PoisonError},
         thread,
     };
 
-    /// Ports that tests rely on having nothing listening. Windows readily
-    /// hands a port that was just closed to the next bind, so without this a
-    /// test's server can land on a port another test checks is closed, and
-    /// both fail. A port is recorded while still bound, so no bind can take
-    /// it in between.
-    static CLOSED: Mutex<Vec<u16>> = Mutex::new(Vec::new());
+    /// Sockets holding the ports `closed_port` handed out until the tests
+    /// end: bound, so no other bind is given the port, and not listening, so
+    /// connections to it are refused.
+    static RESERVED: Mutex<Vec<Socket>> = Mutex::new(Vec::new());
 
-    fn closed() -> MutexGuard<'static, Vec<u16>> {
-        CLOSED.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// A loopback port with nothing listening, which `listen` never hands out.
+    /// A loopback port with nothing listening, for the whole test run.
+    /// Binding a port and closing it isn't enough: Windows readily hands a
+    /// just-closed port to the next bind, so another test's server can land
+    /// on it.
     fn closed_port() -> u16 {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        closed().push(port);
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
+        socket
+            .bind(&SocketAddr::from(([127, 0, 0, 1], 0)).into())
+            .unwrap();
+        let port = socket.local_addr().unwrap().as_socket().unwrap().port();
+        RESERVED
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(socket);
         port
-    }
-
-    /// A loopback listener on a port no test expects to be closed.
-    fn listen() -> TcpListener {
-        // Refused ports stay bound until one is accepted, so each bind gets
-        // a different port.
-        let mut refused = Vec::new();
-        loop {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            if !closed().contains(&listener.local_addr().unwrap().port()) {
-                return listener;
-            }
-            refused.push(listener);
-        }
     }
 
     fn server(
@@ -476,7 +466,7 @@ mod tests {
         body: String,
         expected_path: &'static str,
     ) -> (LabClient, thread::JoinHandle<()>) {
-        let listener = listen();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let client = LabClient::new(listener.local_addr().unwrap().port()).unwrap();
         let response = format!(
             "HTTP/1.1 {status}\r\nContent-Type: {mime}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -625,7 +615,7 @@ mod tests {
     #[test]
     fn find_lab_checks_ports_in_order_and_skips_other_servers() {
         // A web page on the first port, the Lab on the second.
-        let page = listen();
+        let page = TcpListener::bind("127.0.0.1:0").unwrap();
         let page_port = page.local_addr().unwrap().port();
         let page_join = thread::spawn(move || {
             let (mut socket, _) = page.accept().unwrap();

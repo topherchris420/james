@@ -1,42 +1,8 @@
 //! Unit tests for the desktop's decisions, and GUI tests that drive the real
 //! interface headlessly through its accessibility tree (egui_kittest).
 use super::*;
-use std::net::TcpListener;
-use std::sync::{MutexGuard, PoisonError};
 
 mod gui;
-
-/// Ports that tests rely on having nothing listening. Windows readily hands
-/// a port that was just closed to the next bind, so without this a test's
-/// server can land on a port another test checks is closed, and both fail.
-/// A port is recorded while still bound, so no bind can take it in between.
-static CLOSED: Mutex<Vec<u16>> = Mutex::new(Vec::new());
-
-fn closed() -> MutexGuard<'static, Vec<u16>> {
-    CLOSED.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-/// A loopback port with nothing listening, which `listen` never hands out.
-fn closed_port() -> u16 {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-    let port = listener.local_addr().unwrap().port();
-    closed().push(port);
-    port
-}
-
-/// A loopback listener on a port no test expects to be closed.
-fn listen() -> TcpListener {
-    // Refused ports stay bound until one is accepted, so each bind gets a
-    // different port.
-    let mut refused = Vec::new();
-    loop {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        if !closed().contains(&listener.local_addr().unwrap().port()) {
-            return listener;
-        }
-        refused.push(listener);
-    }
-}
 
 #[test]
 fn transcript_only_includes_conversation_roles() {
@@ -164,7 +130,7 @@ fn this_version_ships_its_release_notes() {
 fn stop_before_the_connection_exists_still_closes_it_at_once() {
     use std::io::{Read, Write};
     // A model server that accepts, then says nothing for ten seconds.
-    let listener = listen();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let server = std::thread::spawn(move || {
         let (mut socket, _) = listener.accept().unwrap();
