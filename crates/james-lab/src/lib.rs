@@ -433,8 +433,42 @@ mod tests {
     use std::{
         io::{Read, Write},
         net::TcpListener,
+        sync::{Mutex, MutexGuard, PoisonError},
         thread,
     };
+
+    /// Ports that tests rely on having nothing listening. Windows readily
+    /// hands a port that was just closed to the next bind, so without this a
+    /// test's server can land on a port another test checks is closed, and
+    /// both fail. A port is recorded while still bound, so no bind can take
+    /// it in between.
+    static CLOSED: Mutex<Vec<u16>> = Mutex::new(Vec::new());
+
+    fn closed() -> MutexGuard<'static, Vec<u16>> {
+        CLOSED.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// A loopback port with nothing listening, which `listen` never hands out.
+    fn closed_port() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        closed().push(port);
+        port
+    }
+
+    /// A loopback listener on a port no test expects to be closed.
+    fn listen() -> TcpListener {
+        // Refused ports stay bound until one is accepted, so each bind gets
+        // a different port.
+        let mut refused = Vec::new();
+        loop {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            if !closed().contains(&listener.local_addr().unwrap().port()) {
+                return listener;
+            }
+            refused.push(listener);
+        }
+    }
 
     fn server(
         status: &str,
@@ -442,7 +476,7 @@ mod tests {
         body: String,
         expected_path: &'static str,
     ) -> (LabClient, thread::JoinHandle<()>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listener = listen();
         let client = LabClient::new(listener.local_addr().unwrap().port()).unwrap();
         let response = format!(
             "HTTP/1.1 {status}\r\nContent-Type: {mime}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -591,7 +625,7 @@ mod tests {
     #[test]
     fn find_lab_checks_ports_in_order_and_skips_other_servers() {
         // A web page on the first port, the Lab on the second.
-        let page = TcpListener::bind("127.0.0.1:0").unwrap();
+        let page = listen();
         let page_port = page.local_addr().unwrap().port();
         let page_join = thread::spawn(move || {
             let (mut socket, _) = page.accept().unwrap();
@@ -605,10 +639,7 @@ mod tests {
             fixture(),
             "/api/rain/discovery",
         );
-        let closed = {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            listener.local_addr().unwrap().port()
-        };
+        let closed = closed_port();
         assert_eq!(find_lab(&[closed, page_port, lab.port]), Some(lab.port));
         page_join.join().unwrap();
         lab_join.join().unwrap();
@@ -617,9 +648,7 @@ mod tests {
 
     #[test]
     fn nothing_listening_is_reported_within_the_time_budget() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
+        let port = closed_port();
         let started = std::time::Instant::now();
         let error = LabClient::new(port).unwrap().context().unwrap_err();
         assert!(error.0.starts_with("Cannot reach R.A.I.N. Lab"), "{error}");

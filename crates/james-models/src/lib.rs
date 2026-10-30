@@ -904,9 +904,42 @@ mod tests {
     use super::*;
     use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
     use std::thread;
     use std::time::Instant;
+
+    /// Ports that tests rely on having nothing listening. Windows readily
+    /// hands a port that was just closed to the next bind, so without this a
+    /// test's server can land on a port another test checks is closed, and
+    /// both fail. A port is recorded while still bound, so no bind can take
+    /// it in between.
+    static CLOSED: Mutex<Vec<u16>> = Mutex::new(Vec::new());
+
+    fn closed() -> MutexGuard<'static, Vec<u16>> {
+        CLOSED.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// A loopback port with nothing listening, which `listen` never hands out.
+    fn closed_port() -> u16 {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        closed().push(port);
+        port
+    }
+
+    /// A loopback listener on a port no test expects to be closed.
+    fn listen() -> TcpListener {
+        // Refused ports stay bound until one is accepted, so each bind gets
+        // a different port.
+        let mut refused = Vec::new();
+        loop {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            if !closed().contains(&listener.local_addr().unwrap().port()) {
+                return listener;
+            }
+            refused.push(listener);
+        }
+    }
 
     enum Step {
         Write(Vec<u8>),
@@ -917,7 +950,7 @@ mod tests {
     /// (so closing never resets the client's send), then plays `steps` and
     /// returns the raw request for inspection.
     fn serve(steps: Vec<Step>) -> (u16, thread::JoinHandle<Vec<u8>>) {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let listener = listen();
         let port = listener.local_addr().unwrap().port();
         let worker = thread::spawn(move || {
             let (mut socket, _) = listener.accept().unwrap();
@@ -1518,20 +1551,13 @@ mod tests {
 
     #[test]
     fn nothing_listening_is_reported_as_unreachable() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
+        let port = closed_port();
         let err = LocalClient::new(port).unwrap().models().unwrap_err();
         assert!(matches!(err, ApiError::Unreachable(_)), "{err:?}");
         assert!(
             err.to_string()
                 .starts_with("Cannot reach the selected local model server")
         );
-    }
-
-    fn closed_port() -> u16 {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        listener.local_addr().unwrap().port()
     }
 
     fn reply(body: &str) -> Vec<Step> {

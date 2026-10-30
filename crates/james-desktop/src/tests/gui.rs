@@ -2,9 +2,9 @@
 //! accessibility tree, the way a keyboard or screen-reader user reaches it.
 //! Model and Lab servers are scripted sockets on random loopback ports.
 use super::super::*;
+use super::{closed_port, listen};
 use egui_kittest::{Harness, kittest::Queryable};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpListener;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 type Chunks = Vec<(Duration, Vec<u8>)>;
@@ -13,7 +13,7 @@ type Handler = dyn Fn(&str, &str) -> Chunks + Send + Sync;
 /// A scripted local server. `handler` gets each request line and body and
 /// returns what to write, with an optional pause before each piece.
 fn fake_server(handler: impl Fn(&str, &str) -> Chunks + Send + Sync + 'static) -> u16 {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let listener = listen();
     let port = listener.local_addr().unwrap().port();
     let handler: Arc<Handler> = Arc::new(handler);
     std::thread::spawn(move || {
@@ -114,14 +114,6 @@ fn ollama(reply: impl Fn(&str) -> Chunks + Send + Sync + 'static) -> u16 {
             )]
         }
     })
-}
-
-fn closed_port() -> u16 {
-    TcpListener::bind(("127.0.0.1", 0))
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
 }
 
 /// A James with its own scratch profile, set up with `model` on `port`.

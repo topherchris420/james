@@ -3,8 +3,41 @@
 use james_loopback::{Client, Error, Limits, Method, Timeouts};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
+
+/// Ports that tests rely on having nothing listening. Windows readily hands
+/// a port that was just closed to the next bind, so without this a test's
+/// server can land on a port another test checks is closed, and both fail.
+/// A port is recorded while still bound, so no bind can take it in between.
+static CLOSED: Mutex<Vec<u16>> = Mutex::new(Vec::new());
+
+fn closed() -> MutexGuard<'static, Vec<u16>> {
+    CLOSED.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// A loopback port with nothing listening, which `listen` never hands out.
+fn closed_port() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    closed().push(port);
+    port
+}
+
+/// A loopback listener on a port no test expects to be closed.
+fn listen() -> TcpListener {
+    // Refused ports stay bound until one is accepted, so each bind gets a
+    // different port.
+    let mut refused = Vec::new();
+    loop {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        if !closed().contains(&listener.local_addr().unwrap().port()) {
+            return listener;
+        }
+        refused.push(listener);
+    }
+}
 
 enum Step {
     Write(&'static [u8]),
@@ -15,7 +48,7 @@ enum Step {
 /// Accepts one connection, reads the full request, plays the script, closes.
 /// Returns the raw request bytes so tests can inspect what James sent.
 fn serve(script: Vec<Step>) -> (Client, thread::JoinHandle<Vec<u8>>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let listener = listen();
     let port = listener.local_addr().unwrap().port();
     let join = thread::spawn(move || {
         let (mut socket, _) = listener.accept().unwrap();
@@ -404,9 +437,7 @@ fn abort_does_not_complete_an_until_close_response() {
 
 #[test]
 fn nothing_listening_is_reported_as_unreachable_quickly() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
+    let port = closed_port();
     let started = Instant::now();
     let result = Client::new(port)
         .unwrap()
@@ -494,11 +525,22 @@ fn interim_responses_are_skipped_and_empty_responses_complete() {
 
 #[test]
 fn ipv6_loopback_is_tried_when_ipv4_refuses() {
-    let Ok(listener) = TcpListener::bind("[::1]:0") else {
-        eprintln!("IPv6 loopback unavailable on this host; fallback not exercised");
-        return;
+    // IPv4 must refuse this port: hold it there too while recording it as
+    // closed, so no other test's server is, or will be, listening on it.
+    // Ports in use on IPv4 stay bound on IPv6 so the next bind differs.
+    let mut refused = Vec::new();
+    let (listener, port) = loop {
+        let Ok(listener) = TcpListener::bind("[::1]:0") else {
+            eprintln!("IPv6 loopback unavailable on this host; fallback not exercised");
+            return;
+        };
+        let port = listener.local_addr().unwrap().port();
+        if let Ok(_ipv4) = TcpListener::bind(("127.0.0.1", port)) {
+            closed().push(port);
+            break (listener, port);
+        }
+        refused.push(listener);
     };
-    let port = listener.local_addr().unwrap().port();
     let server = thread::spawn(move || {
         let (mut socket, _) = listener.accept().unwrap();
         socket
