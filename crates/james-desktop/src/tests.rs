@@ -19,6 +19,47 @@ fn transcript_only_includes_conversation_roles() {
 }
 
 #[test]
+fn allow_once_refuses_a_model_click_until_the_person_checked_it() {
+    let dir = session::scratch_dir("second-look");
+    let mut app = JamesApp::new(dir.join("session.json"));
+    let ctx = egui::Context::default();
+    let _ = ctx.run(egui::RawInput::default(), |_| {});
+    app.screen = Some(Screen {
+        capture: Screenshot {
+            png: Vec::new(),
+            width: 100,
+            height: 100,
+            target: None,
+            james_hidden: Some(true),
+        },
+        texture: ctx.load_texture(
+            "test-screen",
+            egui::ColorImage::new([4, 4], egui::Color32::WHITE),
+            egui::TextureOptions::LINEAR,
+        ),
+        at: Instant::now(),
+    });
+    app.propose(Action::Click { x: 10, y: 10 }, "Press Send".into(), true);
+    app.allow_once();
+    assert!(
+        app.scheduled.is_none(),
+        "an unchecked model click is never scheduled"
+    );
+    assert!(app.pending.is_some(), "the review stays for the person");
+    assert!(
+        app.status.contains("I checked what this does"),
+        "{}",
+        app.status
+    );
+    app.pending.as_mut().unwrap().checked = true;
+    app.allow_once();
+    assert!(app.scheduled.is_some());
+    // No frame is drawn, so the countdown never ends and nothing is sent.
+    app.scheduled = None;
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn a_failed_retry_restores_the_conversation_draft_and_attachment() {
     let dir = session::scratch_dir("retry-failure");
     let mut app = JamesApp::new(dir.join("session.json"));

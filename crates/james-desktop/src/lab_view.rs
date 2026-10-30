@@ -218,7 +218,7 @@ fn draw(lab: &mut LabState, ui: &mut egui::Ui) {
         lab.connected && lab.snapshot.is_some(),
         egui::Checkbox::new(&mut include, "Share a Lab snapshot with my next questions"),
     )
-    .on_hover_text("Adds a short, labelled summary of the Lab's state and recent results to each question you send.");
+    .on_hover_text("Adds a short, labelled summary of the Lab's state and recent results to each chat question you send. Guide me and Suggest one action never include it.");
     lab.include = include;
     let Some((snapshot, at)) = &lab.snapshot else {
         return;
@@ -292,7 +292,7 @@ fn draw(lab: &mut LabState, ui: &mut egui::Ui) {
     egui::CollapsingHeader::new("Exactly what James would share with the model")
         .default_open(false)
         .show(ui, |ui| {
-            ui.small("This text is added to your question only while sharing is on.");
+            ui.small("This text is added to your chat questions only while sharing is on.");
             let mut shown = snapshot.prompt_context();
             ui.add(
                 egui::TextEdit::multiline(&mut shown)

@@ -152,6 +152,27 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     ui.small("Screenshots stay in memory and are never saved by James. A model's answer about a screenshot is saved as text with your conversation.");
 }
 
+/// The action exactly as it will be (or was) sent. Typing is shown in full,
+/// in a scrollable box, so no character of an approved input is hidden.
+fn exact_action(ui: &mut egui::Ui, lead: &str, action: &Action, id: &str) {
+    let Action::TypeText { text } = action else {
+        ui.label(format!("{lead}: {}.", review::describe(action)));
+        return;
+    };
+    ui.label(format!(
+        "{lead} type {} characters, exactly:",
+        text.chars().count()
+    ));
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        egui::ScrollArea::vertical()
+            .id_salt(id)
+            .max_height(180.0)
+            .show(ui, |ui| {
+                ui.add(egui::Label::new(RichText::new(text).monospace()).wrap());
+            });
+    });
+}
+
 fn recovery_ui(app: &mut JamesApp, ui: &mut egui::Ui) {
     let warn = ui.visuals().warn_fg_color;
     egui::Frame::group(ui.style()).show(ui, |ui| {
@@ -162,7 +183,7 @@ fn recovery_ui(app: &mut JamesApp, ui: &mut egui::Ui) {
         );
         match &app.recovery {
             review::Recovery::Pending(record) => {
-                ui.label(format!("James was asked to: {}.", review::describe(&record.action)));
+                exact_action(ui, "James was asked to", &record.action, "recovery-text");
                 if let Some(target) = &record.target {
                     ui.label(format!("In: {}", target.describe()));
                 }
@@ -301,12 +322,19 @@ pub fn actions(app: &mut JamesApp, ui: &mut egui::Ui) {
             .size(18.0)
             .strong(),
     );
-    ui.label(
-        RichText::new(review::describe(&pending.proposal.action))
-            .size(17.0)
-            .strong()
-            .color(theme::accent(ui)),
-    );
+    match &pending.proposal.action {
+        Action::TypeText { .. } => {
+            exact_action(ui, "James will", &pending.proposal.action, "review-text")
+        }
+        action => {
+            ui.label(
+                RichText::new(review::describe(action))
+                    .size(17.0)
+                    .strong()
+                    .color(theme::accent(ui)),
+            );
+        }
+    }
     match &pending.target {
         Some(target) => ui.label(format!(
             "In: {}. James sends nothing unless this window is in front when the countdown ends.",
@@ -317,11 +345,16 @@ pub fn actions(app: &mut JamesApp, ui: &mut egui::Ui) {
             "James couldn't tell which window was in front when the screenshot was taken, so it can't check the target before sending. Make sure the right app is in front.",
         ),
     };
-    ui.label(format!("Why: {}", pending.proposal.rationale));
     if pending.from_model {
-        ui.small(
-            "This reason was written by the model. It is not a guarantee; judge the action itself.",
-        );
+        // Framed and labelled, so the model's words never read as James's.
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.label(format!("Why: {}", pending.proposal.rationale));
+            ui.small(
+                "This reason was written by the model. It is not a guarantee; judge the action itself.",
+            );
+        });
+    } else {
+        ui.label(format!("Why: {}", pending.proposal.rationale));
     }
     if let Some(screen) = &app.screen {
         let response = ui.add(
@@ -344,6 +377,17 @@ pub fn actions(app: &mut JamesApp, ui: &mut egui::Ui) {
             "This review has expired because the screenshot is over a minute old. Capture the screen again.",
         );
     }
+    // A model's click, typing or Enter, Space, Delete or Backspace can press,
+    // send, submit or delete: it takes a deliberate second step to approve.
+    let second_look = pending.from_model && review::needs_second_look(&pending.proposal.action);
+    let mut checked = pending.checked;
+    if second_look {
+        ui.add_enabled(
+            enabled && fresh,
+            egui::Checkbox::new(&mut checked, "I checked what this does and where it goes"),
+        )
+        .on_hover_text("A model proposed this. Check the screenshot, the window and every character first: a click, typing or Enter, Space, Delete or Backspace can press buttons, send, submit or delete.");
+    }
     ui.small("Allow once starts a 5-second countdown so you can switch to the app. Esc or Cancel stops it. There is no system-wide stop key.");
     // Defense in depth: this page already returns early without input support.
     let can_input = james_platform::can_control_input();
@@ -352,13 +396,21 @@ pub fn actions(app: &mut JamesApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         allow = ui
             .add_enabled(
-                enabled && fresh && can_input,
+                enabled && fresh && can_input && (checked || !second_look),
                 theme::primary(ui, "Allow once"),
             )
             .on_hover_text("Approve this one action. It runs after a 5-second countdown.")
+            .on_disabled_hover_text(if second_look && !checked {
+                "Tick “I checked what this does and where it goes” first."
+            } else {
+                "Not available while another task runs, an action waits to be checked, or the screenshot is too old."
+            })
             .clicked();
         deny = ui.button("Deny").clicked();
     });
+    if let Some(pending) = app.pending.as_mut() {
+        pending.checked = checked;
+    }
     if allow {
         app.allow_once();
     } else if deny {

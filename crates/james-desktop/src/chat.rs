@@ -479,7 +479,8 @@ pub fn composer(app: &mut JamesApp, ctx: &egui::Context) {
                 ui.label(RichText::new("Screenshot attached").color(theme::accent(ui)));
             }
             if app.lab.include {
-                ui.label(RichText::new("Lab snapshot attached").color(theme::accent(ui)));
+                ui.label(RichText::new("Lab snapshot attached").color(theme::accent(ui)))
+                    .on_hover_text("Sent with chat questions only, never with Guide me or Suggest one action.");
             }
         });
         if let Some(w) = &app.worker {

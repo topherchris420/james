@@ -459,6 +459,15 @@ struct Pending {
     height: u32,
     captured_at: Instant,
     target: Option<james_platform::Target>,
+    /// The person ticked "I checked what this does and where it goes".
+    /// Required before Allow once when a model proposed an input that
+    /// `review::needs_second_look` covers.
+    checked: bool,
+}
+impl Pending {
+    fn awaits_second_look(&self) -> bool {
+        self.from_model && !self.checked && review::needs_second_look(&self.proposal.action)
+    }
 }
 struct Scheduled {
     review: ReviewedAction,
@@ -904,7 +913,10 @@ impl JamesApp {
                 ),
             ));
         }
-        if mode != Ask::Test && self.lab.include && self.lab.connected {
+        // Only chat questions carry the Lab snapshot. Guide me and Suggest
+        // one action send the screenshot and the question alone, so text from
+        // whatever answers on the Lab port never shapes a proposed action.
+        if mode == Ask::Chat && self.lab.include && self.lab.connected {
             match self.lab.fresh_context() {
                 Ok(text) => context.push(ChatMessage::new("user", text)),
                 Err(e) => {
@@ -1198,11 +1210,20 @@ impl JamesApp {
             height: screen.capture.height,
             captured_at: screen.at,
             target: screen.capture.target.clone(),
+            checked: false,
         });
         self.page = Page::Actions;
     }
     /// Turns Allow once into a scheduled, one-use review.
     fn allow_once(&mut self) {
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(Pending::awaits_second_look)
+        {
+            self.fail("Tick “I checked what this does and where it goes” first.");
+            return;
+        }
         let Some(pending) = self.pending.take() else {
             return;
         };
@@ -1595,6 +1616,8 @@ impl JamesApp {
             if self.confirm_clear || self.confirm_delete {
                 self.confirm_clear = false;
                 self.confirm_delete = false;
+            } else if markdown::dismiss_link(ctx) {
+                // Esc closed the link dialog; nothing else stops.
             } else if self.show_shortcuts {
                 self.show_shortcuts = false;
             } else if self.whats_new.is_some() {
@@ -1658,7 +1681,7 @@ impl JamesApp {
                 .target()
                 .map(|t| t.describe())
                 .unwrap_or_else(|| "the app in your screenshot".into());
-            let action = review::describe(s.review.action());
+            let action = review::describe_short(s.review.action());
             let mut cancel = false;
             egui::TopBottomPanel::top("countdown").show(ctx, |ui| {
                 ui.add_space(6.0);
@@ -1846,6 +1869,7 @@ impl JamesApp {
                 self.confirm_delete = false;
             }
         }
+        markdown::confirm_link(ctx);
     }
     /// Draws one frame. Separate from `eframe::App` so tests can drive it.
     fn ui(&mut self, ctx: &egui::Context) {

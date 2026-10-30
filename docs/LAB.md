@@ -63,14 +63,15 @@ The page shows:
 ### Sharing with the model
 
 Nothing from the Lab reaches the model unless you tick **Share a Lab
-snapshot with my next questions**. Then each question carries a compact
+snapshot with my next questions**. Then each chat question carries a compact
 snapshot of at most 24 KiB that starts by telling the model it is untrusted
 research data, not instructions, and that simulator findings are not
 real-world evidence. Every item in it is labelled (simulator run,
 model-proposed hypothesis, detail that may be model-written). **Exactly what
 James would share with the model** shows the full text before you send
 anything. The snapshot never includes the report path or anything from your
-files.
+files. Guide me and Suggest one action never carry it, so text from whatever
+answers on the Lab port cannot shape an action James proposes.
 
 ## Protocol and provenance
 

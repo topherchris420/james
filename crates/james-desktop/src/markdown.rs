@@ -283,17 +283,84 @@ fn layout(spans: &[Span], style: Style, size: f32, base: Color32) -> LayoutJob {
     job
 }
 
-/// Lists a paragraph's links under it with their full addresses.
+/// The site a web address goes to, and what follows it: `https://a.org/b?c`
+/// gives `("a.org", "/b?c")`. Anything before an `@` in the site part is a
+/// user name, not the site, however much it looks like one. Browsers treat
+/// `\` like `/` in web addresses, so it ends the site part too.
+pub fn split_url(url: &str) -> (&str, &str) {
+    let rest = url.find("://").map_or(url, |at| &url[at + 3..]);
+    let end = rest.find(['/', '\\', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(end);
+    let site = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, site)| site);
+    (site, tail)
+}
+
+/// Text after the site name beyond which the dialog warns that a link can
+/// carry data to the site.
+const LONG_TAIL: usize = 40;
+
+fn link_request() -> egui::Id {
+    egui::Id::new("markdown-link-request")
+}
+
+/// Asks before a link in a reply opens. A model can write any address, and
+/// an address can carry text from the conversation or the screen to the
+/// site it names. Call once per frame.
+pub fn confirm_link(ctx: &egui::Context) {
+    let Some(url) = ctx.data(|d| d.get_temp::<String>(link_request())) else {
+        return;
+    };
+    let (site, tail) = split_url(&url);
+    let mut close = false;
+    let modal = egui::Modal::new(link_request().with("dialog")).show(ctx, |ui| {
+        ui.heading("Open this link?");
+        ui.label(format!("It goes to {site}"));
+        ui.add(egui::Label::new(RichText::new(&url).small().monospace()).wrap());
+        let carried = tail.chars().count();
+        if carried > LONG_TAIL {
+            ui.colored_label(
+                ui.visuals().warn_fg_color,
+                format!("After the site name, this address carries {carried} characters. A link written by a model can carry text from your conversation or screen to that site."),
+            );
+        }
+        ui.horizontal(|ui| {
+            if ui.add(crate::theme::primary(ui, "Open in browser")).clicked() {
+                ui.ctx().open_url(egui::OpenUrl::new_tab(&url));
+                close = true;
+            }
+            if ui.button("Cancel").clicked() {
+                close = true;
+            }
+        });
+    });
+    if close || modal.should_close() {
+        dismiss_link(ctx);
+    }
+}
+
+/// Closes the link dialog. Returns whether one was open.
+pub fn dismiss_link(ctx: &egui::Context) -> bool {
+    ctx.data_mut(|d| d.remove_temp::<String>(link_request()))
+        .is_some()
+}
+
+/// Lists a paragraph's links under it with their full addresses. Choosing
+/// one asks first (see `confirm_link`).
 fn links_ui(ui: &mut egui::Ui, spans: &[Span]) {
     for span in spans {
         if let Span::Link { label, url } = span {
             ui.horizontal_wrapped(|ui| {
                 ui.add_space(12.0);
                 if openable(url) {
-                    ui.hyperlink_to(RichText::new(url).small(), url)
-                        .on_hover_text(format!(
-                            "“{label}” links to {url}. It opens in your web browser."
-                        ));
+                    let link = ui.link(RichText::new(url).small()).on_hover_text(format!(
+                        "“{label}” links to {url}. James asks before opening it in your web browser."
+                    ));
+                    if link.clicked() {
+                        ui.ctx()
+                            .data_mut(|d| d.insert_temp(link_request(), url.clone()));
+                    }
                 } else {
                     ui.small(format!("{label}: {url}"));
                 }
@@ -503,6 +570,27 @@ mod tests {
             "data:text/html,x",
         ] {
             assert!(!openable(url), "{url}");
+        }
+    }
+
+    #[test]
+    fn the_link_dialog_names_the_site_a_link_really_goes_to() {
+        for (url, site, tail) in [
+            ("https://lmstudio.ai/", "lmstudio.ai", "/"),
+            ("HTTP://Example.com?q=1", "Example.com", "?q=1"),
+            ("https://example.com", "example.com", ""),
+            ("https://example.com:8443/a#b", "example.com:8443", "/a#b"),
+            // A user name that looks like a site does not change where it goes.
+            ("https://lmstudio.ai@evil.example/x", "evil.example", "/x"),
+            ("https://a@b@evil.example", "evil.example", ""),
+            // Browsers read \ as /, so the site ends there.
+            (
+                "http://evil.example\\@lmstudio.ai/",
+                "evil.example",
+                "\\@lmstudio.ai/",
+            ),
+        ] {
+            assert_eq!(split_url(url), (site, tail), "{url}");
         }
     }
 }

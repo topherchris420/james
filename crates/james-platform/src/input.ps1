@@ -1,6 +1,30 @@
 $ErrorActionPreference = 'Stop'
 [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+
+# Refuses text a person could not have reviewed on one line: control
+# characters, line and paragraph separators, and invisible formatting
+# characters. The ranges are inclusive code point pairs, the same list as
+# HIDDEN in lib.rs (a test there compares them).
+function Assert-Typeable([string]$text) {
+    $hidden = @(0x00AD, 0x00AD, 0x034F, 0x034F, 0x061C, 0x061C, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x180B, 0x180F, 0x200B, 0x200F, 0x2028, 0x202E, 0x2060, 0x206F, 0x3164, 0x3164, 0xFEFF, 0xFEFF, 0xFFA0, 0xFFA0, 0xFFF9, 0xFFFB, 0x1D173, 0x1D17A, 0xE0000, 0xE007F, 0xE0100, 0xE01EF)
+    for ($i = 0; $i -lt $text.Length; $i++) {
+        $char = $text[$i]
+        if ([char]::IsControl($char)) { throw 'Control characters are not permitted in typed text.' }
+        $code = [int]$char
+        if ([char]::IsHighSurrogate($char)) {
+            if ($i + 1 -ge $text.Length -or -not [char]::IsLowSurrogate($text[$i + 1])) { throw 'Typed text is not valid Unicode.' }
+            $code = [char]::ConvertToUtf32($char, $text[$i + 1])
+            $i++
+        } elseif ([char]::IsLowSurrogate($char)) {
+            throw 'Typed text is not valid Unicode.'
+        }
+        for ($r = 0; $r -lt $hidden.Length; $r += 2) {
+            if ($code -ge $hidden[$r] -and $code -le $hidden[$r + 1]) { throw 'Invisible or line-breaking characters are not permitted in typed text.' }
+        }
+    }
+}
+
 try {
     $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
     Add-Type -TypeDefinition @'
@@ -62,9 +86,9 @@ public static class JamesInput {
         'type_text' {
             $text = [string]$action.text
             if ($text.Length -eq 0 -or $text.Length -gt 2000) { throw 'Invalid text length.' }
+            Assert-Typeable $text
             $escaped = [Text.StringBuilder]::new()
             foreach ($char in $text.ToCharArray()) {
-                if ([char]::IsControl($char)) { throw 'Control characters are not permitted in typed text.' }
                 if ($char -eq '{') { [void]$escaped.Append('{{}') }
                 elseif ($char -eq '}') { [void]$escaped.Append('{}}') }
                 elseif ('+^%~()[]'.Contains([string]$char)) { [void]$escaped.Append('{' + $char + '}') }

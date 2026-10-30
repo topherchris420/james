@@ -90,8 +90,10 @@ without saying so.
 
 Write in the message box and choose **Send** or press Ctrl+Enter. Replies
 appear as the model writes them and are shown as Markdown: headings, lists,
-emphasis, code, quotes and tables. Links always show their full address and
-open only when clicked. Reasoning that a model writes in a leading `<think>`
+emphasis, code, quotes and tables. Links always show their full address.
+Clicking one opens a dialog that names the site, shows the address and warns
+when it carries a lot of text after the site name; the link opens in your
+browser only when you choose **Open in browser**. Reasoning that a model writes in a leading `<think>`
 block is folded away under "Model's reasoning (not checked)"; while a model
 reasons separately (Ollama's thinking models), James shows that it is
 thinking and keeps only the answer. Reasoning is never read aloud or treated
@@ -124,7 +126,8 @@ whole reply.
 messages. When the server reports the model's context window, history is
 trimmed to fit it with room for the reply; otherwise it is capped at about
 160 KB. James says when older messages were left out. Guide me and Suggest
-one action send no history, only the screenshot and the question.
+one action send no history and no Lab snapshot, only the screenshot and the
+question.
 
 **Retention.** James keeps at most 80 recent messages within 512 KiB of text.
 A message over 32 KiB is shortened at a character boundary and marked as
@@ -169,14 +172,18 @@ time, only after you approve exactly that input:
 1. **Propose.** Click a point in the screenshot, prepare a key or text on
    Computer control, or press **Suggest one action** to let a vision model
    propose one. Every proposal must be exactly one click inside the
-   screenshot, one listed key, or up to 1,000 printable characters with no
-   line breaks. A model's reply is refused before review if it holds several
+   screenshot, one listed key, or up to 1,000 characters of visible text on
+   one line: no line breaks, and no invisible formatting characters such as
+   zero-width or text-direction marks. A model's reply is refused before review if it holds several
    actions, text around the JSON, duplicate fields, shell commands, key
    chords, look-alike letters, coordinates that aren't plain pixels, or a
    claim of approval.
-2. **Review.** Computer control shows the exact input, the window it is
-   meant for, the reason (flagged when a model wrote it), and the screenshot
-   with the click point marked. Choose **Allow once** or **Deny**.
+2. **Review.** Computer control shows the exact input (typing in full, in a
+   scrollable box), the window it is meant for, the reason (flagged, and
+   shown on one line, when a model wrote it), and the screenshot with the
+   click point marked. When a model proposed a click, typing, or Enter,
+   Space, Delete or Backspace, tick **I checked what this does and where it
+   goes** first. Choose **Allow once** or **Deny**.
 3. **Countdown.** Allow once starts a five-second countdown so you can
    switch to the target window. **Cancel (Esc)** stops it. There is no
    system-wide stop key: Esc works only while James's window has focus.
@@ -241,7 +248,7 @@ backs off to once a minute while the Lab doesn't answer. The page explains
 the current stage in words, lists recent simulator results with how far
 each was checked, and counts what the Lab knows by its standing. **Share a
 Lab snapshot with my next questions** adds a short, labelled summary to each
-question; **Exactly what James would share with the model** shows that text
+chat question, never to Guide me or Suggest one action; **Exactly what James would share with the model** shows that text
 in full. A snapshot older than 15 seconds is never sent. James never
 starts, steers or approves anything in the Lab. See [LAB.md](LAB.md).
 
