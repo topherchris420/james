@@ -138,6 +138,7 @@ fn allow_once_refuses_a_model_click_until_the_person_checked_it() {
         ),
         at: Instant::now(),
         selection: None,
+        from_primary: true,
     });
     app.propose(Action::Click { x: 10, y: 10 }, "Press Send".into(), true);
     app.allow_once();

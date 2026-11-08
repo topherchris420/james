@@ -79,7 +79,12 @@ pub fn dictate(
     crate::whisper::dictate(timeout, config, cancel)
 }
 
-pub fn capture_screen(cancel: &Cancellation) -> Result<Screenshot, Error> {
+/// Monitor selection is Windows-only for now; the picker stays hidden here.
+pub fn list_displays() -> Result<Vec<crate::Display>, Error> {
+    Ok(Vec::new())
+}
+
+pub fn capture_screen(_display: Option<&str>, cancel: &Cancellation) -> Result<Screenshot, Error> {
     let png = if cfg!(target_os = "macos") {
         let tool = find_tool("screencapture")
             .ok_or_else(|| Error::Failed("macOS screencapture was not found".into()))?;

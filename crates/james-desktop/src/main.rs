@@ -545,6 +545,9 @@ struct Screen {
     /// A region the person drew to ask about just that part of the screen;
     /// `None` sends the whole screenshot.
     selection: Option<PixelRect>,
+    /// Whether this is the primary monitor. Reviewed clicks work only there,
+    /// because the input helper positions the cursor in primary-screen pixels.
+    from_primary: bool,
 }
 struct Pending {
     proposal: review::Proposal,
@@ -601,6 +604,13 @@ struct JamesApp {
     attach_screen: bool,
     /// Where a screenshot-region drag began, while it is in progress.
     region_drag_start: Option<egui::Pos2>,
+    /// The monitor to capture; empty is the primary one.
+    capture_display: String,
+    /// Connected monitors for the picker, loaded once off the UI thread.
+    displays: Option<Vec<james_platform::Display>>,
+    displays_worker: Option<Receiver<Vec<james_platform::Display>>>,
+    /// Whether the capture now running is of the primary monitor.
+    capture_from_primary: bool,
     pending: Option<Pending>,
     scheduled: Option<Scheduled>,
     action_text: String,
@@ -692,6 +702,10 @@ impl JamesApp {
             screen: None,
             attach_screen: false,
             region_drag_start: None,
+            capture_display: String::new(),
+            displays: None,
+            displays_worker: None,
+            capture_from_primary: true,
             pending: None,
             scheduled: None,
             action_text: String::new(),
@@ -873,6 +887,27 @@ impl JamesApp {
             Err(TryRecvError::Disconnected) => self.available_voices = Some(Vec::new()),
         }
     }
+    /// Loads the connected monitors once, off the UI thread, for the picker.
+    fn load_displays(&mut self) {
+        if self.displays.is_some() || self.displays_worker.is_some() {
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(james_platform::list_displays().unwrap_or_default());
+        });
+        self.displays_worker = Some(rx);
+    }
+    fn poll_displays(&mut self) {
+        let Some(rx) = self.displays_worker.take() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(list) => self.displays = Some(list),
+            Err(TryRecvError::Empty) => self.displays_worker = Some(rx),
+            Err(TryRecvError::Disconnected) => {}
+        }
+    }
     /// Forgets facts about a model when the selection changes, and asks again.
     fn model_changed(&mut self) {
         self.pending = None;
@@ -995,6 +1030,15 @@ impl JamesApp {
                 .is_none_or(|s| s.at.elapsed() > SCREEN_MAX_AGE)
         {
             self.fail("Capture a fresh screen first.");
+            self.page = Page::Screen;
+            return false;
+        }
+        // Reviewed clicks land in primary-screen pixels, so an action proposed
+        // from another monitor would click the wrong place. Keep Plan primary-only.
+        if mode == Ask::Plan && self.screen.as_ref().is_some_and(|s| !s.from_primary) {
+            self.fail(
+                "Suggest one action works on your primary monitor. Capture the primary display to propose a click.",
+            );
             self.page = Page::Screen;
             return false;
         }
@@ -1296,13 +1340,20 @@ impl JamesApp {
         if self.busy() {
             return;
         }
+        // Resolve the chosen monitor: its id for the helper, and whether it is
+        // the primary one (reviewed clicks can target only that).
+        let (display, primary) = match self.chosen_display() {
+            Some(d) => (Some(d.id.clone()), d.primary),
+            None => (None, true),
+        };
+        self.capture_from_primary = primary;
         self.screen = None;
         self.pending = None;
         self.attach_screen = false;
         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         self.launch(
-            "Capturing the primary screen after a 3-second delay...",
-            |job| {
+            "Capturing the screen after a 3-second delay...",
+            move |job| {
                 for _ in 0..30 {
                     if job.cancel.is_cancelled() {
                         return WorkerResult::Screen(Err("Capture cancelled".into()));
@@ -1310,10 +1361,23 @@ impl JamesApp {
                     std::thread::sleep(Duration::from_millis(100));
                 }
                 WorkerResult::Screen(
-                    james_platform::capture_screen(&job.cancel).map_err(|e| e.to_string()),
+                    james_platform::capture_screen(display.as_deref(), &job.cancel)
+                        .map_err(|e| e.to_string()),
                 )
             },
         );
+    }
+
+    /// The monitor the person chose to capture, if one is selected and still
+    /// present; `None` means the primary monitor.
+    fn chosen_display(&self) -> Option<&james_platform::Display> {
+        let id = self.capture_display.trim();
+        if id.is_empty() {
+            return None;
+        }
+        self.displays
+            .as_ref()
+            .and_then(|list| list.iter().find(|d| d.id == id))
     }
     fn speak(&mut self, text: String) {
         let voice = {
@@ -1637,6 +1701,7 @@ impl JamesApp {
                             texture,
                             at: Instant::now(),
                             selection: None,
+                            from_primary: self.capture_from_primary,
                         });
                         if std::mem::take(&mut self.setup_capture) {
                             self.info(format!("Screenshot taken. It stays in memory; discard it whenever you like.{shows_james}"));
@@ -2039,6 +2104,7 @@ impl JamesApp {
         self.receive(ctx);
         self.poll_info();
         self.poll_voices();
+        self.poll_displays();
         self.lab.poll();
         self.shortcuts(ctx);
         self.run_schedule();

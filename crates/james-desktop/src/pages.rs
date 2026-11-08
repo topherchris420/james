@@ -49,9 +49,29 @@ pub fn mark_steps(ui: &egui::Ui, rect: egui::Rect, marks: &[guide::Mark], size: 
 
 pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     ui.heading("Screen context");
-    ui.label("Capture your main screen when you choose. James hides for 3 seconds so you can bring the right app to the front, then shows you the picture. Nothing is captured in the background.");
+    ui.label("Capture a screen when you choose. James hides for 3 seconds so you can bring the right app to the front, then shows you the picture. Nothing is captured in the background.");
+    app.load_displays();
+    let displays = app.displays.clone().unwrap_or_default();
+    if displays.len() > 1 {
+        ui.horizontal(|ui| {
+            ui.label("Monitor:");
+            let selected = displays
+                .iter()
+                .find(|d| d.id == app.capture_display)
+                .map(|d| d.label.clone())
+                .unwrap_or_else(|| "Primary display".to_owned());
+            egui::ComboBox::from_id_salt("capture-display")
+                .selected_text(selected)
+                .show_ui(ui, |ui| {
+                    for d in &displays {
+                        ui.selectable_value(&mut app.capture_display, d.id.clone(), &d.label);
+                    }
+                });
+        });
+        ui.small("Reviewed clicks work on the primary monitor only. Other monitors are for questions and Guide me.");
+    }
     if ui
-        .add_enabled(!app.busy(), theme::primary(ui, "Capture primary screen"))
+        .add_enabled(!app.busy(), theme::primary(ui, "Capture screen"))
         .clicked()
     {
         app.capture(ctx);
@@ -88,8 +108,10 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
         if sees == Support::Unknown {
             ui.small("Your model app didn't say whether this model reads images; if it can't, the question will fail with an explanation.");
         }
-        if james_platform::can_control_input() {
+        if james_platform::can_control_input() && screen.from_primary {
             ui.small("Click the picture to choose a point for a click. Nothing is clicked yet: you review it first.");
+        } else if james_platform::can_control_input() {
+            ui.small("This monitor is for questions and Guide me. Reviewed clicks work on your primary monitor; capture it to propose a click.");
         }
         let response = ui
             .add(
@@ -100,14 +122,11 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
             )
             .on_hover_text("Your screenshot, kept in memory only");
         response.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::WidgetType::Image,
-                true,
-                "Screenshot of your primary screen",
-            )
+            egui::WidgetInfo::labeled(egui::WidgetType::Image, true, "Screenshot of your screen")
         });
         if response.clicked()
             && james_platform::can_control_input()
+            && screen.from_primary
             && let Some(pos) = response.interact_pointer_pos()
         {
             let x = ((pos.x - response.rect.min.x) / response.rect.width()

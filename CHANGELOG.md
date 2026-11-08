@@ -13,6 +13,14 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Added
 
+- **Choose which monitor to capture.** When more than one display is
+  connected, the Screen context page shows a **Monitor** picker next to the
+  capture button, so you can grab a screen other than the primary one. Vision
+  questions and **Guide me** work on any monitor. Reviewed clicks stay
+  primary-only — the input helper positions the cursor in primary-screen
+  pixels — so **Suggest one action** and click-to-point are offered only for a
+  primary-screen capture and explain why on another monitor. With a single
+  display the picker stays hidden and nothing changes.
 - **Ask about just part of the screen.** On the captured screenshot, drag a
   box over the area you mean; your next attached chat question then sends only
   that area to the model, not the whole screen. A size readout and a **Use
