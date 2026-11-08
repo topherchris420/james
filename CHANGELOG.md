@@ -13,6 +13,13 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Added
 
+- **Ask about just part of the screen.** On the captured screenshot, drag a
+  box over the area you mean; your next attached chat question then sends only
+  that area to the model, not the whole screen. A size readout and a **Use
+  whole screen** button show and clear the selection, which is outlined on the
+  picture. Guide me and Suggest one action are unchanged — they still send the
+  whole screenshot, because they rely on whole-screen coordinates. The crop is
+  made in memory for the request only and never saved.
 - **Choose the voice that reads answers aloud.** **Settings → Voice** now lists
   the text-to-speech voices installed on your computer (the Windows voices, or
   the macOS and `espeak-ng`/`speech-dispatcher` voices on the other systems) and

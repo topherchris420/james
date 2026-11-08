@@ -302,6 +302,98 @@ fn prepare_image(png: &[u8], max: u32) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Could not prepare the screenshot: {e}"))?;
     Ok(out.into_inner())
 }
+
+/// A rectangle inside a screenshot, in image pixels, so a question can be about
+/// just the part of the screen the person selected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PixelRect {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+/// Maps a drag between two points on the shown screenshot to a pixel rectangle
+/// in the image, clamped to its bounds. Returns `None` for a selection too small
+/// on a side, so a stray click or tiny drag never crops anything.
+fn pixel_rect_from_drag(
+    shown: egui::Rect,
+    start: egui::Pos2,
+    end: egui::Pos2,
+    width: u32,
+    height: u32,
+) -> Option<PixelRect> {
+    if shown.width() <= 0.0 || shown.height() <= 0.0 || width == 0 || height == 0 {
+        return None;
+    }
+    let to_pixel = |p: egui::Pos2| {
+        let fx = ((p.x - shown.min.x) / shown.width()).clamp(0.0, 1.0);
+        let fy = ((p.y - shown.min.y) / shown.height()).clamp(0.0, 1.0);
+        (
+            ((fx * width as f32).round() as u32).min(width),
+            ((fy * height as f32).round() as u32).min(height),
+        )
+    };
+    let (x0, y0) = to_pixel(start);
+    let (x1, y1) = to_pixel(end);
+    let (x, y) = (x0.min(x1), y0.min(y1));
+    let (w, h) = (x0.abs_diff(x1), y0.abs_diff(y1));
+    // The selection must cover a meaningful area: at least 1% of each side,
+    // and never fewer than eight pixels.
+    let min_w = (width / 100).max(8);
+    let min_h = (height / 100).max(8);
+    (w >= min_w && h >= min_h).then_some(PixelRect {
+        x,
+        y,
+        width: w.min(width - x),
+        height: h.min(height - y),
+    })
+}
+
+/// The screen-space rectangle for a stored selection, to outline it on the
+/// shown screenshot (the inverse of [`pixel_rect_from_drag`]).
+fn pixel_rect_to_screen(shown: egui::Rect, rect: PixelRect, width: u32, height: u32) -> egui::Rect {
+    let sx = shown.width() / width.max(1) as f32;
+    let sy = shown.height() / height.max(1) as f32;
+    egui::Rect::from_min_size(
+        egui::pos2(
+            shown.min.x + rect.x as f32 * sx,
+            shown.min.y + rect.y as f32 * sy,
+        ),
+        egui::vec2(rect.width as f32 * sx, rect.height as f32 * sy),
+    )
+}
+
+/// Outlines a rectangle with four line segments, which keeps one painter call
+/// shape across egui versions that changed `rect_stroke`.
+fn outline_rect(painter: &egui::Painter, rect: egui::Rect, stroke: egui::Stroke) {
+    let top_right = egui::pos2(rect.max.x, rect.min.y);
+    let bottom_left = egui::pos2(rect.min.x, rect.max.y);
+    painter.line_segment([rect.min, top_right], stroke);
+    painter.line_segment([top_right, rect.max], stroke);
+    painter.line_segment([rect.max, bottom_left], stroke);
+    painter.line_segment([bottom_left, rect.min], stroke);
+}
+
+/// Crops a screenshot PNG to a pixel rectangle and re-encodes it as PNG, so a
+/// question about a selected area sends only that area. Never saved.
+fn crop_png(png: &[u8], rect: PixelRect) -> Result<Vec<u8>, String> {
+    let image = image::load_from_memory_with_format(png, image::ImageFormat::Png)
+        .map_err(|e| format!("Could not read the screenshot: {e}"))?;
+    let x = rect.x.min(image.width());
+    let y = rect.y.min(image.height());
+    let w = rect.width.min(image.width().saturating_sub(x));
+    let h = rect.height.min(image.height().saturating_sub(y));
+    if w == 0 || h == 0 {
+        return Err("The selected area is outside the screenshot".into());
+    }
+    let cropped = image.crop_imm(x, y, w, h);
+    let mut out = std::io::Cursor::new(Vec::new());
+    cropped
+        .write_to(&mut out, image::ImageFormat::Png)
+        .map_err(|e| format!("Could not prepare the selected area: {e}"))?;
+    Ok(out.into_inner())
+}
 /// Maps a point in the scaled image the model saw back to the real screen.
 fn to_screen(point: (u32, u32), sent: (u32, u32), screen: (u32, u32)) -> (u32, u32) {
     let map = |v: u32, from: u32, to: u32| {
@@ -450,6 +542,9 @@ struct Screen {
     capture: Screenshot,
     texture: egui::TextureHandle,
     at: Instant,
+    /// A region the person drew to ask about just that part of the screen;
+    /// `None` sends the whole screenshot.
+    selection: Option<PixelRect>,
 }
 struct Pending {
     proposal: review::Proposal,
@@ -504,6 +599,8 @@ struct JamesApp {
     page: Page,
     screen: Option<Screen>,
     attach_screen: bool,
+    /// Where a screenshot-region drag began, while it is in progress.
+    region_drag_start: Option<egui::Pos2>,
     pending: Option<Pending>,
     scheduled: Option<Scheduled>,
     action_text: String,
@@ -594,6 +691,7 @@ impl JamesApp {
             page: Page::Chat,
             screen: None,
             attach_screen: false,
+            region_drag_start: None,
             pending: None,
             scheduled: None,
             action_text: String::new(),
@@ -913,6 +1011,12 @@ impl JamesApp {
         } else {
             None
         };
+        // A chat question about a selected area sends only that area. Guide me
+        // and Suggest one action need whole-screen coordinates, so they always
+        // send the full screenshot.
+        let region = (mode == Ask::Chat)
+            .then(|| self.screen.as_ref().and_then(|s| s.selection))
+            .flatten();
         let mut context = vec![ChatMessage::new(
             "system",
             if mode == Ask::Test {
@@ -993,7 +1097,14 @@ impl JamesApp {
             },
             move |job| {
                 let result = image
-                    .map(|(png, _, _)| prepare_image(&png, MAX_IMAGE_SIDE))
+                    .map(|(png, _, _)| {
+                        // Crop to the selected area when one was drawn; fall back
+                        // to the whole screenshot if the crop cannot be produced.
+                        let png = region
+                            .and_then(|rect| crop_png(&png, rect).ok())
+                            .unwrap_or(png);
+                        prepare_image(&png, MAX_IMAGE_SIDE)
+                    })
                     .transpose()
                     .and_then(|png| {
                         LocalClient::for_provider(provider, port)
@@ -1525,6 +1636,7 @@ impl JamesApp {
                             capture,
                             texture,
                             at: Instant::now(),
+                            selection: None,
                         });
                         if std::mem::take(&mut self.setup_capture) {
                             self.info(format!("Screenshot taken. It stays in memory; discard it whenever you like.{shows_james}"));

@@ -1,6 +1,7 @@
 //! Screen context, Computer control and Settings.
 use crate::{
-    JamesApp, Page, Tone, chat, copyable, guide, numeric_port, review,
+    JamesApp, Page, PixelRect, Tone, chat, copyable, guide, numeric_port, outline_rect,
+    pixel_rect_from_drag, pixel_rect_to_screen, review,
     session::{SetupStep, ThemeChoice},
     theme,
 };
@@ -57,6 +58,9 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     }
     let mut picked = None;
     let mut discard = false;
+    // None leaves the selection as it is; Some(x) sets it after the read-only
+    // borrow of the screenshot ends.
+    let mut set_selection: Option<Option<PixelRect>> = None;
     if let Some(screen) = &app.screen {
         let age = screen.at.elapsed().as_secs();
         ui.label(format!(
@@ -92,7 +96,7 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
                 egui::Image::new(&screen.texture)
                     .max_size(egui::vec2(ui.available_width(), 440.0))
                     .maintain_aspect_ratio(true)
-                    .sense(egui::Sense::click()),
+                    .sense(egui::Sense::click_and_drag()),
             )
             .on_hover_text("Your screenshot, kept in memory only");
         response.widget_info(|| {
@@ -115,6 +119,40 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
                 y.min(screen.capture.height - 1),
             ));
         }
+        // Drag across the screenshot to ask about just one area of it.
+        let shown = response.rect;
+        if response.drag_started() {
+            app.region_drag_start = response.interact_pointer_pos();
+        }
+        if response.dragged()
+            && let (Some(start), Some(now)) =
+                (app.region_drag_start, response.interact_pointer_pos())
+        {
+            outline_rect(
+                ui.painter(),
+                egui::Rect::from_two_pos(start, now).intersect(shown),
+                egui::Stroke::new(2.0_f32, theme::accent(ui)),
+            );
+        }
+        if response.drag_stopped() {
+            let start = app.region_drag_start.take();
+            if let (Some(start), Some(end)) = (start, response.interact_pointer_pos()) {
+                set_selection = Some(pixel_rect_from_drag(
+                    shown,
+                    start,
+                    end,
+                    screen.capture.width,
+                    screen.capture.height,
+                ));
+            }
+        }
+        if let Some(rect) = screen.selection {
+            outline_rect(
+                ui.painter(),
+                pixel_rect_to_screen(shown, rect, screen.capture.width, screen.capture.height),
+                egui::Stroke::new(2.0_f32, theme::accent(ui)),
+            );
+        }
         if let Some(p) = &app.pending {
             mark_click(ui, response.rect, &p.proposal.action, p.width, p.height);
         }
@@ -128,6 +166,17 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
             );
             ui.small("The numbers mark the steps in James's last Guide me answer. Your model placed them, and they may be off.");
         }
+        if let Some(rect) = screen.selection {
+            ui.small(format!(
+                "Your next attached question will be about the selected {} × {} area only.",
+                rect.width, rect.height
+            ));
+            if ui.button("Use whole screen").clicked() {
+                set_selection = Some(None);
+            }
+        } else if sees != Support::No {
+            ui.small("Drag across the picture to ask about just one area; otherwise the whole screen is sent.");
+        }
         discard = ui.button("Discard screenshot").clicked();
     } else {
         ui.add_space(8.0);
@@ -138,6 +187,11 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
         app.screen = None;
         app.pending = None;
         app.attach_screen = false;
+    }
+    if let Some(selection) = set_selection
+        && let Some(screen) = app.screen.as_mut()
+    {
+        screen.selection = selection;
     }
     if let Some((x, y)) = picked {
         app.action_x = x;
