@@ -516,6 +516,11 @@ struct JamesApp {
     guide_after_capture: bool,
     whisper_program: String,
     whisper_model: String,
+    /// The installed voice that reads answers aloud; empty is the system default.
+    tts_voice: String,
+    /// Installed reading voices for the picker, loaded once off the UI thread.
+    available_voices: Option<Vec<String>>,
+    voices_worker: Option<Receiver<Vec<String>>>,
     listening: james_platform::Listening,
     setup: Setup,
     /// The outcome of the last Find my model server.
@@ -602,6 +607,9 @@ impl JamesApp {
             listening: james_platform::listening(&voice_config),
             whisper_program: saved.whisper_program,
             whisper_model: saved.whisper_model,
+            tts_voice: saved.tts_voice,
+            available_voices: None,
+            voices_worker: None,
             setup,
             setup_note: None,
             setup_reply: None,
@@ -655,6 +663,7 @@ impl JamesApp {
             lab_port: numeric_port(&self.lab.port).unwrap_or(5173),
             whisper_program: self.whisper_program.trim().to_owned(),
             whisper_model: self.whisper_model.trim().to_owned(),
+            tts_voice: self.tts_voice.trim().to_owned(),
             keep_history: self.keep_history,
             preferences: self.prefs.clone(),
             setup: Some(self.setup.clone()),
@@ -742,6 +751,28 @@ impl JamesApp {
             Ok(info) => self.model_info = Some((model, info)),
             Err(TryRecvError::Empty) => self.info_worker = Some((model, rx)),
             Err(TryRecvError::Disconnected) => {}
+        }
+    }
+    /// Loads the installed reading voices once, off the UI thread, because the
+    /// query launches a short-lived OS helper. Safe to call every frame.
+    fn load_voices(&mut self) {
+        if self.available_voices.is_some() || self.voices_worker.is_some() {
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(james_platform::list_voices().unwrap_or_default());
+        });
+        self.voices_worker = Some(rx);
+    }
+    fn poll_voices(&mut self) {
+        let Some(rx) = self.voices_worker.take() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(voices) => self.available_voices = Some(voices),
+            Err(TryRecvError::Empty) => self.voices_worker = Some(rx),
+            Err(TryRecvError::Disconnected) => self.available_voices = Some(Vec::new()),
         }
     }
     /// Forgets facts about a model when the selection changes, and asks again.
@@ -1174,12 +1205,20 @@ impl JamesApp {
         );
     }
     fn speak(&mut self, text: String) {
+        let voice = {
+            let voice = self.tts_voice.trim();
+            (!voice.is_empty()).then(|| voice.to_owned())
+        };
         self.launch("Speaking — Stop silences James", move |job| {
             let result = (|| {
                 let chars: Vec<char> = text.chars().collect();
                 for chunk in chars.chunks(6000) {
-                    james_platform::speak(&chunk.iter().collect::<String>(), &job.cancel)
-                        .map_err(|e| e.to_string())?;
+                    james_platform::speak(
+                        &chunk.iter().collect::<String>(),
+                        voice.as_deref(),
+                        &job.cancel,
+                    )
+                    .map_err(|e| e.to_string())?;
                 }
                 Ok(())
             })();
@@ -1887,6 +1926,7 @@ impl JamesApp {
         }
         self.receive(ctx);
         self.poll_info();
+        self.poll_voices();
         self.lab.poll();
         self.shortcuts(ctx);
         self.run_schedule();

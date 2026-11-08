@@ -157,27 +157,60 @@ fn via_private_file(
     })
 }
 
-pub fn speak(text: &str, cancel: &Cancellation) -> Result<(), Error> {
+pub fn speak(text: &str, voice: Option<&str>, cancel: &Cancellation) -> Result<(), Error> {
     if cfg!(target_os = "macos") {
         let say = find_tool("say")
             .ok_or_else(|| Error::Failed("macOS speech (say) was not found".into()))?;
         let mut command = Command::new(say);
+        if let Some(voice) = voice {
+            command.args(["-v", voice]);
+        }
         command.args(["-f", "-"]);
         return supervise(command, text.as_bytes(), SPEECH_LIMIT, cancel).map(|_| ());
     }
     if let Some(espeak) = find_tool("espeak-ng").or_else(|| find_tool("espeak")) {
         let mut command = Command::new(espeak);
+        if let Some(voice) = voice {
+            command.args(["-v", voice]);
+        }
         command.arg("--stdin");
         return supervise(command, text.as_bytes(), SPEECH_LIMIT, cancel).map(|_| ());
     }
     if let Some(spd) = find_tool("spd-say") {
         let mut command = Command::new(spd);
+        if let Some(voice) = voice {
+            command.args(["-y", voice]);
+        }
         command.args(["--wait", "--", text]);
         return supervise(command, &[], SPEECH_LIMIT, cancel).map(|_| ());
     }
     Err(Error::Failed(
         "No speech voice found. Install espeak-ng (for example: sudo apt install espeak-ng) to hear James.".into(),
     ))
+}
+
+/// Installed voices on macOS (`say -v '?'`) or Linux (`espeak-ng --voices`).
+/// Returns an empty list where the speech tool cannot enumerate voices.
+pub fn list_voices() -> Result<Vec<String>, Error> {
+    let cancel = Cancellation::default();
+    if cfg!(target_os = "macos") {
+        let Some(say) = find_tool("say") else {
+            return Ok(Vec::new());
+        };
+        let mut command = Command::new(say);
+        command.args(["-v", "?"]);
+        let output = supervise(command, &[], SPEECH_LIMIT, &cancel)?;
+        return Ok(crate::parse_say_voices(&String::from_utf8_lossy(&output)));
+    }
+    if let Some(espeak) = find_tool("espeak-ng").or_else(|| find_tool("espeak")) {
+        let mut command = Command::new(espeak);
+        command.arg("--voices");
+        let output = supervise(command, &[], SPEECH_LIMIT, &cancel)?;
+        return Ok(crate::parse_espeak_voices(&String::from_utf8_lossy(
+            &output,
+        )));
+    }
+    Ok(Vec::new())
 }
 
 pub fn execute(

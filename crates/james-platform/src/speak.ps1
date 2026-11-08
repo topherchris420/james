@@ -5,6 +5,12 @@ try {
     $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
     Add-Type -AssemblyName System.Speech
     $speaker = [Speech.Synthesis.SpeechSynthesizer]::new()
-    try { $speaker.Speak([string]$request.text) }
+    try {
+        if ($request.voice) {
+            # An unknown or removed voice falls back to the system default.
+            try { $speaker.SelectVoice([string]$request.voice) } catch { }
+        }
+        $speaker.Speak([string]$request.text)
+    }
     finally { $speaker.Dispose() }
 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }

@@ -19,8 +19,11 @@ pub fn capture_screen(_: &Cancellation) -> Result<Screenshot, Error> {
 pub fn dictate(_: Duration, _: &VoiceConfig, _: &Cancellation) -> Result<String, Error> {
     Err(Error::Unsupported(MESSAGE))
 }
-pub fn speak(_: &str, _: &Cancellation) -> Result<(), Error> {
+pub fn speak(_: &str, _: Option<&str>, _: &Cancellation) -> Result<(), Error> {
     Err(Error::Unsupported(MESSAGE))
+}
+pub fn list_voices() -> Result<Vec<String>, Error> {
+    Ok(Vec::new())
 }
 pub fn execute(
     _: &Action,

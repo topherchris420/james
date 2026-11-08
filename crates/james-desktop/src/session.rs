@@ -121,6 +121,8 @@ pub struct SavedSession {
     pub lab_port: u16,
     pub whisper_program: String,
     pub whisper_model: String,
+    /// The installed voice used to read answers aloud; empty is the system default.
+    pub tts_voice: String,
     /// Off means conversations live in memory only and are gone when James closes.
     pub keep_history: bool,
     pub preferences: Preferences,
@@ -141,6 +143,7 @@ impl Default for SavedSession {
             lab_port: 5173,
             whisper_program: String::new(),
             whisper_model: String::new(),
+            tts_voice: String::new(),
             keep_history: true,
             preferences: Preferences::default(),
             setup: None,

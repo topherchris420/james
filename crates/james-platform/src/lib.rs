@@ -301,13 +301,89 @@ pub fn dictate(
     sys::dictate(timeout, config, cancel)
 }
 
-pub fn speak(text: &str, cancel: &Cancellation) -> Result<(), Error> {
+/// Speaks `text` aloud. `voice` names an installed voice from [`list_voices`];
+/// `None`, or a voice the OS no longer has, uses the system default.
+pub fn speak(text: &str, voice: Option<&str>, cancel: &Cancellation) -> Result<(), Error> {
     if text.trim().is_empty() || text.chars().count() > 8000 {
         return Err(Error::InvalidInput(
             "Speech requires 1–8000 characters".into(),
         ));
     }
-    sys::speak(text, cancel)
+    let voice = match voice {
+        Some(name) => Some(valid_voice(name)?),
+        None => None,
+    };
+    sys::speak(text, voice, cancel)
+}
+
+/// The installed text-to-speech voices on this computer, for the reading-voice
+/// picker. An empty list means only the system default is offered. This launches
+/// a short-lived OS query, so it must not run on the UI thread.
+pub fn list_voices() -> Result<Vec<String>, Error> {
+    sys::list_voices()
+}
+
+/// A voice name is chosen by the user from [`list_voices`], but is still bounded
+/// and rejected if it carries control characters before it reaches an OS helper.
+fn valid_voice(name: &str) -> Result<&str, Error> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > 128 || name.chars().any(char::is_control) {
+        return Err(Error::InvalidInput(
+            "A reading voice name is 1–128 characters with no control characters".into(),
+        ));
+    }
+    Ok(name)
+}
+
+/// Parses the JSON array of voice names emitted by the Windows voices helper.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn parse_voice_list_json(body: &[u8]) -> Result<Vec<String>, Error> {
+    let names: Vec<String> = serde_json::from_slice(body)
+        .map_err(|e| Error::Failed(format!("Could not read the installed voices: {e}")))?;
+    Ok(clean_voice_names(names))
+}
+
+/// Parses `say -v '?'` output (macOS): on each line the voice name is the text
+/// before the first run of two or more spaces.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn parse_say_voices(output: &str) -> Vec<String> {
+    let names = output
+        .lines()
+        .map(|line| {
+            let line = line.trim_end();
+            let end = line.find("  ").unwrap_or(line.len());
+            line[..end].trim().to_owned()
+        })
+        .collect();
+    clean_voice_names(names)
+}
+
+/// Parses `espeak-ng --voices` output: a header row, then rows whose fourth
+/// whitespace-separated column is the voice name.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn parse_espeak_voices(output: &str) -> Vec<String> {
+    let names = output
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split_whitespace().nth(3).map(str::to_owned))
+        .collect();
+    clean_voice_names(names)
+}
+
+/// Bounds, de-duplicates and orders voice names from any OS lister, applying the
+/// same limits as [`valid_voice`] so the picker can only offer usable names.
+#[cfg_attr(not(any(windows, unix)), allow(dead_code))]
+fn clean_voice_names(names: Vec<String>) -> Vec<String> {
+    let mut names: Vec<String> = names
+        .into_iter()
+        .map(|name| name.trim().to_owned())
+        .filter(|name| {
+            !name.is_empty() && name.chars().count() <= 128 && !name.chars().any(char::is_control)
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+    names
 }
 
 /// Executes exactly one consumed review. Revalidates the live screen
@@ -596,9 +672,38 @@ mod tests {
             Err(Error::InvalidInput(_))
         ));
         assert!(matches!(
-            speak("", &Cancellation::default()),
+            speak("", None, &Cancellation::default()),
             Err(Error::InvalidInput(_))
         ));
+        // A reading voice carrying a control character is refused before any
+        // helper process is launched.
+        let bad = format!("Bad{}Voice", char::from(7));
+        assert!(matches!(
+            speak("Hello", Some(&bad), &Cancellation::default()),
+            Err(Error::InvalidInput(_))
+        ));
+    }
+    #[test]
+    fn reading_voice_names_are_validated_and_parsed() {
+        assert_eq!(valid_voice("  Microsoft Zira  ").unwrap(), "Microsoft Zira");
+        assert!(valid_voice("   ").is_err());
+        assert!(valid_voice(&"x".repeat(129)).is_err());
+        assert!(valid_voice(&format!("a{}b", char::from(9))).is_err());
+
+        // Windows helper: a JSON array, cleaned, sorted and de-duplicated.
+        assert_eq!(
+            parse_voice_list_json(br#"["Zira","David","Zira"," "]"#).unwrap(),
+            vec!["David", "Zira"]
+        );
+        assert!(parse_voice_list_json(b"not json").is_err());
+
+        // macOS `say -v '?'`: the name is the text before the first double space.
+        let say = "Alex                en_US    # Hello.\nFiona               en_IE    # Hi.\n";
+        assert_eq!(parse_say_voices(say), vec!["Alex", "Fiona"]);
+
+        // espeak-ng `--voices`: a header row, then the fourth column per row.
+        let espeak = "Pty Language Age/Gender VoiceName          File\n 5  en         M          english            en\n 5  fr         M          french             fr\n";
+        assert_eq!(parse_espeak_voices(espeak), vec!["english", "french"]);
     }
     #[test]
     fn png_dimensions_come_from_the_header() {
@@ -720,7 +825,7 @@ mod tests {
                 if dictation {
                     dictate(Duration::from_secs(60), &VoiceConfig::default(), &cancel).map(|_| ())
                 } else {
-                    speak(&"Speech cancellation check. ".repeat(200), &cancel)
+                    speak(&"Speech cancellation check. ".repeat(200), None, &cancel)
                 }
             });
             std::thread::sleep(Duration::from_millis(500));
