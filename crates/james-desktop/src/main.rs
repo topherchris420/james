@@ -32,6 +32,7 @@ const PLAN_CONTEXT: &str = "Return ONLY a JSON object with exactly two fields: r
 const GUIDE_CONTEXT: &str = "The user is stuck and attached one snapshot of their primary monitor. In under 120 words, plainly say what on the screen matters for their question, then give at most three short, concrete next steps they can take themselves. Quote visible labels exactly so they can find them. Do not output JSON and do not claim to act; the answer may be read aloud. If the snapshot is unclear, say what you would need to see.";
 const GUIDE_QUESTION: &str = "I'm stuck. What should I do next on this screen?";
 const VOICE_CONTEXT: &str = "This turn is a spoken conversation. Answer conversationally in a few sentences unless asked for detail; your reply will be read aloud.";
+const CRITIC_CONTEXT: &str = "You are a careful reviewer checking ONE action another model proposed to take on the user's computer. You can see the same screenshot. In one or two sentences, judge only whether this single action is safe to run and matches what the user asked for. Call out anything irreversible (sending, submitting, deleting, buying), a wrong or risky target, or a mismatch with the user's goal. Do not propose a different action or any coordinates. Begin your reply with OK if it looks fine, or CAUTION if the user should look closely before approving.";
 const TEST_CONTEXT: &str = "You are James, a friendly desktop assistant. This is a connection test: reply with one short, friendly sentence.";
 const TEST_QUESTION: &str = "Hello! Please reply with one short sentence so I know you're working.";
 const HELP_URL: &str = "https://github.com/topherchris420/james/blob/main/docs/GETTING_STARTED.md";
@@ -394,6 +395,39 @@ fn crop_png(png: &[u8], rect: PixelRect) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Could not prepare the selected area: {e}"))?;
     Ok(out.into_inner())
 }
+/// Builds the second-pass reviewer's prompt: the user's goal, the proposed
+/// action located as a percentage of the screenshot (resolution-independent, so
+/// it fits the downscaled image the reviewer sees), and its stated reason.
+fn critic_messages(
+    goal: &str,
+    action: &Action,
+    screen: (u32, u32),
+    rationale: &str,
+) -> Vec<ChatMessage> {
+    let placed = match action {
+        Action::Click { x, y } if screen.0 > 0 && screen.1 > 0 => format!(
+            " That point is {:.0}% from the left and {:.0}% from the top of the screenshot.",
+            (f64::from(*x) / f64::from(screen.0)) * 100.0,
+            (f64::from(*y) / f64::from(screen.1)) * 100.0,
+        ),
+        _ => String::new(),
+    };
+    let goal = goal.trim();
+    let goal = if goal.is_empty() {
+        "(not recorded)"
+    } else {
+        goal
+    };
+    let body = format!(
+        "The user asked: {goal}\n\nA first model looked at this screenshot and proposes ONE action: {}.{placed}\nIts stated reason: {}",
+        review::describe(action),
+        rationale.trim(),
+    );
+    vec![
+        ChatMessage::new("system", CRITIC_CONTEXT),
+        ChatMessage::new("user", body),
+    ]
+}
 /// Maps a point in the scaled image the model saw back to the real screen.
 fn to_screen(point: (u32, u32), sent: (u32, u32), screen: (u32, u32)) -> (u32, u32) {
     let map = |v: u32, from: u32, to: u32| {
@@ -473,6 +507,13 @@ enum WorkerResult {
     /// The model is reasoning before it answers.
     Thinking,
     Chat(Result<String, String>, Ask),
+    /// A second model pass's critique of an action the first model proposed,
+    /// carried with the action so it reaches the review card together.
+    Reviewed {
+        action: Action,
+        rationale: String,
+        note: Result<String, String>,
+    },
     Screen(Result<Screenshot, String>),
     Dictation(Result<String, String>),
     Speech(Result<(), String>),
@@ -561,6 +602,10 @@ struct Pending {
     /// Required before Allow once when a model proposed an input that
     /// `review::needs_second_look` covers.
     checked: bool,
+    /// A second model pass's note on this proposed action, shown on the review
+    /// card. `None` when the person chose the action, or the pass is off or
+    /// didn't run.
+    review_note: Option<String>,
 }
 impl Pending {
     fn awaits_second_look(&self) -> bool {
@@ -1425,8 +1470,50 @@ impl JamesApp {
             captured_at: screen.at,
             target: screen.capture.target.clone(),
             checked: false,
+            review_note: None,
         });
         self.page = Page::Actions;
+    }
+    /// Runs a second model pass over a model-proposed action before it reaches
+    /// the review card, so the person sees a short critique with the action.
+    /// Falls back to proposing directly if the pass cannot start.
+    fn review_proposal(&mut self, action: Action, rationale: String) {
+        let Some(screen) = &self.screen else {
+            self.propose(action, rationale, true);
+            return;
+        };
+        let Ok(port) = numeric_port(&self.port) else {
+            self.propose(action, rationale, true);
+            return;
+        };
+        let model = self.model.trim().to_owned();
+        if model.is_empty() {
+            self.propose(action, rationale, true);
+            return;
+        }
+        let png = screen.capture.png.clone();
+        let dims = (screen.capture.width, screen.capture.height);
+        let goal = self
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.clone())
+            .unwrap_or_default();
+        let messages = critic_messages(&goal, &action, dims, &rationale);
+        let provider = self.provider;
+        self.launch_model("Double-checking the proposed action...", move |_job| {
+            let note = prepare_image(&png, MAX_IMAGE_SIDE).and_then(|prepared| {
+                LocalClient::for_provider(provider, port)
+                    .and_then(|c| c.chat_stream(&model, &messages, Some(&prepared), |_event| {}))
+                    .map_err(|e| explain(provider, port, &model, e))
+            });
+            WorkerResult::Reviewed {
+                action,
+                rationale,
+                note,
+            }
+        });
     }
     /// Turns Allow once into a scheduled, one-use review.
     fn allow_once(&mut self) {
@@ -1668,7 +1755,11 @@ impl JamesApp {
                                 }
                                 (action, _, _) => action,
                             };
-                            self.propose(action, p.rationale, true);
+                            if self.prefs.review_actions {
+                                self.review_proposal(action, p.rationale);
+                            } else {
+                                self.propose(action, p.rationale, true);
+                            }
                         }
                         Err(e) => self.tell(
                             Tone::Warn,
@@ -1677,6 +1768,25 @@ impl JamesApp {
                     }
                 } else if !self.answer_aloud(&reply) {
                     self.info("Reply received from the model on this computer.");
+                }
+            }
+            WorkerResult::Reviewed {
+                action,
+                rationale,
+                note,
+            } => {
+                let note = match note {
+                    Ok(text) => {
+                        let text = text.trim();
+                        (!text.is_empty()).then(|| text.chars().take(600).collect())
+                    }
+                    Err(e) => Some(format!(
+                        "The second-pass review couldn't finish ({e}). Judge the action yourself."
+                    )),
+                };
+                self.propose(action, rationale, true);
+                if let Some(pending) = &mut self.pending {
+                    pending.review_note = note;
                 }
             }
             WorkerResult::Screen(Ok(capture)) => {

@@ -13,6 +13,15 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Added
 
+- **Second-pass review of a proposed action.** Before you review a click, key
+  press or typing that **Suggest one action** proposed, a second model pass
+  looks at the same screenshot and writes a short note — flagging anything
+  irreversible or off-target — shown with the action on the review card. You
+  still approve every action yourself; the note is a prompt to look, not a
+  gate. On by default; it costs one extra model request, so it adds a short
+  wait, and can be turned off in **Settings → Reviewed actions**. James's local
+  take on Korso's planner+reviewer coordination, kept inside James's
+  one-approval-one-action model.
 - **Choose which monitor to capture.** When more than one display is
   connected, the Screen context page shows a **Monitor** picker next to the
   capture button, so you can grab a screen other than the primary one. Vision

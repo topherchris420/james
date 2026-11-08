@@ -408,6 +408,19 @@ pub fn actions(app: &mut JamesApp, ui: &mut egui::Ui) {
             );
         }
     }
+    if let Some(note) = &pending.review_note {
+        // A second model pass's check, framed and labelled so it never reads
+        // as James's own guarantee.
+        egui::Frame::group(ui.style())
+            .fill(ui.visuals().faint_bg_color)
+            .show(ui, |ui| {
+                ui.label(RichText::new("Second-pass review").strong());
+                ui.label(note);
+                ui.small(
+                    "A second model pass wrote this check. It is not a guarantee; judge the action itself.",
+                );
+            });
+    }
     match &pending.target {
         Some(target) => ui.label(format!(
             "In: {}. James sends nothing unless this window is in front when the countdown ends.",
@@ -501,6 +514,8 @@ pub fn settings(app: &mut JamesApp, ui: &mut egui::Ui) {
     voice_settings(app, ui);
     ui.separator();
     guide_settings(app, ui);
+    ui.separator();
+    review_settings(app, ui);
     ui.separator();
     privacy(app, ui);
     ui.separator();
@@ -736,6 +751,20 @@ fn guide_settings(app: &mut JamesApp, ui: &mut egui::Ui) {
         app.save_session();
     }
     ui.label("Your model decides where each number goes, and smaller models often put them in the wrong place. The written steps are the same either way: find the label each step names before you click.");
+}
+
+fn review_settings(app: &mut JamesApp, ui: &mut egui::Ui) {
+    ui.label(RichText::new("Reviewed actions").size(18.0).strong());
+    if ui
+        .checkbox(
+            &mut app.prefs.review_actions,
+            "Double-check a proposed action before I review it",
+        )
+        .changed()
+    {
+        app.save_session();
+    }
+    ui.label("When Suggest one action proposes a click, key or typing, a second model pass looks at the same screenshot and writes a short note — flagging anything irreversible or off-target — shown with the action on the review card. You still approve every action yourself. This costs one extra model request, so it adds a short wait.");
 }
 
 /// whisper.cpp setup for macOS and Linux: optional explicit paths, a check

@@ -146,6 +146,8 @@ flowchart TD
 
 An approval is consumed once. James records the intended action before sending input and retains that record until you check the outcome. After an interruption, it shows the unresolved action and never retries it automatically. Model output and voice cannot grant approval; there is no model-accessible shell or action chain.
 
+When **Reviewed actions** is on (the default), a second model pass checks a proposed action against the same screenshot and writes a short note — flagging anything irreversible or off-target — shown with the action on the review card, so you weigh the action and that check together. You still approve every action yourself; the note is a prompt to look, not a gate.
+
 **The checks have limits.** Target matching depends on the window identity captured with the screenshot; when it is unavailable, James warns that checking is reduced. A window's contents or focus can still change. **Cancel**, or Esc while James has focus, stops the countdown; there is no global emergency key, and input already sent cannot be undone.
 
 Read [Security](SECURITY.md) and [Supervision](docs/SUPERVISION.md) for the exact boundaries. James is not an operating-system sandbox.

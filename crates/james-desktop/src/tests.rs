@@ -104,6 +104,37 @@ fn a_drag_maps_to_image_pixels_and_ignores_tiny_selections() {
 }
 
 #[test]
+fn critic_prompt_states_goal_action_and_location() {
+    let msgs = critic_messages(
+        "open the file menu",
+        &Action::Click { x: 300, y: 60 },
+        (600, 300),
+        "The File menu is at the top left.",
+    );
+    assert_eq!(msgs.len(), 2);
+    assert_eq!(msgs[0].role, "system");
+    let body = &msgs[1].content;
+    assert!(body.contains("open the file menu"), "{body}");
+    assert!(body.contains("The File menu is at the top left."), "{body}");
+    // 300/600 = 50% across, 60/300 = 20% down.
+    assert!(body.contains("50% from the left"), "{body}");
+    assert!(body.contains("20% from the top"), "{body}");
+    // Typing carries no click location, and a missing goal is stated plainly.
+    let typed = critic_messages(
+        "   ",
+        &Action::TypeText { text: "hi".into() },
+        (600, 300),
+        "",
+    );
+    assert!(
+        typed[1].content.contains("(not recorded)"),
+        "{}",
+        typed[1].content
+    );
+    assert!(!typed[1].content.contains("% from the left"));
+}
+
+#[test]
 fn transcript_only_includes_conversation_roles() {
     let text = chat::transcript(&[
         ChatMessage::new("system", "private instructions"),
