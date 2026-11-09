@@ -1,6 +1,7 @@
 //! Screen context, Computer control and Settings.
 use crate::{
-    JamesApp, Page, Tone, chat, copyable, guide, numeric_port, review,
+    JamesApp, Page, PixelRect, Tone, chat, copyable, guide, numeric_port, outline_rect,
+    pixel_rect_from_drag, pixel_rect_to_screen, review,
     session::{SetupStep, ThemeChoice},
     theme,
 };
@@ -48,15 +49,38 @@ pub fn mark_steps(ui: &egui::Ui, rect: egui::Rect, marks: &[guide::Mark], size: 
 
 pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     ui.heading("Screen context");
-    ui.label("Capture your main screen when you choose. James hides for 3 seconds so you can bring the right app to the front, then shows you the picture. Nothing is captured in the background.");
+    ui.label("Capture a screen when you choose. James hides for 3 seconds so you can bring the right app to the front, then shows you the picture. Nothing is captured in the background.");
+    app.load_displays();
+    let displays = app.displays.clone().unwrap_or_default();
+    if displays.len() > 1 {
+        ui.horizontal(|ui| {
+            ui.label("Monitor:");
+            let selected = displays
+                .iter()
+                .find(|d| d.id == app.capture_display)
+                .map(|d| d.label.clone())
+                .unwrap_or_else(|| "Primary display".to_owned());
+            egui::ComboBox::from_id_salt("capture-display")
+                .selected_text(selected)
+                .show_ui(ui, |ui| {
+                    for d in &displays {
+                        ui.selectable_value(&mut app.capture_display, d.id.clone(), &d.label);
+                    }
+                });
+        });
+        ui.small("Reviewed clicks work on the primary monitor only. Other monitors are for questions and Guide me.");
+    }
     if ui
-        .add_enabled(!app.busy(), theme::primary(ui, "Capture primary screen"))
+        .add_enabled(!app.busy(), theme::primary(ui, "Capture screen"))
         .clicked()
     {
         app.capture(ctx);
     }
     let mut picked = None;
     let mut discard = false;
+    // None leaves the selection as it is; Some(x) sets it after the read-only
+    // borrow of the screenshot ends.
+    let mut set_selection: Option<Option<PixelRect>> = None;
     if let Some(screen) = &app.screen {
         let age = screen.at.elapsed().as_secs();
         ui.label(format!(
@@ -84,26 +108,25 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
         if sees == Support::Unknown {
             ui.small("Your model app didn't say whether this model reads images; if it can't, the question will fail with an explanation.");
         }
-        if james_platform::can_control_input() {
+        if james_platform::can_control_input() && screen.from_primary {
             ui.small("Click the picture to choose a point for a click. Nothing is clicked yet: you review it first.");
+        } else if james_platform::can_control_input() {
+            ui.small("This monitor is for questions and Guide me. Reviewed clicks work on your primary monitor; capture it to propose a click.");
         }
         let response = ui
             .add(
                 egui::Image::new(&screen.texture)
                     .max_size(egui::vec2(ui.available_width(), 440.0))
                     .maintain_aspect_ratio(true)
-                    .sense(egui::Sense::click()),
+                    .sense(egui::Sense::click_and_drag()),
             )
             .on_hover_text("Your screenshot, kept in memory only");
         response.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::WidgetType::Image,
-                true,
-                "Screenshot of your primary screen",
-            )
+            egui::WidgetInfo::labeled(egui::WidgetType::Image, true, "Screenshot of your screen")
         });
         if response.clicked()
             && james_platform::can_control_input()
+            && screen.from_primary
             && let Some(pos) = response.interact_pointer_pos()
         {
             let x = ((pos.x - response.rect.min.x) / response.rect.width()
@@ -114,6 +137,40 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
                 x.min(screen.capture.width - 1),
                 y.min(screen.capture.height - 1),
             ));
+        }
+        // Drag across the screenshot to ask about just one area of it.
+        let shown = response.rect;
+        if response.drag_started() {
+            app.region_drag_start = response.interact_pointer_pos();
+        }
+        if response.dragged()
+            && let (Some(start), Some(now)) =
+                (app.region_drag_start, response.interact_pointer_pos())
+        {
+            outline_rect(
+                ui.painter(),
+                egui::Rect::from_two_pos(start, now).intersect(shown),
+                egui::Stroke::new(2.0_f32, theme::accent(ui)),
+            );
+        }
+        if response.drag_stopped() {
+            let start = app.region_drag_start.take();
+            if let (Some(start), Some(end)) = (start, response.interact_pointer_pos()) {
+                set_selection = Some(pixel_rect_from_drag(
+                    shown,
+                    start,
+                    end,
+                    screen.capture.width,
+                    screen.capture.height,
+                ));
+            }
+        }
+        if let Some(rect) = screen.selection {
+            outline_rect(
+                ui.painter(),
+                pixel_rect_to_screen(shown, rect, screen.capture.width, screen.capture.height),
+                egui::Stroke::new(2.0_f32, theme::accent(ui)),
+            );
         }
         if let Some(p) = &app.pending {
             mark_click(ui, response.rect, &p.proposal.action, p.width, p.height);
@@ -128,6 +185,17 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
             );
             ui.small("The numbers mark the steps in James's last Guide me answer. Your model placed them, and they may be off.");
         }
+        if let Some(rect) = screen.selection {
+            ui.small(format!(
+                "Your next attached question will be about the selected {} × {} area only.",
+                rect.width, rect.height
+            ));
+            if ui.button("Use whole screen").clicked() {
+                set_selection = Some(None);
+            }
+        } else if sees != Support::No {
+            ui.small("Drag across the picture to ask about just one area; otherwise the whole screen is sent.");
+        }
         discard = ui.button("Discard screenshot").clicked();
     } else {
         ui.add_space(8.0);
@@ -138,6 +206,11 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
         app.screen = None;
         app.pending = None;
         app.attach_screen = false;
+    }
+    if let Some(selection) = set_selection
+        && let Some(screen) = app.screen.as_mut()
+    {
+        screen.selection = selection;
     }
     if let Some((x, y)) = picked {
         app.action_x = x;
@@ -335,6 +408,19 @@ pub fn actions(app: &mut JamesApp, ui: &mut egui::Ui) {
             );
         }
     }
+    if let Some(note) = &pending.review_note {
+        // A second model pass's check, framed and labelled so it never reads
+        // as James's own guarantee.
+        egui::Frame::group(ui.style())
+            .fill(ui.visuals().faint_bg_color)
+            .show(ui, |ui| {
+                ui.label(RichText::new("Second-pass review").strong());
+                ui.label(note);
+                ui.small(
+                    "A second model pass wrote this check. It is not a guarantee; judge the action itself.",
+                );
+            });
+    }
     match &pending.target {
         Some(target) => ui.label(format!(
             "In: {}. James sends nothing unless this window is in front when the countdown ends.",
@@ -428,6 +514,8 @@ pub fn settings(app: &mut JamesApp, ui: &mut egui::Ui) {
     voice_settings(app, ui);
     ui.separator();
     guide_settings(app, ui);
+    ui.separator();
+    review_settings(app, ui);
     ui.separator();
     privacy(app, ui);
     ui.separator();
@@ -663,6 +751,20 @@ fn guide_settings(app: &mut JamesApp, ui: &mut egui::Ui) {
         app.save_session();
     }
     ui.label("Your model decides where each number goes, and smaller models often put them in the wrong place. The written steps are the same either way: find the label each step names before you click.");
+}
+
+fn review_settings(app: &mut JamesApp, ui: &mut egui::Ui) {
+    ui.label(RichText::new("Reviewed actions").size(18.0).strong());
+    if ui
+        .checkbox(
+            &mut app.prefs.review_actions,
+            "Double-check a proposed action before I review it",
+        )
+        .changed()
+    {
+        app.save_session();
+    }
+    ui.label("When Suggest one action proposes a click, key or typing, a second model pass looks at the same screenshot and writes a short note — flagging anything irreversible or off-target — shown with the action on the review card. You still approve every action yourself. This costs one extra model request, so it adds a short wait.");
 }
 
 /// whisper.cpp setup for macOS and Linux: optional explicit paths, a check

@@ -5,6 +5,136 @@ use super::*;
 mod gui;
 
 #[test]
+fn a_selected_region_crops_the_screenshot_sent_for_a_question() {
+    let source = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+        100,
+        80,
+        image::Rgba([200, 0, 0, 255]),
+    ));
+    let mut buf = std::io::Cursor::new(Vec::new());
+    source.write_to(&mut buf, image::ImageFormat::Png).unwrap();
+    let png = buf.into_inner();
+
+    let cropped = crop_png(
+        &png,
+        PixelRect {
+            x: 5,
+            y: 7,
+            width: 20,
+            height: 10,
+        },
+    )
+    .unwrap();
+    let cropped = image::load_from_memory_with_format(&cropped, image::ImageFormat::Png).unwrap();
+    assert_eq!((cropped.width(), cropped.height()), (20, 10));
+
+    // A selection running past the edge is clamped to what remains.
+    let edge = crop_png(
+        &png,
+        PixelRect {
+            x: 90,
+            y: 0,
+            width: 50,
+            height: 80,
+        },
+    )
+    .unwrap();
+    let edge = image::load_from_memory_with_format(&edge, image::ImageFormat::Png).unwrap();
+    assert_eq!((edge.width(), edge.height()), (10, 80));
+
+    // A selection entirely off the image is an error, not a zero-size crop.
+    assert!(
+        crop_png(
+            &png,
+            PixelRect {
+                x: 100,
+                y: 0,
+                width: 10,
+                height: 10
+            }
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn a_drag_maps_to_image_pixels_and_ignores_tiny_selections() {
+    let shown = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(200.0, 160.0));
+    // A drag from 25% to 75% across a 400×320 image is the middle 200×160 box.
+    let rect = pixel_rect_from_drag(
+        shown,
+        egui::pos2(60.0, 60.0),
+        egui::pos2(160.0, 140.0),
+        400,
+        320,
+    )
+    .unwrap();
+    assert_eq!(
+        rect,
+        PixelRect {
+            x: 100,
+            y: 80,
+            width: 200,
+            height: 160
+        }
+    );
+    // The two corners can be dragged in any direction.
+    assert_eq!(
+        pixel_rect_from_drag(
+            shown,
+            egui::pos2(160.0, 140.0),
+            egui::pos2(60.0, 60.0),
+            400,
+            320
+        )
+        .unwrap(),
+        rect
+    );
+    // A drag of a couple of pixels selects nothing.
+    assert!(
+        pixel_rect_from_drag(
+            shown,
+            egui::pos2(60.0, 60.0),
+            egui::pos2(61.0, 61.0),
+            400,
+            320
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn critic_prompt_states_goal_action_and_location() {
+    let msgs = critic_messages(
+        "open the file menu",
+        &Action::Click { x: 300, y: 60 },
+        (600, 300),
+        "The File menu is at the top left.",
+    );
+    assert_eq!(msgs.len(), 2);
+    assert_eq!(msgs[0].role, "system");
+    let body = &msgs[1].content;
+    assert!(body.contains("open the file menu"), "{body}");
+    assert!(body.contains("The File menu is at the top left."), "{body}");
+    // 300/600 = 50% across, 60/300 = 20% down.
+    assert!(body.contains("50% from the left"), "{body}");
+    assert!(body.contains("20% from the top"), "{body}");
+    // Typing carries no click location, and a missing goal is stated plainly.
+    let typed = critic_messages(
+        "   ",
+        &Action::TypeText { text: "hi".into() },
+        (600, 300),
+        "",
+    );
+    assert!(
+        typed[1].content.contains("(not recorded)"),
+        "{}",
+        typed[1].content
+    );
+    assert!(!typed[1].content.contains("% from the left"));
+}
+
+#[test]
 fn transcript_only_includes_conversation_roles() {
     let text = chat::transcript(&[
         ChatMessage::new("system", "private instructions"),
@@ -38,6 +168,8 @@ fn allow_once_refuses_a_model_click_until_the_person_checked_it() {
             egui::TextureOptions::LINEAR,
         ),
         at: Instant::now(),
+        selection: None,
+        from_primary: true,
     });
     app.propose(Action::Click { x: 10, y: 10 }, "Press Send".into(), true);
     app.allow_once();

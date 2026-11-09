@@ -13,6 +13,30 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Added
 
+- **Second-pass review of a proposed action.** Before you review a click, key
+  press or typing that **Suggest one action** proposed, a second model pass
+  looks at the same screenshot and writes a short note — flagging anything
+  irreversible or off-target — shown with the action on the review card. You
+  still approve every action yourself; the note is a prompt to look, not a
+  gate. On by default; it costs one extra model request, so it adds a short
+  wait, and can be turned off in **Settings → Reviewed actions**. James's local
+  take on Korso's planner+reviewer coordination, kept inside James's
+  one-approval-one-action model.
+- **Choose which monitor to capture.** When more than one display is
+  connected, the Screen context page shows a **Monitor** picker next to the
+  capture button, so you can grab a screen other than the primary one. Vision
+  questions and **Guide me** work on any monitor. Reviewed clicks stay
+  primary-only — the input helper positions the cursor in primary-screen
+  pixels — so **Suggest one action** and click-to-point are offered only for a
+  primary-screen capture and explain why on another monitor. With a single
+  display the picker stays hidden and nothing changes.
+- **Ask about just part of the screen.** On the captured screenshot, drag a
+  box over the area you mean; your next attached chat question then sends only
+  that area to the model, not the whole screen. A size readout and a **Use
+  whole screen** button show and clear the selection, which is outlined on the
+  picture. Guide me and Suggest one action are unchanged — they still send the
+  whole screenshot, because they rely on whole-screen coordinates. The crop is
+  made in memory for the request only and never saved.
 - **Choose the voice that reads answers aloud.** **Settings → Voice** now lists
   the text-to-speech voices installed on your computer (the Windows voices, or
   the macOS and `espeak-ng`/`speech-dispatcher` voices on the other systems) and

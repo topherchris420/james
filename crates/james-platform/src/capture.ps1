@@ -56,7 +56,14 @@ public static class JamesCapture {
     } catch { $target = $null }
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
-    $bounds = [Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $screen = [Windows.Forms.Screen]::PrimaryScreen
+    if ($request.display) {
+        $match = [Windows.Forms.Screen]::AllScreens |
+            Where-Object { $_.DeviceName -eq [string]$request.display } |
+            Select-Object -First 1
+        if ($null -ne $match) { $screen = $match }
+    }
+    $bounds = $screen.Bounds
     # James minimized itself before this helper started, but the window
     # animates away and the compositor drops it only from a later frame. Wait
     # until none of James's windows has covered the screen for a few checks in

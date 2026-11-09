@@ -32,6 +32,7 @@ const PLAN_CONTEXT: &str = "Return ONLY a JSON object with exactly two fields: r
 const GUIDE_CONTEXT: &str = "The user is stuck and attached one snapshot of their primary monitor. In under 120 words, plainly say what on the screen matters for their question, then give at most three short, concrete next steps they can take themselves. Quote visible labels exactly so they can find them. Do not output JSON and do not claim to act; the answer may be read aloud. If the snapshot is unclear, say what you would need to see.";
 const GUIDE_QUESTION: &str = "I'm stuck. What should I do next on this screen?";
 const VOICE_CONTEXT: &str = "This turn is a spoken conversation. Answer conversationally in a few sentences unless asked for detail; your reply will be read aloud.";
+const CRITIC_CONTEXT: &str = "You are a careful reviewer checking ONE action another model proposed to take on the user's computer. You can see the same screenshot. In one or two sentences, judge only whether this single action is safe to run and matches what the user asked for. Call out anything irreversible (sending, submitting, deleting, buying), a wrong or risky target, or a mismatch with the user's goal. Do not propose a different action or any coordinates. Begin your reply with OK if it looks fine, or CAUTION if the user should look closely before approving.";
 const TEST_CONTEXT: &str = "You are James, a friendly desktop assistant. This is a connection test: reply with one short, friendly sentence.";
 const TEST_QUESTION: &str = "Hello! Please reply with one short sentence so I know you're working.";
 const HELP_URL: &str = "https://github.com/topherchris420/james/blob/main/docs/GETTING_STARTED.md";
@@ -302,6 +303,131 @@ fn prepare_image(png: &[u8], max: u32) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Could not prepare the screenshot: {e}"))?;
     Ok(out.into_inner())
 }
+
+/// A rectangle inside a screenshot, in image pixels, so a question can be about
+/// just the part of the screen the person selected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PixelRect {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+/// Maps a drag between two points on the shown screenshot to a pixel rectangle
+/// in the image, clamped to its bounds. Returns `None` for a selection too small
+/// on a side, so a stray click or tiny drag never crops anything.
+fn pixel_rect_from_drag(
+    shown: egui::Rect,
+    start: egui::Pos2,
+    end: egui::Pos2,
+    width: u32,
+    height: u32,
+) -> Option<PixelRect> {
+    if shown.width() <= 0.0 || shown.height() <= 0.0 || width == 0 || height == 0 {
+        return None;
+    }
+    let to_pixel = |p: egui::Pos2| {
+        let fx = ((p.x - shown.min.x) / shown.width()).clamp(0.0, 1.0);
+        let fy = ((p.y - shown.min.y) / shown.height()).clamp(0.0, 1.0);
+        (
+            ((fx * width as f32).round() as u32).min(width),
+            ((fy * height as f32).round() as u32).min(height),
+        )
+    };
+    let (x0, y0) = to_pixel(start);
+    let (x1, y1) = to_pixel(end);
+    let (x, y) = (x0.min(x1), y0.min(y1));
+    let (w, h) = (x0.abs_diff(x1), y0.abs_diff(y1));
+    // The selection must cover a meaningful area: at least 1% of each side,
+    // and never fewer than eight pixels.
+    let min_w = (width / 100).max(8);
+    let min_h = (height / 100).max(8);
+    (w >= min_w && h >= min_h).then_some(PixelRect {
+        x,
+        y,
+        width: w.min(width - x),
+        height: h.min(height - y),
+    })
+}
+
+/// The screen-space rectangle for a stored selection, to outline it on the
+/// shown screenshot (the inverse of [`pixel_rect_from_drag`]).
+fn pixel_rect_to_screen(shown: egui::Rect, rect: PixelRect, width: u32, height: u32) -> egui::Rect {
+    let sx = shown.width() / width.max(1) as f32;
+    let sy = shown.height() / height.max(1) as f32;
+    egui::Rect::from_min_size(
+        egui::pos2(
+            shown.min.x + rect.x as f32 * sx,
+            shown.min.y + rect.y as f32 * sy,
+        ),
+        egui::vec2(rect.width as f32 * sx, rect.height as f32 * sy),
+    )
+}
+
+/// Outlines a rectangle with four line segments, which keeps one painter call
+/// shape across egui versions that changed `rect_stroke`.
+fn outline_rect(painter: &egui::Painter, rect: egui::Rect, stroke: egui::Stroke) {
+    let top_right = egui::pos2(rect.max.x, rect.min.y);
+    let bottom_left = egui::pos2(rect.min.x, rect.max.y);
+    painter.line_segment([rect.min, top_right], stroke);
+    painter.line_segment([top_right, rect.max], stroke);
+    painter.line_segment([rect.max, bottom_left], stroke);
+    painter.line_segment([bottom_left, rect.min], stroke);
+}
+
+/// Crops a screenshot PNG to a pixel rectangle and re-encodes it as PNG, so a
+/// question about a selected area sends only that area. Never saved.
+fn crop_png(png: &[u8], rect: PixelRect) -> Result<Vec<u8>, String> {
+    let image = image::load_from_memory_with_format(png, image::ImageFormat::Png)
+        .map_err(|e| format!("Could not read the screenshot: {e}"))?;
+    let x = rect.x.min(image.width());
+    let y = rect.y.min(image.height());
+    let w = rect.width.min(image.width().saturating_sub(x));
+    let h = rect.height.min(image.height().saturating_sub(y));
+    if w == 0 || h == 0 {
+        return Err("The selected area is outside the screenshot".into());
+    }
+    let cropped = image.crop_imm(x, y, w, h);
+    let mut out = std::io::Cursor::new(Vec::new());
+    cropped
+        .write_to(&mut out, image::ImageFormat::Png)
+        .map_err(|e| format!("Could not prepare the selected area: {e}"))?;
+    Ok(out.into_inner())
+}
+/// Builds the second-pass reviewer's prompt: the user's goal, the proposed
+/// action located as a percentage of the screenshot (resolution-independent, so
+/// it fits the downscaled image the reviewer sees), and its stated reason.
+fn critic_messages(
+    goal: &str,
+    action: &Action,
+    screen: (u32, u32),
+    rationale: &str,
+) -> Vec<ChatMessage> {
+    let placed = match action {
+        Action::Click { x, y } if screen.0 > 0 && screen.1 > 0 => format!(
+            " That point is {:.0}% from the left and {:.0}% from the top of the screenshot.",
+            (f64::from(*x) / f64::from(screen.0)) * 100.0,
+            (f64::from(*y) / f64::from(screen.1)) * 100.0,
+        ),
+        _ => String::new(),
+    };
+    let goal = goal.trim();
+    let goal = if goal.is_empty() {
+        "(not recorded)"
+    } else {
+        goal
+    };
+    let body = format!(
+        "The user asked: {goal}\n\nA first model looked at this screenshot and proposes ONE action: {}.{placed}\nIts stated reason: {}",
+        review::describe(action),
+        rationale.trim(),
+    );
+    vec![
+        ChatMessage::new("system", CRITIC_CONTEXT),
+        ChatMessage::new("user", body),
+    ]
+}
 /// Maps a point in the scaled image the model saw back to the real screen.
 fn to_screen(point: (u32, u32), sent: (u32, u32), screen: (u32, u32)) -> (u32, u32) {
     let map = |v: u32, from: u32, to: u32| {
@@ -381,6 +507,13 @@ enum WorkerResult {
     /// The model is reasoning before it answers.
     Thinking,
     Chat(Result<String, String>, Ask),
+    /// A second model pass's critique of an action the first model proposed,
+    /// carried with the action so it reaches the review card together.
+    Reviewed {
+        action: Action,
+        rationale: String,
+        note: Result<String, String>,
+    },
     Screen(Result<Screenshot, String>),
     Dictation(Result<String, String>),
     Speech(Result<(), String>),
@@ -450,6 +583,12 @@ struct Screen {
     capture: Screenshot,
     texture: egui::TextureHandle,
     at: Instant,
+    /// A region the person drew to ask about just that part of the screen;
+    /// `None` sends the whole screenshot.
+    selection: Option<PixelRect>,
+    /// Whether this is the primary monitor. Reviewed clicks work only there,
+    /// because the input helper positions the cursor in primary-screen pixels.
+    from_primary: bool,
 }
 struct Pending {
     proposal: review::Proposal,
@@ -463,6 +602,10 @@ struct Pending {
     /// Required before Allow once when a model proposed an input that
     /// `review::needs_second_look` covers.
     checked: bool,
+    /// A second model pass's note on this proposed action, shown on the review
+    /// card. `None` when the person chose the action, or the pass is off or
+    /// didn't run.
+    review_note: Option<String>,
 }
 impl Pending {
     fn awaits_second_look(&self) -> bool {
@@ -504,6 +647,15 @@ struct JamesApp {
     page: Page,
     screen: Option<Screen>,
     attach_screen: bool,
+    /// Where a screenshot-region drag began, while it is in progress.
+    region_drag_start: Option<egui::Pos2>,
+    /// The monitor to capture; empty is the primary one.
+    capture_display: String,
+    /// Connected monitors for the picker, loaded once off the UI thread.
+    displays: Option<Vec<james_platform::Display>>,
+    displays_worker: Option<Receiver<Vec<james_platform::Display>>>,
+    /// Whether the capture now running is of the primary monitor.
+    capture_from_primary: bool,
     pending: Option<Pending>,
     scheduled: Option<Scheduled>,
     action_text: String,
@@ -594,6 +746,11 @@ impl JamesApp {
             page: Page::Chat,
             screen: None,
             attach_screen: false,
+            region_drag_start: None,
+            capture_display: String::new(),
+            displays: None,
+            displays_worker: None,
+            capture_from_primary: true,
             pending: None,
             scheduled: None,
             action_text: String::new(),
@@ -775,6 +932,27 @@ impl JamesApp {
             Err(TryRecvError::Disconnected) => self.available_voices = Some(Vec::new()),
         }
     }
+    /// Loads the connected monitors once, off the UI thread, for the picker.
+    fn load_displays(&mut self) {
+        if self.displays.is_some() || self.displays_worker.is_some() {
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(james_platform::list_displays().unwrap_or_default());
+        });
+        self.displays_worker = Some(rx);
+    }
+    fn poll_displays(&mut self) {
+        let Some(rx) = self.displays_worker.take() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(list) => self.displays = Some(list),
+            Err(TryRecvError::Empty) => self.displays_worker = Some(rx),
+            Err(TryRecvError::Disconnected) => {}
+        }
+    }
     /// Forgets facts about a model when the selection changes, and asks again.
     fn model_changed(&mut self) {
         self.pending = None;
@@ -900,6 +1078,15 @@ impl JamesApp {
             self.page = Page::Screen;
             return false;
         }
+        // Reviewed clicks land in primary-screen pixels, so an action proposed
+        // from another monitor would click the wrong place. Keep Plan primary-only.
+        if mode == Ask::Plan && self.screen.as_ref().is_some_and(|s| !s.from_primary) {
+            self.fail(
+                "Suggest one action works on your primary monitor. Capture the primary display to propose a click.",
+            );
+            self.page = Page::Screen;
+            return false;
+        }
         if (needs_screen || self.attach_screen) && self.vision() == Support::No {
             self.fail(format!(
                 "“{model}” can't read images (its server says so). Choose a vision model, such as Gemma 3, in Settings."
@@ -913,6 +1100,12 @@ impl JamesApp {
         } else {
             None
         };
+        // A chat question about a selected area sends only that area. Guide me
+        // and Suggest one action need whole-screen coordinates, so they always
+        // send the full screenshot.
+        let region = (mode == Ask::Chat)
+            .then(|| self.screen.as_ref().and_then(|s| s.selection))
+            .flatten();
         let mut context = vec![ChatMessage::new(
             "system",
             if mode == Ask::Test {
@@ -993,7 +1186,14 @@ impl JamesApp {
             },
             move |job| {
                 let result = image
-                    .map(|(png, _, _)| prepare_image(&png, MAX_IMAGE_SIDE))
+                    .map(|(png, _, _)| {
+                        // Crop to the selected area when one was drawn; fall back
+                        // to the whole screenshot if the crop cannot be produced.
+                        let png = region
+                            .and_then(|rect| crop_png(&png, rect).ok())
+                            .unwrap_or(png);
+                        prepare_image(&png, MAX_IMAGE_SIDE)
+                    })
                     .transpose()
                     .and_then(|png| {
                         LocalClient::for_provider(provider, port)
@@ -1185,13 +1385,20 @@ impl JamesApp {
         if self.busy() {
             return;
         }
+        // Resolve the chosen monitor: its id for the helper, and whether it is
+        // the primary one (reviewed clicks can target only that).
+        let (display, primary) = match self.chosen_display() {
+            Some(d) => (Some(d.id.clone()), d.primary),
+            None => (None, true),
+        };
+        self.capture_from_primary = primary;
         self.screen = None;
         self.pending = None;
         self.attach_screen = false;
         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         self.launch(
-            "Capturing the primary screen after a 3-second delay...",
-            |job| {
+            "Capturing the screen after a 3-second delay...",
+            move |job| {
                 for _ in 0..30 {
                     if job.cancel.is_cancelled() {
                         return WorkerResult::Screen(Err("Capture cancelled".into()));
@@ -1199,10 +1406,23 @@ impl JamesApp {
                     std::thread::sleep(Duration::from_millis(100));
                 }
                 WorkerResult::Screen(
-                    james_platform::capture_screen(&job.cancel).map_err(|e| e.to_string()),
+                    james_platform::capture_screen(display.as_deref(), &job.cancel)
+                        .map_err(|e| e.to_string()),
                 )
             },
         );
+    }
+
+    /// The monitor the person chose to capture, if one is selected and still
+    /// present; `None` means the primary monitor.
+    fn chosen_display(&self) -> Option<&james_platform::Display> {
+        let id = self.capture_display.trim();
+        if id.is_empty() {
+            return None;
+        }
+        self.displays
+            .as_ref()
+            .and_then(|list| list.iter().find(|d| d.id == id))
     }
     fn speak(&mut self, text: String) {
         let voice = {
@@ -1250,8 +1470,50 @@ impl JamesApp {
             captured_at: screen.at,
             target: screen.capture.target.clone(),
             checked: false,
+            review_note: None,
         });
         self.page = Page::Actions;
+    }
+    /// Runs a second model pass over a model-proposed action before it reaches
+    /// the review card, so the person sees a short critique with the action.
+    /// Falls back to proposing directly if the pass cannot start.
+    fn review_proposal(&mut self, action: Action, rationale: String) {
+        let Some(screen) = &self.screen else {
+            self.propose(action, rationale, true);
+            return;
+        };
+        let Ok(port) = numeric_port(&self.port) else {
+            self.propose(action, rationale, true);
+            return;
+        };
+        let model = self.model.trim().to_owned();
+        if model.is_empty() {
+            self.propose(action, rationale, true);
+            return;
+        }
+        let png = screen.capture.png.clone();
+        let dims = (screen.capture.width, screen.capture.height);
+        let goal = self
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.clone())
+            .unwrap_or_default();
+        let messages = critic_messages(&goal, &action, dims, &rationale);
+        let provider = self.provider;
+        self.launch_model("Double-checking the proposed action...", move |_job| {
+            let note = prepare_image(&png, MAX_IMAGE_SIDE).and_then(|prepared| {
+                LocalClient::for_provider(provider, port)
+                    .and_then(|c| c.chat_stream(&model, &messages, Some(&prepared), |_event| {}))
+                    .map_err(|e| explain(provider, port, &model, e))
+            });
+            WorkerResult::Reviewed {
+                action,
+                rationale,
+                note,
+            }
+        });
     }
     /// Turns Allow once into a scheduled, one-use review.
     fn allow_once(&mut self) {
@@ -1493,7 +1755,11 @@ impl JamesApp {
                                 }
                                 (action, _, _) => action,
                             };
-                            self.propose(action, p.rationale, true);
+                            if self.prefs.review_actions {
+                                self.review_proposal(action, p.rationale);
+                            } else {
+                                self.propose(action, p.rationale, true);
+                            }
                         }
                         Err(e) => self.tell(
                             Tone::Warn,
@@ -1502,6 +1768,25 @@ impl JamesApp {
                     }
                 } else if !self.answer_aloud(&reply) {
                     self.info("Reply received from the model on this computer.");
+                }
+            }
+            WorkerResult::Reviewed {
+                action,
+                rationale,
+                note,
+            } => {
+                let note = match note {
+                    Ok(text) => {
+                        let text = text.trim();
+                        (!text.is_empty()).then(|| text.chars().take(600).collect())
+                    }
+                    Err(e) => Some(format!(
+                        "The second-pass review couldn't finish ({e}). Judge the action yourself."
+                    )),
+                };
+                self.propose(action, rationale, true);
+                if let Some(pending) = &mut self.pending {
+                    pending.review_note = note;
                 }
             }
             WorkerResult::Screen(Ok(capture)) => {
@@ -1525,6 +1810,8 @@ impl JamesApp {
                             capture,
                             texture,
                             at: Instant::now(),
+                            selection: None,
+                            from_primary: self.capture_from_primary,
                         });
                         if std::mem::take(&mut self.setup_capture) {
                             self.info(format!("Screenshot taken. It stays in memory; discard it whenever you like.{shows_james}"));
@@ -1927,6 +2214,7 @@ impl JamesApp {
         self.receive(ctx);
         self.poll_info();
         self.poll_voices();
+        self.poll_displays();
         self.lab.poll();
         self.shortcuts(ctx);
         self.run_schedule();

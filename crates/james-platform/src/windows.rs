@@ -1,6 +1,8 @@
 //! Windows helpers: embedded PowerShell scripts launched from the absolute
 //! SystemRoot path, with all variable input passed as JSON on stdin.
-use crate::{Action, Cancellation, Error, Listening, Screenshot, Target, VoiceConfig, supervise};
+use crate::{
+    Action, Cancellation, Display, Error, Listening, Screenshot, Target, VoiceConfig, supervise,
+};
 use base64::Engine;
 use serde::Deserialize;
 use std::{os::windows::process::CommandExt, path::PathBuf, process::Command, time::Duration};
@@ -17,7 +19,7 @@ pub fn whisper_models_dir() -> Option<PathBuf> {
     None
 }
 
-pub fn capture_screen(cancel: &Cancellation) -> Result<Screenshot, Error> {
+pub fn capture_screen(display: Option<&str>, cancel: &Cancellation) -> Result<Screenshot, Error> {
     #[derive(Deserialize)]
     struct Response {
         png: String,
@@ -29,7 +31,7 @@ pub fn capture_screen(cancel: &Cancellation) -> Result<Screenshot, Error> {
     }
     let value = run(
         include_str!("capture.ps1"),
-        &capture_request(),
+        &capture_request(display),
         // Cold Windows PowerShell/Add-Type startup can exceed 20 seconds while
         // the host is busy. Cancellation remains responsive during this bound.
         Duration::from_secs(60),
@@ -59,14 +61,29 @@ pub fn capture_screen(cancel: &Cancellation) -> Result<Screenshot, Error> {
 /// James's own windows every `poll_ms` until none has covered the screen for
 /// `stable_polls` checks in a row (giving up after `ceiling_ms`), then waits
 /// `composition_ms` — two frames and a margin — before it captures.
-pub(crate) fn capture_request() -> serde_json::Value {
-    serde_json::json!({
+pub(crate) fn capture_request(display: Option<&str>) -> serde_json::Value {
+    let mut request = serde_json::json!({
         "james_process_id": std::process::id(),
         "poll_ms": 50,
         "stable_polls": 2,
         "ceiling_ms": 1500,
         "composition_ms": [16, 16, 100],
-    })
+    });
+    if let Some(display) = display {
+        request["display"] = serde_json::Value::String(display.to_owned());
+    }
+    request
+}
+
+/// The connected monitors, so the picker can offer each one.
+pub fn list_displays() -> Result<Vec<Display>, Error> {
+    let output = run(
+        include_str!("displays.ps1"),
+        &serde_json::json!({}),
+        Duration::from_secs(20),
+        &Cancellation::default(),
+    )?;
+    crate::parse_displays(&output)
 }
 
 pub fn dictate(timeout: Duration, _: &VoiceConfig, cancel: &Cancellation) -> Result<String, Error> {

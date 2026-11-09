@@ -279,10 +279,78 @@ pub fn voice_support() -> &'static str {
     sys::VOICE_SUPPORT
 }
 
-/// Captures the primary monitor (or the whole desktop where the OS tool cannot
-/// select one) as PNG bytes. Must be initiated by the user.
-pub fn capture_screen(cancel: &Cancellation) -> Result<Screenshot, Error> {
-    sys::capture_screen(cancel)
+/// A monitor James can capture, for the display picker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Display {
+    /// Opaque OS identifier, passed back to capture this monitor.
+    pub id: String,
+    /// Human-readable name for the picker.
+    pub label: String,
+    /// The primary monitor, the only one reviewed clicks can target.
+    pub primary: bool,
+}
+
+/// Captures a monitor as PNG bytes. `display` is an id from [`list_displays`];
+/// `None`, or an id the computer no longer has, captures the primary monitor
+/// (or the whole desktop where the OS tool cannot select one). Must be initiated
+/// by the user.
+pub fn capture_screen(display: Option<&str>, cancel: &Cancellation) -> Result<Screenshot, Error> {
+    let display = match display {
+        Some(id) => Some(valid_display_id(id)?),
+        None => None,
+    };
+    sys::capture_screen(display, cancel)
+}
+
+/// The monitors that can be captured, for the display picker. An empty list
+/// means only the primary monitor is offered. Launches a short OS query, so it
+/// must not run on the UI thread.
+pub fn list_displays() -> Result<Vec<Display>, Error> {
+    sys::list_displays()
+}
+
+/// A display id is chosen from [`list_displays`], but is still bounded and
+/// rejected if it carries control characters before it reaches an OS helper.
+fn valid_display_id(id: &str) -> Result<&str, Error> {
+    let id = id.trim();
+    if id.is_empty() || id.chars().count() > 256 || id.chars().any(char::is_control) {
+        return Err(Error::InvalidInput("Choose a monitor from the list".into()));
+    }
+    Ok(id)
+}
+
+/// Parses the JSON array of monitors emitted by the Windows displays helper,
+/// dropping any row with an empty or unprintable id.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn parse_displays(body: &[u8]) -> Result<Vec<Display>, Error> {
+    #[derive(Deserialize)]
+    struct Row {
+        id: String,
+        label: String,
+        primary: bool,
+    }
+    let rows: Vec<Row> = serde_json::from_slice(body)
+        .map_err(|e| Error::Failed(format!("Could not read the monitors: {e}")))?;
+    Ok(rows
+        .into_iter()
+        .filter(|row| {
+            !row.id.trim().is_empty()
+                && row.id.chars().count() <= 256
+                && !row.id.chars().any(char::is_control)
+        })
+        .map(|row| Display {
+            id: row.id.trim().to_owned(),
+            label: row
+                .label
+                .chars()
+                .map(|c| if c.is_control() { ' ' } else { c })
+                .take(128)
+                .collect::<String>()
+                .trim()
+                .to_owned(),
+            primary: row.primary,
+        })
+        .collect())
 }
 
 /// Recognize one utterance. `timeout` (1–60 seconds) is how long to wait for
@@ -706,6 +774,33 @@ mod tests {
         assert_eq!(parse_espeak_voices(espeak), vec!["english", "french"]);
     }
     #[test]
+    fn monitors_are_validated_and_parsed() {
+        assert_eq!(
+            valid_display_id("  \\\\.\\DISPLAY1  ").unwrap(),
+            "\\\\.\\DISPLAY1"
+        );
+        assert!(valid_display_id("   ").is_err());
+        assert!(valid_display_id(&format!("a{}b", char::from(9))).is_err());
+
+        let body =
+            br#"[{"id":"\\\\.\\DISPLAY1","label":"Primary display  1920 x 1080","primary":true},
+            {"id":"\\\\.\\DISPLAY2","label":"Display 2  1280 x 1024","primary":false}]"#;
+        let displays = parse_displays(body).unwrap();
+        assert_eq!(displays.len(), 2);
+        assert_eq!(displays[0].id, "\\\\.\\DISPLAY1");
+        assert!(displays[0].primary && !displays[1].primary);
+        assert_eq!(displays[1].label, "Display 2  1280 x 1024");
+
+        // A row with an empty id is dropped; malformed JSON is an error.
+        assert_eq!(
+            parse_displays(br#"[{"id":"","label":"x","primary":false}]"#)
+                .unwrap()
+                .len(),
+            0
+        );
+        assert!(parse_displays(b"not json").is_err());
+    }
+    #[test]
     fn png_dimensions_come_from_the_header() {
         let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
         png.extend_from_slice(&1920_u32.to_be_bytes());
@@ -743,7 +838,7 @@ mod tests {
     #[test]
     #[ignore = "Captures the screen in memory; run only with user authorization"]
     fn desktop_capture_smoke() {
-        let screen = capture_screen(&Cancellation::default()).expect("screen capture");
+        let screen = capture_screen(None, &Cancellation::default()).expect("screen capture");
         assert!(screen.width > 0 && screen.height > 0);
         assert!(screen.png.starts_with(b"\x89PNG\r\n\x1a\n"));
     }
@@ -751,7 +846,7 @@ mod tests {
     #[test]
     #[ignore = "Captures the screen in memory; run only with user authorization"]
     fn desktop_capture_names_the_window_in_front() {
-        let screen = capture_screen(&Cancellation::default()).expect("screen capture");
+        let screen = capture_screen(None, &Cancellation::default()).expect("screen capture");
         if cfg!(windows) {
             // A desktop session always has some window in front, even if it is the shell.
             let target = screen.target.expect("the window in front");
@@ -767,7 +862,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn capture_waits_for_james_within_a_bound() {
-        let request = sys::capture_request();
+        let request = sys::capture_request(None);
         assert_eq!(request["james_process_id"], std::process::id());
         let ms = |key: &str| request[key].as_u64().expect(key);
         let composition: u64 = request["composition_ms"]
@@ -802,7 +897,7 @@ mod tests {
         .unwrap();
         // The primary screen is not 1x1, so the size check also refuses; use the
         // real size so the target check is what decides.
-        let screen = capture_screen(&Cancellation::default()).expect("screen capture");
+        let screen = capture_screen(None, &Cancellation::default()).expect("screen capture");
         let review = ReviewedAction {
             width: screen.width,
             height: screen.height,

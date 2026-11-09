@@ -227,6 +227,8 @@ fn with_screen(h: &mut Harness<'static, JamesApp>) {
         },
         texture,
         at: Instant::now(),
+        selection: None,
+        from_primary: true,
     });
 }
 
@@ -1009,6 +1011,8 @@ fn a_screen_question_is_sent_without_the_conversation_history() {
         },
         texture,
         at: Instant::now(),
+        selection: None,
+        from_primary: true,
     });
     assert!(h.state_mut().send(Ask::Guide));
     wait_until(&mut h, "the guidance", |app| app.worker.is_none());
@@ -1065,6 +1069,8 @@ fn screen_requests_never_carry_the_lab_snapshot() {
         },
         texture,
         at: Instant::now(),
+        selection: None,
+        from_primary: true,
     });
     for (mode, name) in [(Ask::Guide, "Guide me"), (Ask::Plan, "Suggest one action")] {
         h.state_mut().draft = "Save the file".into();
@@ -1171,6 +1177,8 @@ fn guide_me_marks_its_steps_on_the_screenshot() {
         },
         texture,
         at: Instant::now(),
+        selection: None,
+        from_primary: true,
     });
     h.state_mut().prefs.guide_marks = true;
     assert!(h.state_mut().send(Ask::Guide));

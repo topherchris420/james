@@ -13,7 +13,10 @@ pub fn listening(_: &VoiceConfig) -> Listening {
 pub fn whisper_models_dir() -> Option<PathBuf> {
     None
 }
-pub fn capture_screen(_: &Cancellation) -> Result<Screenshot, Error> {
+pub fn list_displays() -> Result<Vec<crate::Display>, Error> {
+    Ok(Vec::new())
+}
+pub fn capture_screen(_: Option<&str>, _: &Cancellation) -> Result<Screenshot, Error> {
     Err(Error::Unsupported(MESSAGE))
 }
 pub fn dictate(_: Duration, _: &VoiceConfig, _: &Cancellation) -> Result<String, Error> {

@@ -44,6 +44,9 @@ pub struct Preferences {
     /// Guide me numbers its steps on the screenshot. Off by default: the
     /// model places the numbers, and small models often misplace them.
     pub guide_marks: bool,
+    /// Before you review a proposed action, a second model pass checks it and
+    /// adds a short note. On by default; it costs one extra model request.
+    pub review_actions: bool,
 }
 
 impl Default for Preferences {
@@ -55,6 +58,7 @@ impl Default for Preferences {
             reduce_motion: false,
             speak_replies: false,
             guide_marks: false,
+            review_actions: true,
         }
     }
 }
@@ -454,6 +458,7 @@ mod tests {
                 reduce_motion: true,
                 speak_replies: false,
                 guide_marks: true,
+                review_actions: false,
             },
             setup: Some(Setup {
                 step: SetupStep::Test,
