@@ -1,224 +1,218 @@
 <div align="center">
 
-<img src="crates/james-desktop/assets/james-256.png" alt="" width="72" />
+<img src="crates/james-desktop/assets/james-256.png" alt="James application icon" width="80" />
 
-# James
+# JAMES
 
-### Think together. Stay in control.
+**VERS3DYNAMICS · R.A.I.N. LAB**
 
-**A native Rust desktop companion for local AI.**<br />
-Think with a model you choose. Share your screen deliberately. Keep every action yours.
+### A local AI companion. A human-operated instrument.
+
+**Talk to a model you choose. Inspect what it sees. Authorize what happens next.**
 
 [![Developer preview](https://img.shields.io/badge/status-developer%20preview-F2C14E?style=flat-square)](docs/END_USER_READINESS.md)
 [![Rust 1.88+](https://img.shields.io/badge/Rust-1.88%2B-dea584?style=flat-square&logo=rust&logoColor=white)](crates/james-desktop/Cargo.toml)
-[![MIT license](https://img.shields.io/badge/license-MIT-0B5D63?style=flat-square)](LICENSE)
-[![Core CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/ci.yml?branch=main&style=flat-square&label=core%20CI)](https://github.com/topherchris420/james/actions/workflows/ci.yml)
-[![Desktop CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/desktop.yml?branch=main&style=flat-square&label=desktop%20CI)](https://github.com/topherchris420/james/actions/workflows/desktop.yml)
+[![MIT](https://img.shields.io/badge/license-MIT-0B5D63?style=flat-square)](LICENSE)
+[![Core CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/ci.yml?branch=main&style=flat-square&label=core%20CI)](.github/workflows/ci.yml)
+[![Desktop CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/desktop.yml?branch=main&style=flat-square&label=desktop%20CI)](.github/workflows/desktop.yml)
 
-**[Download the preview](https://github.com/topherchris420/james/releases)** · **[Get started](#get-started)** · [What it does](#what-you-can-do) · [Privacy and control](#privacy-and-control) · [Verification](#what-has-been-verified) · [Build](#build-and-contribute)
+**[Download the developer preview](https://github.com/topherchris420/james/releases)** · **[Installation and first run](#03-first-operation)** · [Design](#02-principle-of-operation) · [Evidence](#06-verification-record) · [Build](#08-build-and-inspect)
 
-<img src="docs/assets/james-conversation.png" alt="James in a real conversation about hypotheses and findings, with a formatted response from Gemma 3 4B running in Ollama." width="1000" />
+<img src="docs/assets/james-conversation.png" alt="Recorded James desktop conversation with a locally served Gemma 3 4B model." width="1000" />
 
-<sub>James 0.4.0 with Gemma 3 4B through Ollama, running on Linux. An unedited model response from the <a href="docs/VALIDATION.md#end-user-release-session-2026-10-12">documented validation session</a>.</sub>
+<sub>Actual Linux validation session with Ollama and Gemma 3 4B. This is a recorded application demonstration, not evidence that the model's answers are correct. [Examine the session](docs/VALIDATION.md#end-user-release-session-2026-10-12).</sub>
 
 </div>
 
 ---
 
-James brings conversation, screen guidance, voice, and carefully reviewed computer input into one desktop app. You choose the model and run it through a local model app such as Ollama, LM Studio, or llama.cpp. James provides the interface, the context you choose to share, and the controls around every action.
+> **ENGINEERING PROPOSITION**
+>
+> An AI model can offer an explanation, describe a screen, or propose an action. None of those outputs is an authorization, and none becomes evidence merely because a model produced it.
+>
+> **James is designed to keep that distinction visible.**
 
-Built by [Vers3Dynamics](https://vers3dynamics.com/), James is free and open source. It requires no James account, includes no analytics, and connects directly only to services on your own computer. It also offers an optional, read-only window into [R.A.I.N. Lab](#a-window-into-rain-lab).
+James is an open-source Rust desktop application developed at [Vers3Dynamics](https://vers3dynamics.com/). It connects to a separately running local model service, provides conversation and optional screen and voice context, and places a human review step between any proposed computer input and its execution. A read-only connection to R.A.I.N. Lab can display research records alongside ordinary conversation.
 
-> **Intelligence may propose. Evidence must be checked. Authority stays with the human.**
+No James account is required. James contains no analytics or automatic-update telemetry. Its own model and Lab transport is restricted to loopback addresses; the model server itself may use remote services. [The network and privacy boundary is documented here](SECURITY.md).
 
 > [!IMPORTANT]
-> **James is a developer preview.** Windows and macOS downloads are unsigned; hands-on platform validation is still incomplete. [Review the evidence](#what-has-been-verified) before relying on it.
->
-> **Release versus source:** The latest published download is [`v0.4.0-preview.3`](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.3). This README documents `main`, where **selectable reading voices**, **Copy conversation**, **New conversation**, and additional review/privacy protections are implemented but **not yet included in that download**. See the [unreleased changelog](CHANGELOG.md#unreleased) or [build from source](#build-and-contribute).
+> **Development status: developer preview, not a production-ready assistant.** The latest published release is [`v0.4.0-preview.3`](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.3). This document describes `main`, which also contains unreleased improvements to conversation management, screen capture, reading voices, and action review. See the [changelog](CHANGELOG.md#unreleased). Windows and macOS downloads are unsigned; important real-device and accessibility tests remain open.
 
-## James at a glance
+## 01. The apparatus
 
-| James can… | James will not… |
-| --- | --- |
-| Connect to a model server on your computer, display responses as they stream, and tell you which capabilities the server reports. | Bundle a model, create an account, silently select a reported cloud model, or guarantee that your model app never relays requests. |
-| Show a screenshot **you chose to capture** and send it when you attach it or request screen guidance. | Continuously watch your screen or treat model-generated guidance as an instruction to execute. |
-| On **Windows**, prepare **one** reviewed click, key press, or text entry after explicit approval. | Give the model shell access, run a chain of actions, or let speech approve computer input. |
-| Show read-only R.A.I.N. Lab observations and clearly labelled experimental claims. | Start, steer, or approve Lab experiments. |
-
-The boundary is intentional: **the model suggests; James checks; you decide.**
-
-## What you can do
-
-| You want to… | James helps you… |
-| --- | --- |
-| **Think something through** | Chat with your chosen model, watch replies stream in, and read formatted explanations or copyable code. Stop a reply and keep the text that arrived. |
-| **Understand what is on screen** | Capture and preview your primary screen, then attach it to a question. Or press **Guide me** for up to three suggested next steps that you take yourself. Requires a vision model. |
-| **Use your voice** | Dictate a question, hear an answer, or start a hands-free conversation with **Talk**. On `main`, **Settings → Voice** lets you choose an installed reading voice, with a system-default fallback. Recognition runs locally; macOS and Linux need whisper.cpp setup. Voice cannot approve computer input. |
-| **Approve one computer action** | On Windows, prepare a click, key press, or text entry yourself, or ask the model to suggest one. Review the proposal, choose **Allow once**, then check the result. |
-| **Keep a useful conversation** | Copy it as Markdown, start a new conversation, or retry an answer while preserving your unsent draft. These improvements are on `main`, awaiting the next release. |
-| **Follow your research** | See the local Lab's status and recent simulator results, with evidence labels. Choose whether a compact Lab summary accompanies your chat questions. |
-| **Make the interface comfortable** | Choose light, dark, or system appearance; high contrast; 80–200% text; and reduced motion. Keyboard shortcuts are listed under **F1**. Screen-reader integration is implemented but awaits hands-on validation. |
-
-James reads capabilities reported by your model app and explains when a model cannot chat or read images. Optional **Guide me** step numbers are off by default: model-generated positions can be wrong.
-
-### A few things to try
-
-These are example prompts, not recorded results. Answer quality depends on your model.
-
-| Start here | Try this |
-| --- | --- |
-| **Conversation** | “Help me turn this rough idea into a testable question. What evidence would change our minds?” |
-| **Screen context** | Attach a screenshot: “Explain this error in plain language and suggest a first step I can check.” |
-| **Guide me** | Open an unfamiliar app, then ask how to reach a setting. James suggests steps; you take them. |
-| **R.A.I.N. Lab** | Enable snapshot sharing: “What did the simulator support, and what remains only a hypothesis?” |
-
-## Get started
-
-You need **James + a model app + a downloaded model**. The model runs separately; James does not bundle, install, or download one.
-
-**Choose your route:** Use [LM Studio](https://lmstudio.ai/) if you want a graphical model download and server setup without a terminal. Use [Ollama](https://ollama.com/download) if you want to follow the most thoroughly recorded real-server tests in this repository. Either way, James connects to the model server locally; it does not manage that server for you.
-
-### 1. Download James for your computer
-
-Choose an asset from the [**Releases page**](https://github.com/topherchris420/james/releases).
-
-| Platform | Release asset |
-| --- | --- |
-| **Windows 10/11 · x64** | `James-<version>-windows-x64-setup.exe` — installs for your account without an administrator password. A `…-portable.exe` is also available. |
-| **macOS 11+ · Apple silicon or Intel** | `James-<version>-macos-universal.zip` — extract and drag James to Applications. |
-| **Ubuntu 22.04+, Debian 12+, Linux Mint 21+ · x64** | `james_<version>_amd64.deb` — open with your package installer. |
-| **Other Linux · x64, glibc 2.35+** | `James-<version>-linux-x86_64.tar.gz` — extract and run `./install.sh`. |
-
-Windows SmartScreen and macOS Gatekeeper may warn because the builds are unsigned. The [installation guide](docs/GETTING_STARTED.md#1-install-james) explains the first launch. Each release includes `SHA256SUMS.txt` and build-provenance attestations; these verify the build's origin and integrity, not operating-system trust.
-
-### 2. Start a local model
-
-**Ollama is a documented starting point.** The repository's validation sessions used `gemma3:4b` for chat and screen questions:
-
-1. Install [Ollama](https://ollama.com/download) and keep its service running.
-2. Download the model:
-
-   ```bash
-   ollama pull gemma3:4b
-   ```
-
-**Prefer a graphical setup?** In [LM Studio](https://lmstudio.ai/), download and load a vision model, then start its server in the **Developer** tab. James includes an LM Studio adapter; its full real-server validation remains outstanding in the [readiness ledger](docs/END_USER_READINESS.md).
-
-Memory requirements and response speed depend on the model, context length, and hardware. Choose a model your computer can run locally. See [model compatibility](#model-compatibility) for other options.
-
-### 3. Open James and follow the setup
-
-James walks you through five steps: welcome, model-app setup, connection, a test message, and screen permissions. It saves your progress so you can return later.
-
-<p align="center">
-<img src="docs/assets/james-welcome.png" alt="James's welcome screen, introducing local connections, deliberate screen sharing, and human control." width="49%" />
-<img src="docs/assets/james-connect.png" alt="James's connection screen with Ollama, Gemma 3 4B, and the capabilities reported by the model server." width="49%" />
-</p>
-
-Once the test message answers, start a conversation. For speech setup, screenshots, permissions, or connection problems, follow the [complete getting started guide](docs/GETTING_STARTED.md).
-
-### A first session you can verify
-
-1. Ask **“Help me turn an idea into a testable hypothesis. What evidence might disprove it?”** and check that the selected local model answers.
-2. Open **Screen context**, capture the primary screen, **review the preview**, and attach it to a question only if you want that model to see it. This requires a vision-capable model.
-3. Open **Settings** and inspect the history, voice, and privacy options. On Windows, review the one-action workflow before granting any input permission; you do not need to enable it to use chat.
-
-This is a usability exercise, **not** a scientific model evaluation or a security certification. For the recorded platform and provider tests, use the [validation ledger](docs/VALIDATION.md).
-
-## Model compatibility
-
-James connects to a server on **the same computer**. Select a provider and local port in Settings, or use **Find my model server**.
-
-| Model app | Default port | Evidence recorded in this repository |
+| Assembly | Present implementation | Deliberate limit |
 | --- | --- | --- |
-| [Ollama](https://ollama.com/) | `11434` | Real-server sessions with 0.40.3: chat, streaming, Stop, images, capabilities, errors, and remote-model warnings. |
-| [llama.cpp `llama-server`](https://github.com/ggml-org/llama.cpp/tree/master/tools/server) | `8080` | Real-server sessions with b11564: chat, streaming, images, capabilities, and errors. |
-| [LM Studio](https://lmstudio.ai/) | `1234` | Protocol fixtures and a later, limited [Guide me marker experiment](CHANGELOG.md#040-preview3--2026-10-12). Full provider validation remains open. |
-| Other OpenAI-compatible servers | Configurable | Protocol fixtures; an earlier llama-cpp-python session. Compatibility depends on the server. |
+| **Conversation** | Streams replies from a chosen model; Stop, retry, formatted text and code | James does not supply the model or certify its answers |
+| **Screen context** | User-triggered capture, preview, and image questions with a vision model | No continuous screen observation; image-based guidance may be mistaken |
+| **Guide me** | Up to three suggested steps, optionally annotated with model-positioned markers | Guidance only; it does not operate the application |
+| **Voice** | Dictation, read-aloud, and Talk using local platform facilities | Voice cannot authorize computer input |
+| **Reviewed input** | On Windows, one click, key press, or text entry after explicit review | No unattended sequence, shell, self-approval, or automatic retry |
+| **R.A.I.N. Lab** | Read-only status, simulator findings, replay state and labelled hypotheses | Cannot command or approve experiments |
+| **Personal controls** | History retention, conversation management, visual accessibility preferences | Files are local but not encrypted against other processes using the account |
 
-These are recorded test versions, not minimum-version promises. See the [platform and provider matrix](docs/PLATFORM_SUPPORT.md) for detail. Authenticated model servers are not currently supported.
+A feature implemented on `main` is not necessarily present in the latest downloadable release. The [platform matrix](docs/PLATFORM_SUPPORT.md) distinguishes implemented functions, automated tests, and exercised real-software sessions.
 
-**A local connection is only one part of privacy.** Your model app can relay requests elsewhere. James labels models the server reports as remote and never selects them automatically, but it cannot detect an undisclosed relay. Choose and configure your model app accordingly.
+## 02. Principle of operation
 
-## Privacy and control
-
-### Share context deliberately
-
-- **Local connections.** Model and Lab requests pass through [`james-loopback`](crates/james-loopback), which accepts only a port and connects to `127.0.0.1` or `::1`. There is no DNS, proxy, redirect following, telemetry, crash upload, or automatic update check.
-- **Screen access when you ask.** Capture is initiated by a button press. Screenshots reach the model when you attach one, press **Guide me**, or request **Suggest one action**. James keeps no screenshot archive; platform helpers may use temporary files that are removed after reading.
-- **Local conversation controls.** Settings and history live in your user data folder. You can disable history, clear a conversation, or delete James data in Settings. Files are not encrypted; another process running as your account can read them. An unresolved action record is retained until you check it.
-- **Separate boundaries.** Your model app controls its own logging and any cloud relay. On `main`, model links show their full address and ask before opening in your browser; opening a link can transmit information to that site.
-
-### One approval, one action
-
-Windows computer control follows a deliberate sequence:
+James separates five responsibilities. The model is a source of proposed content, never a source of permissions.
 
 ```mermaid
-flowchart TD
-    proposal["Fresh screenshot and one proposed action"] --> review{"You review"}
-    review -->|Deny| stopped["No input sent"]
-    review -->|Allow once| countdown["Five-second countdown"]
-    countdown -->|Cancel| stopped
-    countdown --> checks{"Approval, intent record, and target checks"}
-    checks -->|Blocked| stopped
-    checks -->|Pass| input["Send one Windows input"]
-    input --> verify["You check the result before another action"]
+flowchart TB
+    HUMAN["Human operator"] --> UI["James desktop · eframe/egui"]
+    UI --> LOCAL["Bounded loopback transport"]
+    LOCAL <--> MODEL["User-selected model server\nOllama / LM Studio / llama.cpp"]
+    UI --> SCREEN["Optional screen and voice context"]
+    SCREEN --> UI
+    UI --> REVIEW{"One-action review\nWindows only"}
+    REVIEW -->|"Deny or cancel"| STOP["No input sent"]
+    REVIEW -->|"Allow once"| GATE["Expiry, intent and target checks"]
+    GATE -->|"Pass"| OS["One OS input"]
+    GATE -->|"Refuse"| STOP
+    OS --> CHECK["Human checks result"]
+    LAB["Local R.A.I.N. Lab"] -->|"Read-only snapshot"| UI
 ```
 
-An approval is consumed once. James records the intended action before sending input and retains that record until you check the outcome. After an interruption, it shows the unresolved action and never retries it automatically. Model output and voice cannot grant approval; there is no model-accessible shell or action chain.
+### Where the boundaries are enforced
 
-When **Reviewed actions** is on (the default), a second model pass checks a proposed action against the same screenshot and writes a short note — flagging anything irreversible or off-target — shown with the action on the review card, so you weigh the action and that check together. You still approve every action yourself; the note is a prompt to look, not a gate.
+- **Model transport:** [`james-loopback`](crates/james-loopback) uses port-only loopback destinations (`127.0.0.1` or `::1`), without DNS resolution, redirects or proxies. It does **not** guarantee that the separately operated model server stays offline.
+- **Model adaptation:** [`james-models`](crates/james-models) discovers available models, reports capabilities, streams responses, and classifies connection and protocol failures. Unavailable vision capability is disclosed rather than assumed.
+- **Human authorization:** [`james-core`](crates/james-core) implements review and supervision contracts. On Windows, the desktop also records the exact pending input before execution, then checks approval expiry and the reviewed target window.
+- **Platform operations:** [`james-platform`](crates/james-platform) owns OS-specific capture, speech and reviewed Windows input. James does not provide a model-accessible shell.
+- **Research context:** [`james-lab`](crates/james-lab) reads local Lab status and evidence labels. An experiment's claim remains separate from its execution and reproduction records.
 
-**The checks have limits.** Target matching depends on the window identity captured with the screenshot; when it is unavailable, James warns that checking is reduced. A window's contents or focus can still change. **Cancel**, or Esc while James has focus, stops the countdown; there is no global emergency key, and input already sent cannot be undone.
+The workspace forbids `unsafe` in its own Rust crates. That prohibition does not mean operating systems, external helpers, dependencies, or model outputs have been proven safe. Consult [the security scope](SECURITY.md) and [supervision contract](docs/SUPERVISION.md).
 
-Read [Security](SECURITY.md) and [Supervision](docs/SUPERVISION.md) for the exact boundaries. James is not an operating-system sandbox.
+## 03. First operation
 
-## A window into R.A.I.N. Lab
+**Required:** James, an independently running model server, and a downloaded model. James neither bundles a model nor installs one on your behalf.
 
-James can accompany a local [R.A.I.N. Lab](https://github.com/topherchris420/lop-nur-twin) session. Start the Lab separately, open **R.A.I.N. Lab** in James, and choose **Find the Lab**. James remains usable when the Lab is offline.
+### 1 · Install the preview
+
+Use the [release assets](https://github.com/topherchris420/james/releases) for your platform.
+
+| Platform | Package |
+| --- | --- |
+| Windows 10/11, x64 | `James-<version>-windows-x64-setup.exe` or portable `…-portable.exe` |
+| macOS 11+, Apple silicon or Intel | `James-<version>-macos-universal.zip` |
+| Ubuntu 22.04+, Debian 12+, Mint 21+, x64 | `james_<version>_amd64.deb` |
+| Other Linux x64, glibc 2.35+ | `James-<version>-linux-x86_64.tar.gz` |
+
+Windows SmartScreen or macOS Gatekeeper may display warnings because releases are unsigned. Download only from a source you trust and verify `SHA256SUMS.txt` and the available [build-provenance attestations](docs/INSTALLER.md). Checksums establish byte integrity; they do not establish that software is safe or trusted by the operating system.
+
+Detailed instructions: [Getting started](docs/GETTING_STARTED.md#1-install-james).
+
+### 2 · Start a model service
+
+For the best-documented first experiment, use [Ollama](https://ollama.com/download):
+
+```bash
+ollama pull gemma3:4b
+```
+
+Keep Ollama running. The model's ability to read images depends on the selected model and its server's advertised capabilities.
+
+For a graphical setup, [LM Studio](https://lmstudio.ai/) can download and load a model and expose it through its **Developer** server. James implements the connection, but its full real-server validation remains incomplete. The third supported route is [llama.cpp `llama-server`](https://github.com/ggml-org/llama.cpp/tree/master/tools/server).
+
+| Service | Usual local port | Current evidence |
+| --- | --- | --- |
+| Ollama | `11434` | Recorded real chat, streaming, image and failure-path sessions |
+| llama.cpp | `8080` | Recorded real chat, streaming, image and failure-path sessions |
+| LM Studio | `1234` | Protocol fixtures and a limited marker experiment; full validation open |
+| Other OpenAI-compatible servers | User-selected | Compatibility varies; fixtures do not establish universal support |
+
+Authentication to model servers is not currently supported. James marks models a server identifies as remote; it cannot discover a relay that server conceals.
+
+### 3 · Connect and verify
+
+Launch James and follow the five-step onboarding: welcome, model application, connection, test message, and screen permissions.
 
 <p align="center">
-<img src="docs/assets/james-lab.png" alt="James's R.A.I.N. Lab page showing a connected local Lab, its idle research stage, and knowledge counts separated by evidence status." width="800" />
+<img src="docs/assets/james-welcome.png" alt="James welcome and onboarding." width="49%" />
+<img src="docs/assets/james-connect.png" alt="James connected to an Ollama model server." width="49%" />
 </p>
 
-The view separates current activity, recent simulator results, replay status, and model-proposed hypotheses. Sharing a compact snapshot with your chat model is **off by default**; you can inspect exactly what would be shared before sending it.
+Then conduct three observations yourself:
 
-This connection is read-only. James cannot start, steer, or approve Lab experiments. Simulator results remain simulator results, and model-written hypotheses remain hypotheses. On `main`, Lab snapshots are excluded from screen-guidance and action-proposal requests.
+1. Ask a question and confirm which model answered. Stop a long reply and inspect how James labels the interruption.
+2. If you selected a vision-capable model, capture a screen, inspect its preview, and decide whether to attach it to a question. **Guide me** suggests steps but does not execute them.
+3. Open **Settings** and inspect history retention, voice configuration, and the action-review controls before enabling anything.
 
-[Set up the Lab connection →](docs/LAB.md)
+On `main`, additional unreleased functions include monitor selection, in-memory screenshot cropping for attached chat questions, selectable installed reading voices, Copy conversation, New conversation, and an optional second-pass advisory review of proposed computer actions. None of those additions expands the model's authority to operate the desktop. [See the actual change record](CHANGELOG.md#unreleased).
 
-## What has been verified
+## 04. Human control of computer input
 
-James publishes its evidence alongside its source. Implementation, automated checks, and hands-on use are different levels of evidence. The [dated readiness assessment](docs/END_USER_READINESS.md) assigns James 0.4.0 **5.2/10, developer preview**: the score is an evidence inventory, not a rating of model intelligence or a claim about the current `main` branch.
+Computer input is currently a **Windows-only** facility and is intentionally limited to one action at a time.
 
-| Evidence | What it establishes |
+```mermaid
+flowchart LR
+    P["Fresh screenshot\nand proposal"] --> R{"Operator reviews\nexact input"}
+    R -->|"Deny"| N["No action"]
+    R -->|"Allow once"| W["Five-second countdown"]
+    W --> C{"Expiry, window\nand intent checks"}
+    C -->|"Refuse / cancel"| N
+    C -->|"Pass"| I["One click, key\nor text entry"]
+    I --> H["Human verifies\nwhat happened"]
+```
+
+The approval is consumed once. An intent record is written before sending input. If the process is interrupted, the unresolved action is shown for human reconciliation, not automatically retried. Model output and voice cannot approve a proposal. Model-proposed actions on `main` may also receive an advisory second-model review, but that review is **not** authorization or an independent safety guarantee.
+
+**Known limits:** Window matching can be incomplete; a window can change after capture; already-sent input cannot be undone; Esc cancels only while James has focus; no system-wide emergency key is provided. James is not an OS sandbox. See [Security](SECURITY.md) and [Supervision](docs/SUPERVISION.md).
+
+## 05. Research connection
+
+James provides a read-only window into a locally running [R.A.I.N. Lab](https://github.com/topherchris420/lop-nur-twin).
+
+<p align="center">
+<img src="docs/assets/james-lab.png" alt="James displaying a local R.A.I.N. Lab status and evidence labels." width="800" />
+</p>
+
+The Lab page separates observed activity, registered or simulated results, replay status, and hypotheses proposed by research agents. An optional snapshot can accompany a chat question **only after the operator enables sharing and previews its contents**. Screen guidance and action proposals do not receive Lab snapshots.
+
+The Lab's separate [ECHO Intelligence Metrology Bench](https://github.com/topherchris420/lop-nur-twin/blob/main/docs/ECHO_INTELLIGENCE_METROLOGY.md) now measures bounded claims about adaptive behavior on research subjects. Its first held-out plasticity comparison reported **inconclusive evidence overall** and a small regression under one severe locomotor impairment. That is a result of **Lop Nur Twin's scientific software**, not proof of James's reasoning ability and not a claim that James can execute or control the bench.
+
+[Connect a local Lab](docs/LAB.md) · [Inspect the Lab's claims register](https://github.com/topherchris420/lop-nur-twin/blob/main/docs/RESEARCH_CLAIMS.md)
+
+## 06. Verification record
+
+A test result means only what its stated apparatus and conditions establish.
+
+| Evidence class | Recorded finding | Remaining boundary |
+| --- | --- | --- |
+| **Real local model sessions** | Linux container with virtual display exercised Ollama and llama.cpp, streaming, Stop, image requests and error handling | Not a physical desktop validation on Windows or macOS |
+| **Package lifecycle** | Linux package install, update and removal tested in a container; multiplatform build artifacts generated by CI | Physical installation and day-to-day use not independently established on every target platform |
+| **Automated regression tests** | A dated Windows run on 21 October 2026 recorded **207 passing tests** and **4 ignored opt-in tests** | Counts do not imply that hardware-dependent actions or accessibility are proven |
+| **Reviewed action safety** | Policy, review, refusal and recovery paths have automated coverage | Real approved input into a target app and physical interruption recovery remain to be exercised |
+| **Accessibility** | AccessKit, scaling, contrast and keyboard behavior implemented and tested in part | No documented hands-on NVDA, VoiceOver or Orca validation |
+| **Release integrity** | Release checksums and provenance information are generated | Windows and macOS releases are unsigned; no independent security review |
+
+The [dated end-user readiness assessment](docs/END_USER_READINESS.md) rated James 0.4.0 **5.2 / 10, developer preview**. It is an evidence rubric, **not** a measure of AI intelligence or an updated assessment of the current `main` branch.
+
+[Validation ledger](docs/VALIDATION.md) · [Readiness criteria](docs/END_USER_READINESS.md) · [Platform matrix](docs/PLATFORM_SUPPORT.md) · [Acceptance scenarios](docs/ACCEPTANCE_TESTS.md)
+
+### What has not been established
+
+James has not demonstrated production-grade desktop reliability, universal provider compatibility, fully tested Windows input, independent security assurance, screen-reader usability, or accurate answers from every model.
+
+A passing CI badge establishes that the prescribed checks passed on that runner. It is not an end-user acceptance test.
+
+## 07. Failure diagnosis
+
+| Observation | First check |
 | --- | --- |
-| **Real software in a Linux container** | Guided setup, real Ollama and llama.cpp responses, streaming and Stop, vision requests, package installation and upgrade, and a connection to the real local Lab. The display was virtual; this was not a physical desktop. |
-| **Automated checks** | Cross-platform builds and tests, headless GUI coverage, and failure-path checks. The [2026-10-21 Windows run](docs/VALIDATION.md#conversation-reliability-checks-2026-10-21) recorded 207 passing tests and 4 ignored opt-in tests. This is a dated result, not a live test count. |
-| **Still to validate** | Hands-on installation and primary workflows on physical Windows PCs and Macs; actual reviewed input into an application; full LM Studio validation; microphones, screen readers, and first-time-user experience. |
-| **Release work still open** | Signed Windows/macOS releases and an independent security review. The project remains a developer preview. |
+| No model detected | Start the model server; verify its port in Settings |
+| Server connected, no model available | Download, load and select a model in that server |
+| Screen question refused | Check that the chosen model supports images |
+| Answer stops at context limit | Start a fresh conversation or increase the model server's context allowance |
+| Dictation or Talk unavailable | Follow **Settings → Voice** and the platform setup guide |
+| Windows input refused | Read the reason, capture a fresh screenshot and recheck the target |
+| Action remains unresolved after interruption | Examine the target application and reconcile the saved intent manually |
 
-The Lab connection was exercised with an idle Lab; the results list was tested with recorded data. A successful model response does not establish scientific validity, and passing CI does not establish desktop usability.
+[Full troubleshooting](docs/GETTING_STARTED.md#if-something-goes-wrong) · [Report a bug](https://github.com/topherchris420/james/issues/new/choose) · [Privately report a vulnerability](https://github.com/topherchris420/james/security/advisories/new)
 
-**[Validation ledger](docs/VALIDATION.md)** · [Readiness scorecard](docs/END_USER_READINESS.md) · [Platform matrix](docs/PLATFORM_SUPPORT.md) · [Acceptance scenarios](docs/ACCEPTANCE_TESTS.md)
+## 08. Build and inspect
 
-## When something goes wrong
-
-| Symptom | First thing to check |
-| --- | --- |
-| James cannot find your model app | Start the model server and confirm its local port in Settings. |
-| The server answers but has no model | Download and load a model in the model app. |
-| A model cannot read your screenshot | Choose a vision-capable model. |
-| The conversation exceeds the context window | Start a fresh conversation, or load the model with a larger context. |
-| Talk or Dictate is unavailable | Open **Settings → Voice** for the platform's listening setup. |
-| James refuses a Windows action | Read the refusal, capture a fresh screenshot, and review the target again. |
-| An approved action needs checking after a restart | Inspect the named application and acknowledge the record. James will not replay it. |
-
-The [troubleshooting guide](docs/GETTING_STARTED.md#if-something-goes-wrong) covers permissions, installation, and provider errors. [Report a reproducible problem](https://github.com/topherchris420/james/issues/new/choose), or use [private vulnerability reporting](https://github.com/topherchris420/james/security/advisories/new) for security findings.
-
-## Build and contribute
-
-Use **Rust 1.88 or newer** and your platform's build tools. Windows needs the Visual Studio C++ Build Tools for the MSVC toolchain; Linux needs an OpenGL driver and `libxkbcommon-x11-0`.
+The desktop and platform crates require **Rust 1.88+**. The smaller library crates also support Rust 1.85. Windows requires MSVC build tools; Linux needs an OpenGL driver and `libxkbcommon-x11-0`.
 
 ```bash
 git clone https://github.com/topherchris420/james.git
@@ -226,30 +220,13 @@ cd james
 cargo run -p james-desktop --release --locked
 ```
 
-Keep your model server running. To check an Ollama connection independently of the desktop:
+With an Ollama server running, independently probe the model adapter:
 
 ```bash
 cargo run -p james-models --locked --example probe -- ollama --chat "Say hello"
 ```
 
-### Built to be inspected
-
-The Rust workspace forbids `unsafe` in its own crates and separates the interface, approval logic, transport, and platform operations. OS helpers and dependencies have their own boundaries, documented in [Security](SECURITY.md).
-
-| Crate | Responsibility |
-| --- | --- |
-| [`james-core`](crates/james-core) | Approval policies, budgets, and dispatch supervision. No dependencies. |
-| [`james-loopback`](crates/james-loopback) | Bounded local HTTP transport and cancellation. No dependencies. |
-| [`james-models`](crates/james-models) | Provider discovery, capability reporting, streaming, and error classification. |
-| [`james-platform`](crates/james-platform) | Screen capture, speech, local recognition, and reviewed Windows input. |
-| [`james-lab`](crates/james-lab) | Read-only Lab access and summaries with evidence labels. |
-| [`james-desktop`](crates/james-desktop) | The eframe/egui interface, onboarding, chat, review, and accessibility integration. |
-
-The library crates and [license-notices tool](tools/notices) also support Rust 1.85; desktop and platform crates require 1.88.
-
-Contributions that make James dependable on an actual person's computer are especially useful: platform test runs, accessibility findings, clearer setup instructions, and reproducible failures. Start with [Contributing](CONTRIBUTING.md), [Provenance](PROVENANCE.md), and the [acceptance scenarios](docs/ACCEPTANCE_TESTS.md).
-
-Run the workspace checks before submitting code:
+Run the repository's checks:
 
 ```bash
 cargo fmt --all -- --check
@@ -257,21 +234,47 @@ cargo test --workspace --all-targets --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-## Documentation
+### Construction inventory
 
-| For… | Read |
+| Rust crate | Engineering responsibility |
 | --- | --- |
-| **Your first session** | [Getting started](docs/GETTING_STARTED.md) · [Using James](docs/DESKTOP.md) |
-| **Trust and verification** | [Security](SECURITY.md) · [Supervision](docs/SUPERVISION.md) · [Validation](docs/VALIDATION.md) |
-| **Research integration** | [R.A.I.N. Lab](docs/LAB.md) |
-| **Understanding the design** | [Architecture](docs/ARCHITECTURE.md) · [Requirements](docs/REQUIREMENTS.md) · [Research](docs/RESEARCH.md) |
-| **Following development** | [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md) · [Installer and release guide](docs/INSTALLER.md) |
+| [`james-core`](crates/james-core) | Policy contracts, review, run supervision and bounded authority |
+| [`james-loopback`](crates/james-loopback) | Local, bounded transport and request cancellation |
+| [`james-models`](crates/james-models) | Provider adapters, model discovery, capabilities and streamed inference |
+| [`james-platform`](crates/james-platform) | Screen capture, voice and reviewed Windows input |
+| [`james-lab`](crates/james-lab) | Read-only research snapshots with provenance labels |
+| [`james-desktop`](crates/james-desktop) | Native GUI, setup, conversation, review and accessibility hooks |
+
+The current Rust workspace uses an eframe/egui desktop, local JSON session storage and bounded one-action input review. Broader multi-agent execution, SQLite journaling, and autonomous tool orchestration discussed in [the architecture document](docs/ARCHITECTURE.md) are **proposed future work**, not features shipped here.
+
+## 09. Open engineering work
+
+Useful contributions start where the evidence is weakest:
+
+- Physical Windows and macOS installation, update and removal tests with reproducible records.
+- Real Windows approved-input testing, denial, cancellation and interrupted-action recovery.
+- Hands-on screen-reader and voice testing on supported platforms.
+- Full real-server LM Studio validation and more varied local models.
+- Independent security review and signed, notarized release distribution.
+
+Submit a reproducible issue, a minimal test case, or a verified improvement. Consult [Contributing](CONTRIBUTING.md), [Provenance](PROVENANCE.md), and [the roadmap](docs/ROADMAP.md).
+
+## Documentation register
+
+| Subject | Record |
+| --- | --- |
+| First use | [Getting started](docs/GETTING_STARTED.md) · [Desktop operation](docs/DESKTOP.md) |
+| Design and control | [Architecture](docs/ARCHITECTURE.md) · [Supervision](docs/SUPERVISION.md) · [Security](SECURITY.md) |
+| Measurement | [Validation](docs/VALIDATION.md) · [Readiness](docs/END_USER_READINESS.md) · [Platform support](docs/PLATFORM_SUPPORT.md) |
+| Research interface | [Lab connection](docs/LAB.md) |
+| Release and change history | [Changelog](CHANGELOG.md) · [Installer](docs/INSTALLER.md) · [Roadmap](docs/ROADMAP.md) |
 
 ---
 
-<p align="center">
-<b>Your questions. Your model. Your decision.</b><br />
-<sub>Built to be useful. Designed to be inspected.</sub><br />
-Built in the open by <a href="https://vers3dynamics.com/">Vers3Dynamics</a> · <a href="LICENSE">MIT License</a>
-</p>
+<div align="center">
 
+**The model may propose. The instrument must disclose its limits. The human decides.**
+
+[Vers3Dynamics](https://vers3dynamics.com/) · [MIT License](LICENSE)
+
+</div>
