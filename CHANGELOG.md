@@ -13,6 +13,14 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Added
 
+- **Choose the voice that reads answers aloud.** **Settings → Voice** now lists
+  the text-to-speech voices installed on your computer (the Windows voices, or
+  the macOS and `espeak-ng`/`speech-dispatcher` voices on the other systems) and
+  reads new answers and **Talk** replies in the one you pick. The list loads off
+  the interface thread so it never blocks; leaving it on **System default**, or
+  choosing a voice the computer later removes, keeps the built-in voice. The
+  choice is saved with your other settings. James still speaks only on your
+  computer, with no cloud voice.
 - **Copy conversation** and **New conversation** above the chat, reachable
   even after scrolling through a long answer. Copy produces a Markdown
   transcript without screenshots or the unsent draft. New conversation

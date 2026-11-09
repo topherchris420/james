@@ -79,14 +79,29 @@ pub fn dictate(timeout: Duration, _: &VoiceConfig, cancel: &Cancellation) -> Res
     serde_json::from_slice(&value).map_err(|e| Error::Failed(e.to_string()))
 }
 
-pub fn speak(text: &str, cancel: &Cancellation) -> Result<(), Error> {
+pub fn speak(text: &str, voice: Option<&str>, cancel: &Cancellation) -> Result<(), Error> {
+    let mut request = serde_json::json!({ "text": text });
+    if let Some(voice) = voice {
+        request["voice"] = serde_json::Value::String(voice.to_owned());
+    }
     run(
         include_str!("speak.ps1"),
-        &serde_json::json!({"text": text}),
+        &request,
         Duration::from_secs(600),
         cancel,
     )
     .map(|_| ())
+}
+
+/// The names of the enabled Windows text-to-speech voices.
+pub fn list_voices() -> Result<Vec<String>, Error> {
+    let output = run(
+        include_str!("voices.ps1"),
+        &serde_json::json!({}),
+        Duration::from_secs(20),
+        &Cancellation::default(),
+    )?;
+    crate::parse_voice_list_json(&output)
 }
 
 pub fn execute(

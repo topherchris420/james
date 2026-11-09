@@ -589,6 +589,7 @@ fn voice_settings(app: &mut JamesApp, ui: &mut egui::Ui) {
     {
         app.save_session();
     }
+    reading_voice(app, ui);
     ui.label("Talk starts a hands-free conversation: James listens, answers aloud, then listens again. It pauses after 15 seconds of silence; say \"stop\" or press Esc to end. Dictate puts one utterance into the message box for you to check.");
     ui.label("Voice can ask and listen but never approves or performs clicks and typing.");
     ui.small(james_platform::voice_support());
@@ -605,6 +606,49 @@ fn voice_settings(app: &mut JamesApp, ui: &mut egui::Ui) {
     if james_platform::uses_whisper() {
         whisper_settings(app, ui);
     }
+}
+
+/// The reading-voice picker: the installed voices James can read answers with.
+/// The list loads once off the UI thread; an empty list leaves only the default.
+fn reading_voice(app: &mut JamesApp, ui: &mut egui::Ui) {
+    app.load_voices();
+    let voices = app.available_voices.clone();
+    ui.horizontal(|ui| {
+        let label = ui.label("Reading voice");
+        let selected = if app.tts_voice.trim().is_empty() {
+            "System default".to_owned()
+        } else {
+            app.tts_voice.clone()
+        };
+        let output = egui::ComboBox::from_id_salt("tts-voice")
+            .selected_text(selected)
+            .show_ui(ui, |ui| {
+                let mut changed = ui
+                    .selectable_value(&mut app.tts_voice, String::new(), "System default")
+                    .changed();
+                match &voices {
+                    None => {
+                        ui.label("Finding installed voices…");
+                    }
+                    Some(voices) if voices.is_empty() => {
+                        ui.label("No installed voices were found.");
+                    }
+                    Some(voices) => {
+                        for voice in voices {
+                            changed |= ui
+                                .selectable_value(&mut app.tts_voice, voice.clone(), voice)
+                                .changed();
+                        }
+                    }
+                }
+                changed
+            });
+        output.response.labelled_by(label.id);
+        if output.inner.unwrap_or(false) {
+            app.save_session();
+        }
+    });
+    ui.small("James reads answers with this installed system voice. Add more voices in your operating system's speech settings.");
 }
 
 fn guide_settings(app: &mut JamesApp, ui: &mut egui::Ui) {

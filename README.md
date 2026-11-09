@@ -42,7 +42,7 @@ Built by [Vers3Dynamics](https://vers3dynamics.com/), James is free and open sou
 | --- | --- |
 | **Think something through** | Chat with your chosen model, watch replies stream in, and read formatted explanations or copyable code. Stop a reply and keep the text that arrived. |
 | **Understand what is on screen** | Capture and preview your primary screen, then attach it to a question. Or press **Guide me** for up to three suggested next steps that you take yourself. Requires a vision model. |
-| **Use your voice** | Dictate a question, hear an answer, or start a hands-free conversation with **Talk**. Recognition runs locally; macOS and Linux need whisper.cpp setup. Voice cannot approve computer input. |
+| **Use your voice** | Dictate a question, hear an answer, or start a hands-free conversation with **Talk**. Choose which installed voice reads answers in **Settings → Voice**. Recognition runs locally; macOS and Linux need whisper.cpp setup. Voice cannot approve computer input. |
 | **Approve one computer action** | On Windows, prepare a click, key press, or text entry yourself, or ask the model to suggest one. Review the proposal, choose **Allow once**, then check the result. |
 | **Keep a useful conversation** | Copy it as Markdown, start a new conversation, or retry an answer while preserving your unsent draft. These improvements are on `main`, awaiting the next release. |
 | **Follow your research** | See the local Lab's status and recent simulator results, with evidence labels. Choose whether a compact Lab summary accompanies your chat questions. |
