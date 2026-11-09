@@ -7,7 +7,7 @@
 ### Think together. Stay in control.
 
 **A native Rust desktop companion for local AI.**<br />
-Talk through an idea. Ask about your screen. Decide what happens next.
+Think with a model you choose. Share your screen deliberately. Keep every action yours.
 
 [![Developer preview](https://img.shields.io/badge/status-developer%20preview-F2C14E?style=flat-square)](docs/END_USER_READINESS.md)
 [![Rust 1.88+](https://img.shields.io/badge/Rust-1.88%2B-dea584?style=flat-square&logo=rust&logoColor=white)](crates/james-desktop/Cargo.toml)
@@ -15,7 +15,7 @@ Talk through an idea. Ask about your screen. Decide what happens next.
 [![Core CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/ci.yml?branch=main&style=flat-square&label=core%20CI)](https://github.com/topherchris420/james/actions/workflows/ci.yml)
 [![Desktop CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/desktop.yml?branch=main&style=flat-square&label=desktop%20CI)](https://github.com/topherchris420/james/actions/workflows/desktop.yml)
 
-**[Download James](https://github.com/topherchris420/james/releases)** · **[Get started](#get-started)** · [Capabilities](#what-you-can-do) · [Privacy](#privacy-and-control) · [Evidence](#what-has-been-verified) · [Build from source](#build-and-contribute)
+**[Download the preview](https://github.com/topherchris420/james/releases)** · **[Get started](#get-started)** · [What it does](#what-you-can-do) · [Privacy and control](#privacy-and-control) · [Verification](#what-has-been-verified) · [Build](#build-and-contribute)
 
 <img src="docs/assets/james-conversation.png" alt="James in a real conversation about hypotheses and findings, with a formatted response from Gemma 3 4B running in Ollama." width="1000" />
 
@@ -34,15 +34,26 @@ Built by [Vers3Dynamics](https://vers3dynamics.com/), James is free and open sou
 > [!IMPORTANT]
 > **James is a developer preview.** Windows and macOS downloads are unsigned; hands-on platform validation is still incomplete. [Review the evidence](#what-has-been-verified) before relying on it.
 >
-> This README describes `main`. Published downloads are currently [`v0.4.0-preview.3`](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.3). Conversation export, fresh-start controls, and recent review/privacy hardening are [unreleased changes](CHANGELOG.md#unreleased); [build from source](#build-and-contribute) to use them.
+> **Release versus source:** The latest published download is [`v0.4.0-preview.3`](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.3). This README documents `main`, where **selectable reading voices**, **Copy conversation**, **New conversation**, and additional review/privacy protections are implemented but **not yet included in that download**. See the [unreleased changelog](CHANGELOG.md#unreleased) or [build from source](#build-and-contribute).
+
+## James at a glance
+
+| James can… | James will not… |
+| --- | --- |
+| Connect to a model server on your computer, display responses as they stream, and tell you which capabilities the server reports. | Bundle a model, create an account, silently select a reported cloud model, or guarantee that your model app never relays requests. |
+| Show a screenshot **you chose to capture** and send it when you attach it or request screen guidance. | Continuously watch your screen or treat model-generated guidance as an instruction to execute. |
+| On **Windows**, prepare **one** reviewed click, key press, or text entry after explicit approval. | Give the model shell access, run a chain of actions, or let speech approve computer input. |
+| Show read-only R.A.I.N. Lab observations and clearly labelled experimental claims. | Start, steer, or approve Lab experiments. |
+
+The boundary is intentional: **the model suggests; James checks; you decide.**
 
 ## What you can do
 
 | You want to… | James helps you… |
 | --- | --- |
 | **Think something through** | Chat with your chosen model, watch replies stream in, and read formatted explanations or copyable code. Stop a reply and keep the text that arrived. |
-| **Understand what is on screen** | Capture and preview a screen (choose the monitor when you have more than one), then attach it to a question — drag a box on the picture to ask about just that area. Or press **Guide me** for up to three suggested next steps that you take yourself. Requires a vision model. |
-| **Use your voice** | Dictate a question, hear an answer, or start a hands-free conversation with **Talk**. Choose which installed voice reads answers in **Settings → Voice**. Recognition runs locally; macOS and Linux need whisper.cpp setup. Voice cannot approve computer input. |
+| **Understand what is on screen** | Capture and preview your primary screen, then attach it to a question. Or press **Guide me** for up to three suggested next steps that you take yourself. Requires a vision model. |
+| **Use your voice** | Dictate a question, hear an answer, or start a hands-free conversation with **Talk**. On `main`, **Settings → Voice** lets you choose an installed reading voice, with a system-default fallback. Recognition runs locally; macOS and Linux need whisper.cpp setup. Voice cannot approve computer input. |
 | **Approve one computer action** | On Windows, prepare a click, key press, or text entry yourself, or ask the model to suggest one. Review the proposal, choose **Allow once**, then check the result. |
 | **Keep a useful conversation** | Copy it as Markdown, start a new conversation, or retry an answer while preserving your unsent draft. These improvements are on `main`, awaiting the next release. |
 | **Follow your research** | See the local Lab's status and recent simulator results, with evidence labels. Choose whether a compact Lab summary accompanies your chat questions. |
@@ -64,6 +75,8 @@ These are example prompts, not recorded results. Answer quality depends on your 
 ## Get started
 
 You need **James + a model app + a downloaded model**. The model runs separately; James does not bundle, install, or download one.
+
+**Choose your route:** Use [LM Studio](https://lmstudio.ai/) if you want a graphical model download and server setup without a terminal. Use [Ollama](https://ollama.com/download) if you want to follow the most thoroughly recorded real-server tests in this repository. Either way, James connects to the model server locally; it does not manage that server for you.
 
 ### 1. Download James for your computer
 
@@ -103,6 +116,14 @@ James walks you through five steps: welcome, model-app setup, connection, a test
 </p>
 
 Once the test message answers, start a conversation. For speech setup, screenshots, permissions, or connection problems, follow the [complete getting started guide](docs/GETTING_STARTED.md).
+
+### A first session you can verify
+
+1. Ask **“Help me turn an idea into a testable hypothesis. What evidence might disprove it?”** and check that the selected local model answers.
+2. Open **Screen context**, capture the primary screen, **review the preview**, and attach it to a question only if you want that model to see it. This requires a vision-capable model.
+3. Open **Settings** and inspect the history, voice, and privacy options. On Windows, review the one-action workflow before granting any input permission; you do not need to enable it to use chat.
+
+This is a usability exercise, **not** a scientific model evaluation or a security certification. For the recorded platform and provider tests, use the [validation ledger](docs/VALIDATION.md).
 
 ## Model compatibility
 
@@ -168,7 +189,7 @@ This connection is read-only. James cannot start, steer, or approve Lab experime
 
 ## What has been verified
 
-James publishes its evidence alongside its source. Implementation, automated checks, and hands-on use are different levels of evidence.
+James publishes its evidence alongside its source. Implementation, automated checks, and hands-on use are different levels of evidence. The [dated readiness assessment](docs/END_USER_READINESS.md) assigns James 0.4.0 **5.2/10, developer preview**: the score is an evidence inventory, not a rating of model intelligence or a claim about the current `main` branch.
 
 | Evidence | What it establishes |
 | --- | --- |
@@ -250,6 +271,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 
 <p align="center">
 <b>Your questions. Your model. Your decision.</b><br />
+<sub>Built to be useful. Designed to be inspected.</sub><br />
 Built in the open by <a href="https://vers3dynamics.com/">Vers3Dynamics</a> · <a href="LICENSE">MIT License</a>
 </p>
 
