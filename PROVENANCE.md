@@ -1,5 +1,17 @@
 # Source provenance
 
+## November 2026 Korso replication
+
+The conversation archive, compact companion, global summon, screenshot annotations,
+and draft-preserving voice submission were independently implemented in Rust.
+The [reconstruction report](docs/KORSO_REPLICATION.md) records the exact Korso 0.7.8
+artifact, REA evidence, inspected source locations, and unresolved behavior.
+Recovered source and assets remain outside this repository.
+
+New direct dependencies are `global-hotkey` 0.10 (MIT OR Apache-2.0), for native
+shortcut registration, and test-only `base64` 0.22 (MIT OR Apache-2.0), for inspecting
+actual image request payloads. Cargo.lock pins their resolved dependencies.
+
 James's Rust source, tests, demonstration, architecture, and project documents were authored independently for this project on 2026-10-11. Functional requirements were informed by public Korso documentation and bounded REA inspection of its publicly downloadable Windows package.
 
 Research and implementation occurred in the same investigation. This is an independent implementation, not a claim of a formally segregated clean-room process. No reference code, source maps, prompts, UI layout, logos, fonts, images, sounds, or pet assets were copied into James. No Korso backend or private repository was accessed, and no Korso executable was launched. Public website JavaScript did run in an isolated browser during declared REA page captures.

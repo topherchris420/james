@@ -266,12 +266,16 @@ pub fn header(app: &mut JamesApp, ui: &mut egui::Ui) {
                 !app.busy() && app.has_conversation_context(),
                 egui::Button::new("New conversation"),
             )
-            .on_hover_text(
-                "Start fresh after reviewing what will be cleared (Ctrl+N, or ⌘N on Mac)",
-            )
+            .on_hover_text("Start fresh and keep these messages in History (Ctrl+N, or ⌘N on Mac)")
             .clicked()
         {
             app.request_new_conversation();
+        }
+        if ui
+            .add_enabled(!app.busy(), egui::Button::new("History"))
+            .clicked()
+        {
+            app.show_history = true;
         }
     });
     model_facts(app, ui);
@@ -279,6 +283,83 @@ pub fn header(app: &mut JamesApp, ui: &mut egui::Ui) {
         ui.small("This conversation isn't saved: it disappears when you close James (Settings > Privacy).");
     }
     ui.separator();
+}
+
+pub fn history(app: &mut JamesApp, ctx: &egui::Context) {
+    if !app.show_history {
+        return;
+    }
+    let mut open = true;
+    let mut resume = None;
+    let mut remove = None;
+    let rows: Vec<_> = app
+        .archives
+        .iter()
+        .map(|conversation| {
+            (
+                conversation.id.clone(),
+                conversation.title.clone(),
+                conversation.messages.len(),
+            )
+        })
+        .collect();
+    egui::Window::new("Conversation history")
+        .open(&mut open)
+        .default_width(440.0)
+        .show(ctx, |ui| {
+            ui.label(if app.keep_history {
+                "Previous conversations saved on this computer."
+            } else {
+                "History is kept in memory until James closes."
+            });
+            ui.small("Up to 20 previous conversations within the shared history limit. Screenshots, drafts and approvals are not saved in history.");
+            if let Some(id) = app.history_delete.clone() {
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.label("Delete this saved conversation? This cannot be undone.");
+                    ui.horizontal(|ui| {
+                        if ui.add_enabled(!app.busy(), theme::danger(ui, "Delete saved conversation")).clicked() {
+                            remove = Some(id);
+                        }
+                        if ui.button("Keep conversation").clicked() {
+                            app.history_delete = None;
+                        }
+                    });
+                });
+            }
+            if app.archives.is_empty() {
+                ui.add_space(10.0);
+                ui.label("No previous conversations yet. Start a New conversation to keep this one here.");
+            }
+            egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
+                for (id, title, count) in &rows {
+                    ui.push_id(id, |ui| {
+                        egui::Frame::group(ui.style()).show(ui, |ui| {
+                            ui.label(RichText::new(title).strong());
+                            ui.small(format!("{count} messages"));
+                            ui.horizontal(|ui| {
+                                if ui.add_enabled(!app.busy(), egui::Button::new("Open conversation")).clicked() {
+                                    resume = Some(id.clone());
+                                }
+                                if ui.add_enabled(!app.busy(), egui::Button::new("Delete")).clicked() {
+                                    app.history_delete = Some(id.clone());
+                                }
+                            });
+                        });
+                    });
+                }
+            });
+        });
+    app.show_history &= open;
+    if let Some(id) = remove {
+        crate::conversations::remove(&mut app.archives, &id);
+        app.history_delete = None;
+        if app.save_session() {
+            app.info("Saved conversation deleted.");
+        }
+    }
+    if let Some(id) = resume {
+        app.request_conversation(id);
+    }
 }
 
 pub fn conversation(app: &mut JamesApp, ui: &mut egui::Ui) {

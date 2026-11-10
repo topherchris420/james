@@ -53,6 +53,12 @@ No James account is required. James contains no analytics or automatic-update te
 
 A feature implemented on `main` is not necessarily present in the latest downloadable release. The [platform matrix](docs/PLATFORM_SUPPORT.md) distinguishes implemented functions, automated tests, and exercised real-software sessions.
 
+Use **New conversation** to archive a chat and **History** to resume it. **Companion**
+opens a compact, always-on-top window; Settings offers an optional global summon
+shortcut. In **Screen context**, select an area or add colored point/freehand
+marks before sending a screenshot question. The [Korso replication report](docs/KORSO_REPLICATION.md)
+records the recovered requirements, implementation choices, and remaining gaps.
+
 ## 02. Principle of operation
 
 James separates five responsibilities. The model is a source of proposed content, never a source of permissions.

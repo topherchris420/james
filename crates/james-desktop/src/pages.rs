@@ -1,13 +1,40 @@
 //! Screen context, Computer control and Settings.
 use crate::{
-    JamesApp, Page, PixelRect, Tone, chat, copyable, guide, numeric_port, outline_rect,
+    JamesApp, Page, PixelRect, ScreenTool, Tone, chat, copyable, guide, numeric_port, outline_rect,
     pixel_rect_from_drag, pixel_rect_to_screen, review,
+    screen_context::{self, BrushColor, Point, Stroke},
     session::{SetupStep, ThemeChoice},
     theme,
 };
 use eframe::egui::{self, RichText};
 use james_models::{LocalProvider, Support};
 use james_platform::{Action, Key};
+
+fn paint_annotations(ui: &egui::Ui, shown: egui::Rect, source: PixelRect, strokes: &[Stroke]) {
+    let painter = ui.painter().with_clip_rect(shown);
+    let scale = shown.width() / source.width.max(1) as f32;
+    let position = |p: Point| {
+        shown.min
+            + egui::vec2(
+                (p.x as f32 - source.x as f32) * scale,
+                (p.y as f32 - source.y as f32) * shown.height() / source.height.max(1) as f32,
+            )
+    };
+    for stroke in strokes {
+        let [r, g, b, a] = stroke.color.rgba();
+        let color = egui::Color32::from_rgba_unmultiplied(r, g, b, a);
+        let width = stroke.width as f32 * scale;
+        for &point in &stroke.points {
+            painter.circle_filled(position(point), width / 2.0, color);
+        }
+        for pair in stroke.points.windows(2) {
+            painter.line_segment(
+                [position(pair[0]), position(pair[1])],
+                egui::Stroke::new(width, color),
+            );
+        }
+    }
+}
 
 /// Draws a ring where an approved click will land.
 fn mark_click(ui: &egui::Ui, rect: egui::Rect, action: &Action, width: u32, height: u32) {
@@ -108,11 +135,53 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
         if sees == Support::Unknown {
             ui.small("Your model app didn't say whether this model reads images; if it can't, the question will fail with an explanation.");
         }
-        if james_platform::can_control_input() && screen.from_primary {
-            ui.small("Click the picture to choose a point for a click. Nothing is clicked yet: you review it first.");
-        } else if james_platform::can_control_input() {
-            ui.small("This monitor is for questions and Guide me. Reviewed clicks work on your primary monitor; capture it to propose a click.");
-        }
+        ui.horizontal_wrapped(|ui| {
+            ui.selectable_value(&mut app.screen_tool, ScreenTool::Area, "Select area");
+            ui.selectable_value(&mut app.screen_tool, ScreenTool::Point, "Point");
+            ui.selectable_value(&mut app.screen_tool, ScreenTool::Draw, "Draw");
+            egui::ComboBox::from_id_salt("mark-color")
+                .selected_text(format!("{:?}", app.brush_color))
+                .show_ui(ui, |ui| {
+                    for color in [
+                        BrushColor::Accent,
+                        BrushColor::Blue,
+                        BrushColor::Green,
+                        BrushColor::Amber,
+                        BrushColor::Red,
+                        BrushColor::White,
+                    ] {
+                        ui.selectable_value(&mut app.brush_color, color, format!("{color:?}"));
+                    }
+                });
+            if james_platform::can_control_input() && screen.from_primary {
+                ui.selectable_value(
+                    &mut app.screen_tool,
+                    ScreenTool::ReviewedClick,
+                    "Reviewed click",
+                );
+            }
+            if ui
+                .add_enabled(!app.annotations.is_empty(), egui::Button::new("Undo mark"))
+                .clicked()
+            {
+                app.annotations.pop();
+            }
+            if ui
+                .add_enabled(
+                    !app.annotations.is_empty(),
+                    egui::Button::new("Clear marks"),
+                )
+                .clicked()
+            {
+                app.annotations.clear();
+            }
+        });
+        ui.small(match app.screen_tool {
+            ScreenTool::Area => "Drag a rectangle to send just that area with your next attached question.",
+            ScreenTool::Point => "Click to mark what your question refers to. Pointing does not operate the app.",
+            ScreenTool::Draw => "Drag to circle or underline content. Your marks are included in attached screen questions.",
+            ScreenTool::ReviewedClick => "Choose a click for review. Nothing is clicked until you approve it on Computer control.",
+        });
         let response = ui
             .add(
                 egui::Image::new(&screen.texture)
@@ -125,6 +194,7 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
             egui::WidgetInfo::labeled(egui::WidgetType::Image, true, "Screenshot of your screen")
         });
         if response.clicked()
+            && app.screen_tool == ScreenTool::ReviewedClick
             && james_platform::can_control_input()
             && screen.from_primary
             && let Some(pos) = response.interact_pointer_pos()
@@ -138,12 +208,77 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
                 y.min(screen.capture.height - 1),
             ));
         }
-        // Drag across the screenshot to ask about just one area of it.
         let shown = response.rect;
-        if response.drag_started() {
+        let point = |pos: egui::Pos2| Point {
+            x: (((pos.x - shown.min.x) / shown.width()).clamp(0.0, 1.0)
+                * (screen.capture.width - 1) as f32) as f64,
+            y: (((pos.y - shown.min.y) / shown.height()).clamp(0.0, 1.0)
+                * (screen.capture.height - 1) as f32) as f64,
+        };
+        if app.screen_tool == ScreenTool::Point
+            && response.clicked()
+            && app.annotations.len() < screen_context::MAX_STROKES
+            && app
+                .annotations
+                .iter()
+                .map(|s| s.points.len())
+                .sum::<usize>()
+                < screen_context::MAX_POINTS
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            app.annotations.push(Stroke {
+                points: vec![point(pos)],
+                color: app.brush_color,
+                width: 18.0,
+            });
+        }
+        if app.screen_tool == ScreenTool::Draw
+            && response.drag_started()
+            && app.annotations.len() < screen_context::MAX_STROKES
+            && app
+                .annotations
+                .iter()
+                .map(|s| s.points.len())
+                .sum::<usize>()
+                < screen_context::MAX_POINTS
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            app.annotations.push(Stroke {
+                points: vec![point(pos)],
+                color: app.brush_color,
+                width: 6.0,
+            });
+            app.drawing = true;
+        }
+        if app.screen_tool == ScreenTool::Draw
+            && response.dragged()
+            && app.drawing
+            && app
+                .annotations
+                .iter()
+                .map(|s| s.points.len())
+                .sum::<usize>()
+                < screen_context::MAX_POINTS
+            && let Some(pos) = response.interact_pointer_pos()
+            && let Some(stroke) = app.annotations.last_mut()
+        {
+            let next = point(pos);
+            if stroke
+                .points
+                .last()
+                .is_none_or(|last| (last.x - next.x).hypot(last.y - next.y) >= 1.0)
+            {
+                stroke.points.push(next);
+            }
+        }
+        if response.drag_stopped() {
+            app.drawing = false;
+        }
+        if app.screen_tool == ScreenTool::Area && response.drag_started() {
             app.region_drag_start = response.interact_pointer_pos();
         }
-        if response.dragged()
+        if app.screen_tool == ScreenTool::Area
+            && response.dragged()
             && let (Some(start), Some(now)) =
                 (app.region_drag_start, response.interact_pointer_pos())
         {
@@ -153,7 +288,7 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
                 egui::Stroke::new(2.0_f32, theme::accent(ui)),
             );
         }
-        if response.drag_stopped() {
+        if app.screen_tool == ScreenTool::Area && response.drag_stopped() {
             let start = app.region_drag_start.take();
             if let (Some(start), Some(end)) = (start, response.interact_pointer_pos()) {
                 set_selection = Some(pixel_rect_from_drag(
@@ -172,6 +307,17 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
                 egui::Stroke::new(2.0_f32, theme::accent(ui)),
             );
         }
+        paint_annotations(
+            ui,
+            shown,
+            PixelRect {
+                x: 0,
+                y: 0,
+                width: screen.capture.width,
+                height: screen.capture.height,
+            },
+            &app.annotations,
+        );
         if let Some(p) = &app.pending {
             mark_click(ui, response.rect, &p.proposal.action, p.width, p.height);
         }
@@ -193,8 +339,38 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
             if ui.button("Use whole screen").clicked() {
                 set_selection = Some(None);
             }
+            ui.label(RichText::new("Selected area preview").strong());
+            let uv = egui::Rect::from_min_max(
+                egui::pos2(
+                    rect.x as f32 / screen.capture.width as f32,
+                    rect.y as f32 / screen.capture.height as f32,
+                ),
+                egui::pos2(
+                    (rect.x + rect.width) as f32 / screen.capture.width as f32,
+                    (rect.y + rect.height) as f32 / screen.capture.height as f32,
+                ),
+            );
+            let preview = ui.add(
+                egui::Image::new(&screen.texture).uv(uv).fit_to_exact_size(
+                    egui::vec2(rect.width as f32, rect.height as f32)
+                        * (ui.available_width() / rect.width as f32)
+                            .min(180.0 / rect.height as f32)
+                            .min(1.0),
+                ),
+            );
+            preview.widget_info(|| {
+                egui::WidgetInfo::labeled(
+                    egui::WidgetType::Image,
+                    true,
+                    "Selected area sent with your question",
+                )
+            });
+            paint_annotations(ui, preview.rect, rect, &app.annotations);
         } else if sees != Support::No {
             ui.small("Drag across the picture to ask about just one area; otherwise the whole screen is sent.");
+        }
+        if !app.annotations.is_empty() {
+            ui.small("Colored marks are included with attached questions. Guide me and reviewed action suggestions use the original full screenshot.");
         }
         discard = ui.button("Discard screenshot").clicked();
     } else {
@@ -204,6 +380,9 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     }
     if discard {
         app.screen = None;
+        app.annotations.clear();
+        app.drawing = false;
+        app.region_drag_start = None;
         app.pending = None;
         app.attach_screen = false;
     }
@@ -870,6 +1049,7 @@ fn privacy(app: &mut JamesApp, ui: &mut egui::Ui) {
             )
             .clicked()
         {
+            app.conversation_change = None;
             app.confirm_clear = true;
         }
         if ui
@@ -883,6 +1063,28 @@ fn privacy(app: &mut JamesApp, ui: &mut egui::Ui) {
 
 fn help(app: &mut JamesApp, ui: &mut egui::Ui) {
     ui.label(RichText::new("Help, updates and about").size(18.0).strong());
+    let shortcut = if cfg!(target_os = "macos") {
+        "Cmd+Shift+Space"
+    } else {
+        "Ctrl+Shift+Space"
+    };
+    if ui
+        .checkbox(
+            &mut app.prefs.summon_shortcut,
+            format!("Summon James from other apps with {shortcut}"),
+        )
+        .changed()
+    {
+        app.summon_error = None;
+        app.save_session();
+    }
+    ui.small("Summoning opens the compact companion. The shortcut does not capture your screen or start the microphone.");
+    if let Some(error) = app.summon_error.clone() {
+        ui.colored_label(ui.visuals().warn_fg_color, error);
+        if ui.button("Retry shortcut registration").clicked() {
+            app.summon_error = None;
+        }
+    }
     ui.horizontal_wrapped(|ui| {
         if ui.button("Run guided setup again").clicked() {
             app.setup.step = SetupStep::Welcome;

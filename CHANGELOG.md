@@ -13,6 +13,19 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Added
 
+- **Conversation history.** New conversation archives the current chat; History
+  resumes or deletes earlier chats. Up to 20 archives share the existing
+  80-message/512 KiB retention budget. Turning off history removes current and
+  archived conversation text from saved settings.
+- **Compact companion and optional global summon.** Companion opens a smaller,
+  always-on-top view. Enable Ctrl+Shift+Space (Command+Shift+Space on macOS) in
+  Settings to summon it. Registration errors are shown; Wayland is unsupported.
+- **Point and draw on screen context.** Add colored marks, undo or clear them,
+  and inspect the selected region before sending. A failed crop stops the
+  request. Talk preserves the typed draft and its screenshot attachment.
+- **Korso reconstruction report.** [Static findings and replication coverage](docs/KORSO_REPLICATION.md)
+  trace the inspected client behavior and identify remaining parity work.
+
 - **Second-pass review of a proposed action.** Before you review a click, key
   press or typing that **Suggest one action** proposed, a second model pass
   looks at the same screenshot and writes a short note — flagging anything

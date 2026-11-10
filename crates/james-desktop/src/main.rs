@@ -1,13 +1,16 @@
 //! Native local-first research companion. Desktop effects always require review.
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 mod chat;
+mod conversations;
 mod guide;
 mod lab_view;
 mod markdown;
 mod pages;
 mod review;
+mod screen_context;
 mod session;
 mod setup;
+mod shortcuts;
 mod theme;
 mod timing;
 mod voice;
@@ -312,6 +315,34 @@ struct PixelRect {
     y: u32,
     width: u32,
     height: u32,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum ScreenTool {
+    #[default]
+    Area,
+    Point,
+    Draw,
+    ReviewedClick,
+}
+
+/// Apply only the context the user previewed. A failed crop must never widen
+/// the image sent to the model to include the rest of the display.
+fn prepare_screen_context(
+    png: &[u8],
+    region: Option<PixelRect>,
+    strokes: &[screen_context::Stroke],
+) -> Result<Vec<u8>, String> {
+    let marked = if strokes.is_empty() {
+        png.to_vec()
+    } else {
+        screen_context::annotate_png(png, strokes)?
+    };
+    let selected = match region {
+        Some(rect) => crop_png(&marked, rect)?,
+        None => marked,
+    };
+    prepare_image(&selected, MAX_IMAGE_SIDE)
 }
 
 /// Maps a drag between two points on the shown screenshot to a pixel rectangle
@@ -626,6 +657,11 @@ struct JamesApp {
     model_info: Option<(String, ModelInfo)>,
     info_worker: Option<(String, Receiver<ModelInfo>)>,
     messages: Vec<ChatMessage>,
+    archives: Vec<conversations::Conversation>,
+    show_history: bool,
+    history_delete: Option<String>,
+    /// None means clear; Some("") starts fresh; Some(id) resumes saved messages.
+    conversation_change: Option<String>,
     /// The reply arriving right now, shown live and committed when it ends.
     streaming: Option<String>,
     /// The model is reasoning and has not started its answer.
@@ -649,6 +685,14 @@ struct JamesApp {
     attach_screen: bool,
     /// Where a screenshot-region drag began, while it is in progress.
     region_drag_start: Option<egui::Pos2>,
+    screen_tool: ScreenTool,
+    annotations: Vec<screen_context::Stroke>,
+    brush_color: screen_context::BrushColor,
+    drawing: bool,
+    compact: bool,
+    full_size: Option<egui::Vec2>,
+    summon: Option<shortcuts::SummonShortcut>,
+    summon_error: Option<String>,
     /// The monitor to capture; empty is the primary one.
     capture_display: String,
     /// Connected monitors for the picker, loaded once off the UI thread.
@@ -732,6 +776,10 @@ impl JamesApp {
             model_info: None,
             info_worker: None,
             messages: saved.messages,
+            archives: saved.archives,
+            show_history: false,
+            history_delete: None,
+            conversation_change: None,
             streaming: None,
             thinking: false,
             asking: None,
@@ -747,6 +795,14 @@ impl JamesApp {
             screen: None,
             attach_screen: false,
             region_drag_start: None,
+            screen_tool: ScreenTool::Area,
+            annotations: Vec::new(),
+            brush_color: screen_context::BrushColor::Accent,
+            drawing: false,
+            compact: false,
+            full_size: None,
+            summon: None,
+            summon_error: None,
             capture_display: String::new(),
             displays: None,
             displays_worker: None,
@@ -807,7 +863,10 @@ impl JamesApp {
         self.setup.step == SetupStep::Done
     }
     fn save_session(&mut self) -> bool {
-        self.messages = session::bounded(std::mem::take(&mut self.messages));
+        (self.messages, self.archives) = conversations::bounded(
+            std::mem::take(&mut self.messages),
+            std::mem::take(&mut self.archives),
+        );
         let saved = SavedSession {
             port: numeric_port(&self.port).unwrap_or(self.provider.default_port()),
             provider: self.provider,
@@ -817,6 +876,7 @@ impl JamesApp {
             } else {
                 Vec::new()
             },
+            archives: self.archives.clone(),
             lab_port: numeric_port(&self.lab.port).unwrap_or(5173),
             whisper_program: self.whisper_program.trim().to_owned(),
             whisper_model: self.whisper_model.trim().to_owned(),
@@ -1106,6 +1166,11 @@ impl JamesApp {
         let region = (mode == Ask::Chat)
             .then(|| self.screen.as_ref().and_then(|s| s.selection))
             .flatten();
+        let annotations = if mode == Ask::Chat && image.is_some() {
+            self.annotations.clone()
+        } else {
+            Vec::new()
+        };
         let mut context = vec![ChatMessage::new(
             "system",
             if mode == Ask::Test {
@@ -1118,6 +1183,12 @@ impl JamesApp {
             context.push(ChatMessage::new("system", GUIDE_CONTEXT));
         } else if mode == Ask::Chat && self.voice != voice::Phase::Off {
             context.push(ChatMessage::new("system", VOICE_CONTEXT));
+        }
+        if !annotations.is_empty() {
+            context.push(ChatMessage::new(
+                "system",
+                "The user added colored points or drawn strokes to the attached screenshot to show what their question refers to. These marks are visual context, not controls in the original application. Explain the marked content without claiming to click or change it.",
+            ));
         }
         self.sent_image = None;
         // Requests that ask the model for pixel coordinates in the screenshot.
@@ -1186,14 +1257,7 @@ impl JamesApp {
             },
             move |job| {
                 let result = image
-                    .map(|(png, _, _)| {
-                        // Crop to the selected area when one was drawn; fall back
-                        // to the whole screenshot if the crop cannot be produced.
-                        let png = region
-                            .and_then(|rect| crop_png(&png, rect).ok())
-                            .unwrap_or(png);
-                        prepare_image(&png, MAX_IMAGE_SIDE)
-                    })
+                    .map(|(png, _, _)| prepare_screen_context(&png, region, &annotations))
                     .transpose()
                     .and_then(|png| {
                         LocalClient::for_provider(provider, port)
@@ -1247,10 +1311,53 @@ impl JamesApp {
             return;
         }
         self.page = Page::Chat;
-        if self.has_conversation_context() {
+        self.conversation_change = Some(String::new());
+        if !self.draft.is_empty() || self.screen.is_some() || self.pending.is_some() {
             self.confirm_clear = true;
         } else {
-            self.focus_composer = true;
+            self.finish_conversation_change();
+        }
+    }
+    fn request_conversation(&mut self, id: String) {
+        if self.busy() {
+            return;
+        }
+        self.conversation_change = Some(id);
+        self.show_history = false;
+        if !self.draft.is_empty() || self.screen.is_some() || self.pending.is_some() {
+            self.confirm_clear = true;
+        } else {
+            self.finish_conversation_change();
+        }
+    }
+    fn finish_conversation_change(&mut self) {
+        if self.busy() {
+            return;
+        }
+        let change = self.conversation_change.take();
+        let restored = match change.as_deref() {
+            Some(id) if !id.is_empty() => {
+                let Some(messages) = conversations::restore(&mut self.archives, id) else {
+                    self.fail("That conversation is no longer in history.");
+                    return;
+                };
+                Some(messages)
+            }
+            _ => None,
+        };
+        if change.is_some() {
+            conversations::archive(&mut self.archives, &self.messages);
+        }
+        self.clear_conversation();
+        if let Some(messages) = restored {
+            self.messages = messages;
+            if self.save_session() {
+                self.info(
+                    "Conversation resumed. Screenshots and action proposals are not restored.",
+                );
+            }
+        } else if change.is_some() {
+            self.info("New conversation started. Previous messages are in History.");
         }
     }
     /// Starts a fresh conversation. The old one is gone from James.
@@ -1265,6 +1372,9 @@ impl JamesApp {
         self.asking = None;
         self.history_note = None;
         self.screen = None;
+        self.annotations.clear();
+        self.drawing = false;
+        self.region_drag_start = None;
         self.attach_screen = false;
         self.sent_image = None;
         self.guide_marks = None;
@@ -1285,6 +1395,7 @@ impl JamesApp {
         match session::delete_all(&self.session) {
             Ok(_) => {
                 self.messages.clear();
+                self.archives.clear();
                 self.streaming = None;
                 self.draft.clear();
                 self.crash_report = None;
@@ -1307,6 +1418,18 @@ impl JamesApp {
             }
             Err(e) => self.fail(e),
         }
+    }
+    /// A spoken question has its own input. It must not replace the typed
+    /// draft or consume the screenshot selected for that draft.
+    fn send_voice_question(&mut self, question: String) -> bool {
+        let typed = std::mem::replace(&mut self.draft, question);
+        let attached = std::mem::replace(&mut self.attach_screen, false);
+        let sent = self.send(Ask::Chat);
+        if sent || !typed.is_empty() {
+            self.draft = typed;
+        }
+        self.attach_screen = attached;
+        sent
     }
     /// Captures the screen, then asks the model how to get unstuck. The answer
     /// is guidance for the user; it never becomes an action proposal.
@@ -1813,6 +1936,9 @@ impl JamesApp {
                             selection: None,
                             from_primary: self.capture_from_primary,
                         });
+                        self.annotations.clear();
+                        self.drawing = false;
+                        self.region_drag_start = None;
                         if std::mem::take(&mut self.setup_capture) {
                             self.info(format!("Screenshot taken. It stays in memory; discard it whenever you like.{shows_james}"));
                         } else {
@@ -1844,8 +1970,7 @@ impl JamesApp {
                     }
                     voice::Heard::Ask(question) => {
                         self.voice = voice::Phase::Thinking;
-                        self.draft = question;
-                        if !self.send(Ask::Chat) {
+                        if !self.send_voice_question(question) {
                             // send() explained why it could not ask (busy, no model...).
                             self.voice = voice::Phase::Off;
                         }
@@ -1942,6 +2067,9 @@ impl JamesApp {
             if self.confirm_clear || self.confirm_delete {
                 self.confirm_clear = false;
                 self.confirm_delete = false;
+                self.conversation_change = None;
+            } else if self.show_history {
+                self.show_history = false;
             } else if markdown::dismiss_link(ctx) {
                 // Esc closed the link dialog; nothing else stops.
             } else if self.show_shortcuts {
@@ -1977,6 +2105,58 @@ impl JamesApp {
             self.info("Copied James's last answer.");
         }
     }
+    fn set_compact(&mut self, ctx: &egui::Context, compact: bool) {
+        if compact == self.compact {
+            return;
+        }
+        if compact {
+            self.full_size = ctx.input(|i| i.viewport().inner_rect.map(|r| r.size()));
+        }
+        self.compact = compact;
+        let (minimum, size, level) = if compact {
+            (
+                egui::vec2(380.0, 460.0),
+                egui::vec2(460.0, 680.0),
+                egui::WindowLevel::AlwaysOnTop,
+            )
+        } else {
+            (
+                egui::vec2(760.0, 560.0),
+                self.full_size.take().unwrap_or(egui::vec2(1120.0, 820.0)),
+                egui::WindowLevel::Normal,
+            )
+        };
+        ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(minimum));
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+        ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
+        self.focus_composer = true;
+    }
+    /// Called on the real native event-loop thread, rather than by GUI tests.
+    fn poll_summon(&mut self, ctx: &egui::Context) {
+        if !self.prefs.summon_shortcut {
+            self.summon = None;
+            self.summon_error = None;
+            return;
+        }
+        if self.summon.is_none() && self.summon_error.is_none() {
+            match shortcuts::SummonShortcut::register(ctx.clone()) {
+                Ok(shortcut) => self.summon = Some(shortcut),
+                Err(error) => self.summon_error = Some(error),
+            }
+        }
+        if self.summon.as_ref().is_some_and(|s| s.take_pressed()) {
+            if self.scheduled.is_some() {
+                self.stop();
+                self.info("Action countdown cancelled when you summoned James.");
+            }
+            self.set_compact(ctx, true);
+            self.page = Page::Chat;
+            self.focus_composer = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+    }
     fn top_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("brand").show(ctx, |ui| {
             ui.add_space(6.0);
@@ -1988,11 +2168,31 @@ impl JamesApp {
                         .color(theme::accent(ui)),
                 );
                 ui.separator();
-                ui.label("Your local research companion");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    chat::connection_badge(self, ui);
-                });
+                if !self.compact {
+                    ui.label("Your local research companion");
+                }
+                if ui
+                    .button(if self.compact {
+                        "Full window"
+                    } else {
+                        "Companion"
+                    })
+                    .on_hover_text(
+                        "Switch between the full workspace and a small window that stays on top",
+                    )
+                    .clicked()
+                {
+                    self.set_compact(ctx, !self.compact);
+                }
+                if !self.compact {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        chat::connection_badge(self, ui);
+                    });
+                }
             });
+            if self.compact {
+                ui.horizontal_wrapped(|ui| chat::connection_badge(self, ui));
+            }
             ui.add_space(6.0);
         });
         if let Some(s) = &self.scheduled {
@@ -2036,6 +2236,20 @@ impl JamesApp {
         }
     }
     fn sidebar(&mut self, ctx: &egui::Context) {
+        if self.compact {
+            egui::TopBottomPanel::top("compact-navigation").show(ctx, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    for (page, label, _) in Page::ALL {
+                        if ui.selectable_value(&mut self.page, page, label).clicked()
+                            && page == Page::Chat
+                        {
+                            self.focus_composer = true;
+                        }
+                    }
+                });
+            });
+            return;
+        }
         egui::SidePanel::left("navigation")
             .default_width(196.0)
             .resizable(false)
@@ -2092,6 +2306,7 @@ impl JamesApp {
             });
     }
     fn dialogs(&mut self, ctx: &egui::Context) {
+        chat::history(self, ctx);
         if self.show_shortcuts {
             let mut open = true;
             egui::Window::new("Keyboard shortcuts")
@@ -2152,22 +2367,32 @@ impl JamesApp {
         }
         if self.confirm_clear {
             let modal = egui::Modal::new(egui::Id::new("confirm-clear")).show(ctx, |ui| {
-                ui.heading("Clear this conversation?");
-                ui.label(
-                    "This clears the messages, your unsent draft, screenshot, attachments and any unapproved action proposal. Your settings stay. Copy the conversation first if you want to keep it.",
-                );
+                let changing = self.conversation_change.is_some();
+                ui.heading(if changing { "Leave this conversation?" } else { "Clear this conversation?" });
+                ui.label(if changing {
+                    "Your messages stay in History. Your unsent draft, screenshot, attachments and any unapproved action proposal will be cleared."
+                } else {
+                    "This clears the current messages, unsent draft, screenshot, attachments and any unapproved action proposal. Previous conversations in History stay. Copy this conversation first if you want to keep it."
+                });
                 ui.horizontal(|ui| {
-                    if ui.add(theme::danger(ui, "Clear conversation")).clicked() {
-                        self.clear_conversation();
+                    let label = match self.conversation_change.as_deref() {
+                        Some("") => "Start new conversation",
+                        Some(_) => "Open saved conversation",
+                        None => "Clear conversation",
+                    };
+                    if ui.add(theme::danger(ui, label)).clicked() {
+                        self.finish_conversation_change();
                         self.confirm_clear = false;
                     }
                     if ui.button("Keep it").clicked() {
                         self.confirm_clear = false;
+                        self.conversation_change = None;
                     }
                 });
             });
             if modal.should_close() {
                 self.confirm_clear = false;
+                self.conversation_change = None;
             }
         }
         if self.confirm_delete {
@@ -2284,6 +2509,7 @@ impl Drop for JamesApp {
 }
 impl eframe::App for JamesApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_summon(ctx);
         self.ui(ctx);
     }
 }
