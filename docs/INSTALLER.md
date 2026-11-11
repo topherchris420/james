@@ -101,10 +101,10 @@ cargo build -p james-desktop --release --locked
 ./scripts/package-linux.sh   # writes dist/james_<version>_<arch>.deb and the archive
 ```
 
-CI builds the Linux packages in an `ubuntu:22.04` container. A binary built on
+CI builds the Linux packages on GitHub's `ubuntu-22.04` runner. A binary built on
 Ubuntu 24.04 requires glibc 2.39 and fails to start on Ubuntu 22.04, Linux Mint 21
 and Debian 12, even though the newer symbols it references are optional. The
-container job validates the menu entry (`desktop-file-validate`), the AppStream
+packaging job validates the menu entry (`desktop-file-validate`), the AppStream
 file (`appstreamcli validate`) and the `.deb` (`lintian --fail-on error`), then
 installs both packages and runs `james --version` before uploading them.
 `install.sh` copies James to `~/.local/bin` and its menu entry, icon and

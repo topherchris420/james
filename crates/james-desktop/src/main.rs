@@ -20,6 +20,7 @@ mod screen_context;
 mod session;
 mod settings_page;
 mod setup;
+mod shepherd_view;
 mod shortcuts;
 mod theme;
 mod timing;
@@ -525,14 +526,16 @@ enum Page {
     Actions,
     Lab,
     Settings,
+    Shepherd,
 }
 impl Page {
-    const ALL: [(Self, &'static str, egui::Key); 5] = [
+    const ALL: [(Self, &'static str, egui::Key); 6] = [
         (Self::Chat, "Conversation", egui::Key::Num1),
         (Self::Screen, "Screen context", egui::Key::Num2),
         (Self::Actions, "Computer control", egui::Key::Num3),
         (Self::Lab, "R.A.I.N. Lab", egui::Key::Num4),
         (Self::Settings, "Settings", egui::Key::Num5),
+        (Self::Shepherd, "Shepherd", egui::Key::Num6),
     ];
 }
 /// How a status message should look.
@@ -761,6 +764,7 @@ struct JamesApp {
     action_x: u32,
     action_y: u32,
     lab: lab_view::LabState,
+    shepherd: shepherd_view::ShepherdState,
     recovery: review::Recovery,
     voice: voice::Phase,
     guide_after_capture: bool,
@@ -903,6 +907,7 @@ impl JamesApp {
             action_x: 0,
             action_y: 0,
             lab: lab_view::LabState::new(saved.lab_port),
+            shepherd: shepherd_view::ShepherdState::new(),
             recovery,
             voice: voice::Phase::Off,
             guide_after_capture: false,
@@ -3085,7 +3090,7 @@ impl JamesApp {
                             for (keys, what) in [
                                 (format!("{cmd}Enter"), "Send your message".to_owned()),
                                 ("Esc".into(), "Stop: the reply, listening, speaking, capture or a pending action".into()),
-                                (format!("{cmd}1 … {cmd}5"), "Go to Conversation, Screen, Computer control, Lab, Settings".into()),
+                                (format!("{cmd}1 … {cmd}6"), "Go to Conversation, Screen, Computer control, Lab, Settings, Shepherd".into()),
                                 (format!("{cmd}L"), "Jump to the message box".into()),
                                 (format!("{cmd}N"), "Start a new conversation (asks before clearing)".into()),
                                 (format!("{cmd}Shift+C"), "Copy James's last answer".into()),
@@ -3203,6 +3208,7 @@ impl JamesApp {
         self.poll_voices();
         self.poll_displays();
         self.lab.poll();
+        self.shepherd.poll();
         let dropped = ctx.input(|input| input.raw.dropped_files.clone());
         if !dropped.is_empty() {
             if self.busy() {
@@ -3250,7 +3256,12 @@ impl JamesApp {
         if self.floating.take_changed() {
             self.save_session();
         }
-        if self.busy() || self.lab.connected || self.info_worker.is_some() || self.lab.finding() {
+        if self.busy()
+            || self.lab.connected
+            || self.shepherd.connected
+            || self.info_worker.is_some()
+            || self.lab.finding()
+        {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
         self.top_bar(ctx);
@@ -3295,6 +3306,7 @@ impl JamesApp {
                     Page::Actions => pages::actions(self, ui),
                     Page::Lab => lab_view::ui(self, ui),
                     Page::Settings => pages::settings(self, ui),
+                    Page::Shepherd => shepherd_view::ui(self, ui),
                 });
         });
         self.dialogs(ctx);

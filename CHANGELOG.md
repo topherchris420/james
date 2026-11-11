@@ -13,6 +13,7 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Added
 
+- **Optional Shepherd wallboard (developer branch).** The new Shepherd tab reads a locally self-hosted hub's authenticated workspace landscape, showing agent presence, work claims and announcements without running agents or granting them computer-input authority. Connection is opt-in; token and snapshots are memory-only. The tab uses James's existing loopback-only transport and cannot reach a hosted/remote hub. See [setup and limitations](docs/SHEPHERD.md). This is not yet part of a published release or a verified live-hub integration.
 - **Inspectable document answers.** Text/PDF attachments and selected workspace
   files receive request-local source IDs and line numbers. Expand model citations
   to read the supplied lines; missing, malformed and out-of-range references are

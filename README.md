@@ -32,9 +32,9 @@
 >
 > **James is designed to keep that distinction visible.**
 
-James is an open-source Rust desktop application developed at [Vers3Dynamics](https://vers3dynamics.com/). It connects to a separately running local model service, provides conversation and optional screen and voice context, and places a human review step between any proposed computer input and its execution. A read-only connection to R.A.I.N. Lab can display research records alongside ordinary conversation.
+James is an open-source Rust desktop application developed at [Vers3Dynamics](https://vers3dynamics.com/). It connects to a separately running local model service, provides conversation and optional screen and voice context, and places a human review step between any proposed computer input and its execution. A read-only connection to R.A.I.N. Lab can display research records alongside ordinary conversation. An optional [local Shepherd integration](docs/SHEPHERD.md) shows coding-agent activity without giving agents control over James.
 
-No James account is required. James contains no analytics or automatic-update telemetry. Its own model and Lab transport is restricted to loopback addresses; the model server itself may use remote services. [The network and privacy boundary is documented here](SECURITY.md).
+No James account is required. James contains no analytics or automatic-update telemetry. Its own model, Lab and optional Shepherd transport is restricted to loopback addresses; the model server itself may use remote services. [The network and privacy boundary is documented here](SECURITY.md).
 
 > [!IMPORTANT]
 > **Developer preview, not a production-ready assistant.** The latest published release is [`v0.4.0-preview.3`](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.3). The current `main` branch contains **unreleased** capabilities, including conversation history, attachments, companion controls, desktop guidance, and reviewed Windows file operations. They are not necessarily in release downloads. Check the [unreleased changelog](CHANGELOG.md#unreleased) and [platform evidence matrix](docs/PLATFORM_SUPPORT.md). Windows and macOS packages are unsigned; physical-device, accessibility, and independent security validation remain incomplete.
@@ -50,6 +50,7 @@ James is most useful when you can inspect both the result **and its boundary**.
 | **Work with a document** | On `main`, attach a text, extractable PDF or supported image; or select a workspace text-file preview. | The preview matches what you meant to share; scanned PDFs are not automatically read. |
 | **Review a proposed desktop action** | On Windows, capture a fresh screen and use **Suggest one action**. | You can refuse; approval allows at most one checked input, not an unattended task. |
 | **Inspect research context** | Connect a local R.A.I.N. Lab and open its read-only view. | Observations, simulations and hypotheses carry distinct labels. |
+| **Watch coding agents** | On the development branch, open Shepherd and connect a self-hosted local hub with its token. | Agent claims and messages are read-only assertions, not verified changes or approvals. |
 
 For a guided first run, follow [Getting started](docs/GETTING_STARTED.md). For exact platform support and test status, use [the capability matrix](docs/PLATFORM_SUPPORT.md), not a screenshot or a badge.
 
@@ -76,6 +77,7 @@ locally. [Workflow, privacy and validation limits](docs/REQUEST_EVIDENCE.md).
 | **Voice** | Dictation, read-aloud, and Talk using local platform facilities | Voice cannot authorize computer input |
 | **Reviewed input** | On Windows, one click, key press, or text entry after explicit review | No unattended sequence, shell, self-approval, or automatic retry |
 | **R.A.I.N. Lab** | Read-only status, simulator findings, replay state and labelled hypotheses | Cannot command or approve experiments |
+| **Shepherd (unreleased)** | Optional native read-only workspace feed of agent presence, claims and announcements | Self-hosted loopback hub only; does not run agents, send messages or expose MCP tools |
 | **Personal controls** | History retention, conversation management, visual accessibility preferences | Files are local but not encrypted against other processes using the account |
 
 A feature implemented on `main` is not necessarily present in the latest downloadable release. The [platform matrix](docs/PLATFORM_SUPPORT.md) distinguishes implemented functions, automated tests, and exercised real-software sessions.
@@ -92,6 +94,7 @@ These features are implemented on the development branch, **not a promise about 
 | **Companion & voice** | Always-on-top companion, configurable summon/voice shortcuts, dictation, Talk, installed reading voices, local timer and optional saved reminders | Timer/reminders require James to be running; speech never approves an action |
 | **Windows desktop** | Reviewed dictation into another app, screenshot guidance overlay, companion docking and media-session controls | Platform-specific features; real-app behavior remains incompletely tested |
 | **Reviewed Windows utilities** | Prepare a new text file, revise into a **new copy**, or review opening a common settings page | No overwrite of existing files, automatic editing, settings changes or agent-controlled shell |
+| **Agent coordination** | Native Shepherd tab, manual connect and authenticated local wallboard polling | Token stays in memory; remote hubs, write operations and agent launching are not supported |
 
 The [Korso replication report](docs/KORSO_REPLICATION.md) explains which interaction requirements were reconstructed from static evidence and how James implements its **own Rust behavior**. It does not claim product parity or validate Korso at runtime. Consult the [unreleased changelog](CHANGELOG.md#unreleased) for feature-level limitations.
 
@@ -113,6 +116,7 @@ flowchart TB
     GATE -->|"Refuse"| STOP
     OS --> CHECK["Human checks result"]
     LAB["Local R.A.I.N. Lab"] -->|"Read-only snapshot"| UI
+    SHEPHERD["Local Shepherd hub"] -->|"Read-only workspace feed"| UI
 ```
 
 ### Where the boundaries are enforced

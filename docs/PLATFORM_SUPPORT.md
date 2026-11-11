@@ -44,6 +44,7 @@ see [Request evidence](REQUEST_EVIDENCE.md) for exact limits.
 | Crash recovery of an unchecked action | Auto | Auto | Real (container): a 0.3-format record was shown after upgrade and cleared only by the person |
 | Talk, Dictate, read aloud | Impl (Windows speech). Not run in 0.4.0 testing | Impl (whisper.cpp, `say`) | Impl (whisper.cpp, espeak-ng / spd-say). No microphone in the test environment |
 | R.A.I.N. Lab view | Auto | Auto | Real (container) against lop-nur-twin 4871ef6 |
+| Shepherd coordination wallboard (unreleased) | Impl; local fixture tests added, CI pending | Impl; local fixture tests added, CI pending | Impl; local fixture tests added, CI pending. No live Shepherd hub has been exercised |
 | Owner-only data files | Default `%LOCALAPPDATA%` permissions (not changed or checked by James) | Auto (0700 folder, 0600 files) | Real (container) and Auto |
 | Code signing | **Unsigned** (Authenticode only if a maintainer configures a certificate) | **Unsigned**, ad-hoc only (Developer ID and notarization only if configured) | Not applicable (checksums and provenance attestations) |
 

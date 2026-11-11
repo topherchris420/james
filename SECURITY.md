@@ -4,11 +4,17 @@ James 0.4.0 is an unsigned **developer preview**, not an OS sandbox. It talks to
 
 ## Network
 
-Model and Lab requests go through `james-loopback`, whose only address input is a port. It connects to `127.0.0.1` or `::1` and cannot express another destination; there is no DNS, proxy, TLS or redirect following, and no other HTTP client exists in James. Header, line and body sizes are bounded, connections have connect, idle and total timeouts, and Stop shuts the socket down from the UI thread. James never contacts the internet: there is no telemetry, crash upload or automatic update check.
+Model, Lab and explicitly enabled Shepherd requests go through `james-loopback`, whose only address input is a port. It connects to `127.0.0.1` or `::1` and cannot express another destination; there is no DNS, proxy, TLS or redirect following, and no other HTTP client exists in James. Header, line and body sizes are bounded, connections have connect, idle and total timeouts, and Stop shuts the socket down from the UI thread. James never contacts the internet: there is no telemetry, crash upload or automatic update check.
 
 A loopback endpoint does not authenticate the process behind it, and it does not prove inference stays on this computer. Ollama, for one, can relay a model to its cloud service. James reads what the server reports: models it marks as remote are labelled "runs elsewhere", warned about before use, and never chosen automatically, but a server can relay without saying so. Use model apps you trust. No API keys are stored, and authenticated model servers are not supported.
 
 **Find my model server** sends one model-list request to each of ports 1234, 11434 and 8080, only when the person presses it, and accepts only a well-formed model list. **Check what this model can do** reads the server's own capability endpoints, each bounded to five seconds and 1 MiB. Neither ever installs, starts, loads or downloads anything.
+
+### Optional Shepherd coordination
+
+When explicitly connected, the Shepherd page makes only `GET /workspace/landscape` calls to a user-chosen **local port** using the existing loopback-only client. It does not provide model or MCP access to the hub, and it never starts agents, modifies work claims, or sends announcements. A 512 KiB response limit, timeout, JSON validation and visible staleness/error reporting constrain the read. Coordination text is displayed as untrusted agent assertions; it is not added to model prompts or computer-input proposals.
+
+The hub's **TEAM_TOKEN grants broad workspace authority** even though James sends only read requests. James holds it in memory while connected and clears its field on Disconnect. It is never written to `session.json` or logs by James. Memory is not encrypted and a compromised local process or a malicious listener on the selected port could capture the token. Users should run the hub locally, keep it access-controlled, and rotate any exposed token. Remote and Korso-hosted hubs are unsupported. See [Shepherd setup](docs/SHEPHERD.md).
 
 ## Screen, voice and model input
 
