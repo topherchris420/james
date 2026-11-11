@@ -249,6 +249,16 @@ pub fn header(app: &mut JamesApp, ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
         ui.heading("Conversation");
         if ui
+            .button(if app.attachment.is_some() {
+                "Attachment attached…"
+            } else {
+                "Attach file…"
+            })
+            .clicked()
+        {
+            app.show_attachment = true;
+        }
+        if ui
             .add_enabled(
                 !app.busy() && !app.messages.is_empty(),
                 egui::Button::new("Copy conversation"),
@@ -583,4 +593,22 @@ pub fn composer(app: &mut JamesApp, ctx: &egui::Context) {
         });
         ui.add_space(6.0);
     });
+    if app.show_attachment {
+        let mut open = true;
+        let mut attach = false;
+        egui::Window::new("Attachment").open(&mut open).show(ctx, |ui| {
+            ui.label("Enter a file path, or drop a file on James:");
+            ui.add(egui::TextEdit::singleline(&mut app.attachment_path).desired_width(300.0));
+            if ui.add_enabled(!app.busy() && !app.attachment_path.trim().is_empty(), egui::Button::new("Attach")).clicked() { attach = true; }
+            if let Some(attachment) = &app.attachment {
+                ui.label(format!("Attached: {}", attachment.name));
+                if ui.button("Remove attachment").clicked() { app.attachment = None; }
+            }
+            ui.small("PDF text, UTF-8 text, PNG, JPEG or WebP. Sent with the next chat question; not saved in history.");
+        });
+        app.show_attachment = open && !attach;
+        if attach {
+            app.attach_file(std::path::PathBuf::from(app.attachment_path.trim()));
+        }
+    }
 }

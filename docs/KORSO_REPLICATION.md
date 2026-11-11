@@ -374,7 +374,7 @@ added in this pass; integration and verification are recorded separately.
 | Typed/streamed conversation, Stop, retry, Markdown | Baseline | No equivalence test against Korso |
 | New conversation preserving earlier chats | New local archive | Different storage/retention policy |
 | Conversation list, title, resume, delete | New | Local first-question title; no remote revision/multi-device semantics |
-| Text/image/PDF attachments | Planned | James currently attaches its own screenshot and optional Lab context |
+| Text/image/PDF attachments | New | One local file at a time; PDF text extraction only, no OCR; 16 MiB file and 24 KiB text caps |
 | History search | Unknown in Korso inspected surface | Not claimed as recovered behavior |
 | User capture and preview | Baseline | Physical multi-monitor/DPI validation remains open |
 | Windows monitor choice | Baseline | Unix picker/capture equivalence incomplete |
@@ -442,3 +442,10 @@ The final inventory/extraction evidence was exported to
 `C:\Users\chris\.cache\james-korso\2026-11-10-final-inventory-extraction.json`
 (6,832,896 bytes, four records), and the REA session was closed. The two selected
 JavaScript analysis bundles above remain separate evidence artifacts.
+
+Further implementation adds local file attachments: UTF-8 text, extractable PDF
+text, PNG, JPEG and WebP. Files can be dropped onto James or selected by path;
+they are sent only with the next chat request and are not retained in history.
+Automated tests exercise real PDF extraction, request payloads, attachment
+privacy and preserving attachments during voice questions. Image-only PDFs need
+external OCR. This does not establish Korso attachment equivalence.

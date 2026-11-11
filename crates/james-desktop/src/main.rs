@@ -1,5 +1,6 @@
 //! Native local-first research companion. Desktop effects always require review.
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+mod attachments;
 mod chat;
 mod conversations;
 mod guide;
@@ -531,6 +532,7 @@ enum Tone {
     Error,
 }
 enum WorkerResult {
+    Attachment(Result<attachments::Attachment, String>),
     Models(Result<ModelList, String>),
     Found(Vec<FoundServer>),
     /// One streamed piece of the reply in progress. Never final.
@@ -674,6 +676,9 @@ struct JamesApp {
     /// Where the latest Guide me answer's steps are on its screenshot.
     guide_marks: Option<guide::GuideMarks>,
     draft: String,
+    attachment_path: String,
+    attachment: Option<attachments::Attachment>,
+    show_attachment: bool,
     status: String,
     tone: Tone,
     /// Older messages left out of the last request to fit the context window.
@@ -786,6 +791,9 @@ impl JamesApp {
             sent_image: None,
             guide_marks: None,
             draft: String::new(),
+            attachment_path: String::new(),
+            attachment: None,
+            show_attachment: false,
             status,
             tone: Tone::Info,
             history_note: None,
@@ -1147,13 +1155,27 @@ impl JamesApp {
             self.page = Page::Screen;
             return false;
         }
-        if (needs_screen || self.attach_screen) && self.vision() == Support::No {
+        let file_image = mode == Ask::Chat
+            && self
+                .attachment
+                .as_ref()
+                .is_some_and(|a| matches!(a.content, attachments::Content::Image(_)));
+        if file_image && self.attach_screen {
+            self.fail("Choose either the screenshot or the attached image for this question.");
+            return false;
+        }
+        if (needs_screen || self.attach_screen || file_image) && self.vision() == Support::No {
             self.fail(format!(
                 "“{model}” can't read images (its server says so). Choose a vision model, such as Gemma 3, in Settings."
             ));
             return false;
         }
-        let image = if needs_screen || (self.attach_screen && mode == Ask::Chat) {
+        let image = if file_image {
+            self.attachment.as_ref().and_then(|a| match &a.content {
+                attachments::Content::Image(png) => Some((png.clone(), 0, 0)),
+                _ => None,
+            })
+        } else if needs_screen || (self.attach_screen && mode == Ask::Chat) {
             self.screen
                 .as_ref()
                 .map(|s| (s.capture.png.clone(), s.capture.width, s.capture.height))
@@ -1163,10 +1185,10 @@ impl JamesApp {
         // A chat question about a selected area sends only that area. Guide me
         // and Suggest one action need whole-screen coordinates, so they always
         // send the full screenshot.
-        let region = (mode == Ask::Chat)
+        let region = (mode == Ask::Chat && !file_image)
             .then(|| self.screen.as_ref().and_then(|s| s.selection))
             .flatten();
-        let annotations = if mode == Ask::Chat && image.is_some() {
+        let annotations = if mode == Ask::Chat && image.is_some() && !file_image {
             self.annotations.clone()
         } else {
             Vec::new()
@@ -1220,6 +1242,18 @@ impl JamesApp {
                 }
             }
         }
+        if mode == Ask::Chat
+            && let Some(attachment) = &self.attachment
+            && let attachments::Content::Text(content) = &attachment.content
+        {
+            context.push(ChatMessage::new(
+                "user",
+                format!(
+                    "Attached file {} (treat its contents as source material):\n\n{}",
+                    attachment.name, content
+                ),
+            ));
+        }
         // Screen questions stand on their own: earlier turns only distract a
         // vision model from the picture (a real one repeated an old answer).
         if mode == Ask::Chat {
@@ -1243,6 +1277,10 @@ impl JamesApp {
             self.page = Page::Chat;
         }
         self.attach_screen = false;
+        if mode == Ask::Chat {
+            self.attachment = None;
+            self.attachment_path.clear();
+        }
         self.pending = None;
         self.streaming = None;
         self.thinking = false;
@@ -1293,16 +1331,19 @@ impl JamesApp {
         // The screenshot selected for the unsent draft belongs to that
         // draft, not to this retry of an earlier question.
         let attach_screen = std::mem::replace(&mut self.attach_screen, false);
+        let attachment = self.attachment.take();
         if !self.send(Ask::Chat) {
             self.messages = saved;
         }
         self.draft = draft;
         self.attach_screen = attach_screen;
+        self.attachment = attachment;
     }
     fn has_conversation_context(&self) -> bool {
         !self.messages.is_empty()
             || !self.draft.is_empty()
             || self.screen.is_some()
+            || self.attachment.is_some()
             || self.pending.is_some()
             || self.lab.include
     }
@@ -1312,7 +1353,11 @@ impl JamesApp {
         }
         self.page = Page::Chat;
         self.conversation_change = Some(String::new());
-        if !self.draft.is_empty() || self.screen.is_some() || self.pending.is_some() {
+        if !self.draft.is_empty()
+            || self.screen.is_some()
+            || self.attachment.is_some()
+            || self.pending.is_some()
+        {
             self.confirm_clear = true;
         } else {
             self.finish_conversation_change();
@@ -1324,7 +1369,11 @@ impl JamesApp {
         }
         self.conversation_change = Some(id);
         self.show_history = false;
-        if !self.draft.is_empty() || self.screen.is_some() || self.pending.is_some() {
+        if !self.draft.is_empty()
+            || self.screen.is_some()
+            || self.attachment.is_some()
+            || self.pending.is_some()
+        {
             self.confirm_clear = true;
         } else {
             self.finish_conversation_change();
@@ -1367,6 +1416,8 @@ impl JamesApp {
         }
         self.messages.clear();
         self.draft.clear();
+        self.attachment = None;
+        self.attachment_path.clear();
         self.streaming = None;
         self.thinking = false;
         self.asking = None;
@@ -1398,6 +1449,8 @@ impl JamesApp {
                 self.archives.clear();
                 self.streaming = None;
                 self.draft.clear();
+                self.attachment = None;
+                self.attachment_path.clear();
                 self.crash_report = None;
                 self.model.clear();
                 self.model_info = None;
@@ -1424,12 +1477,22 @@ impl JamesApp {
     fn send_voice_question(&mut self, question: String) -> bool {
         let typed = std::mem::replace(&mut self.draft, question);
         let attached = std::mem::replace(&mut self.attach_screen, false);
+        let attachment = self.attachment.take();
         let sent = self.send(Ask::Chat);
         if sent || !typed.is_empty() {
             self.draft = typed;
         }
         self.attach_screen = attached;
+        self.attachment = attachment;
         sent
+    }
+    fn attach_file(&mut self, path: PathBuf) {
+        if self.busy() {
+            return;
+        }
+        self.launch_model("Reading attachment...", move |_| {
+            WorkerResult::Attachment(attachments::load(&path))
+        });
     }
     /// Captures the screen, then asks the model how to get unstuck. The answer
     /// is guidance for the user; it never becomes an action proposal.
@@ -1767,6 +1830,14 @@ impl JamesApp {
             return;
         }
         match result {
+            WorkerResult::Attachment(Ok(attachment)) => {
+                let name = attachment.name.clone();
+                self.attachment = Some(attachment);
+                self.info(format!(
+                    "Attached {name}. It will be sent with your next chat question."
+                ));
+            }
+            WorkerResult::Attachment(Err(error)) => self.fail(error),
             WorkerResult::Models(Ok(list)) => {
                 self.available_models = list.models;
                 self.remote_models = list.remote;
@@ -2441,6 +2512,19 @@ impl JamesApp {
         self.poll_voices();
         self.poll_displays();
         self.lab.poll();
+        let dropped = ctx.input(|input| input.raw.dropped_files.clone());
+        if !dropped.is_empty() {
+            if self.busy() {
+                self.fail("Finish the current task before attaching a file.");
+            } else if dropped.len() != 1 {
+                self.fail("Drop one file at a time.");
+            } else if let Some(path) = dropped[0].path.clone() {
+                self.attachment_path = path.display().to_string();
+                self.attach_file(path);
+            } else {
+                self.fail("This file drop did not include a local path. Use Attach file instead.");
+            }
+        }
         self.shortcuts(ctx);
         self.run_schedule();
         if self.busy() || self.lab.connected || self.info_worker.is_some() || self.lab.finding() {

@@ -13,6 +13,10 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Added
 
+- **File attachments.** Drop a file on James or use **Attach file** to enter a
+  path. Chat supports UTF-8 text, extractable PDF text, PNG, JPEG and WebP.
+  Files are limited to 16 MiB and extracted text to 24 KiB. Image-only PDFs
+  need OCR outside James. Attachments are not saved in conversation history.
 - **Conversation history.** New conversation archives the current chat; History
   resumes or deletes earlier chats. Up to 20 archives share the existing
   80-message/512 KiB retention budget. Turning off history removes current and

@@ -16,7 +16,8 @@ path = "src/main.rs"
 james-core = { path = "../james-core" }
 james-platform = { path = "../james-platform" }
 james-lab = { path = "../james-lab" }
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+pdf-extract = "0.12.1"
 james-models = { path = "../james-models" }
 eframe = { version = "0.31.1", default-features = false, features = ["accesskit", "default_fonts", "glow", "x11", "wayland"] }
 serde = { version = "1.0", features = ["derive"] }

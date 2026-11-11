@@ -56,7 +56,10 @@ A feature implemented on `main` is not necessarily present in the latest downloa
 Use **New conversation** to archive a chat and **History** to resume it. **Companion**
 opens a compact, always-on-top window; Settings offers an optional global summon
 shortcut. In **Screen context**, select an area or add colored point/freehand
-marks before sending a screenshot question. The [Korso replication report](docs/KORSO_REPLICATION.md)
+marks before sending a screenshot question. Drop a text, PDF, PNG, JPEG or WebP
+file onto James, or choose **Attach file** and enter its path, to include it in
+the next chat question. PDF attachment extracts text; scanned pages need OCR.
+The [Korso replication report](docs/KORSO_REPLICATION.md)
 records the recovered requirements, implementation choices, and remaining gaps.
 
 ## 02. Principle of operation

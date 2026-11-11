@@ -11,6 +11,9 @@ Recovered source and assets remain outside this repository.
 New direct dependencies are `global-hotkey` 0.10 (MIT OR Apache-2.0), for native
 shortcut registration, and test-only `base64` 0.22 (MIT OR Apache-2.0), for inspecting
 actual image request payloads. Cargo.lock pins their resolved dependencies.
+File attachment processing also uses `pdf-extract` 0.12.1 (MIT), and enables
+the JPEG and WebP features of the existing `image` dependency; their transitive
+dependencies are recorded in Cargo.lock and included in generated notices.
 
 James's Rust source, tests, demonstration, architecture, and project documents were authored independently for this project on 2026-10-11. Functional requirements were informed by public Korso documentation and bounded REA inspection of its publicly downloadable Windows package.
 

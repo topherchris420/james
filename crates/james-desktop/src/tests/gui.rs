@@ -1194,6 +1194,102 @@ fn a_failed_selected_crop_never_sends_the_whole_screenshot() {
 }
 
 #[test]
+fn attached_text_reaches_only_the_intended_chat_request() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(&["Read it."], Duration::ZERO)
+    });
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().attachment = Some(attachments::Attachment {
+        name: "notes.txt".into(),
+        content: attachments::Content::Text("Private fixture content".into()),
+    });
+    type_message(&mut h, "Summarize the attachment");
+    h.get_by_label("Send").click();
+    wait_until(&mut h, "the attachment answer", |app| app.worker.is_none());
+    let request: serde_json::Value = serde_json::from_str(&seen.lock().unwrap()).unwrap();
+    assert!(request.to_string().contains("Private fixture content"));
+    assert!(request.to_string().contains("notes.txt"));
+    assert!(h.state().attachment.is_none());
+    assert!(
+        !std::fs::read_to_string(&h.state().session)
+            .unwrap()
+            .contains("Private fixture content")
+    );
+}
+
+#[test]
+fn spoken_question_leaves_a_file_attachment_for_the_typed_draft() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(&["Heard."], Duration::ZERO)
+    });
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().draft = "A typed draft".into();
+    h.state_mut().attachment = Some(attachments::Attachment {
+        name: "private.txt".into(),
+        content: attachments::Content::Text("Attachment stays here".into()),
+    });
+    assert!(
+        h.state_mut()
+            .send_voice_question("A spoken question".into())
+    );
+    wait_until(&mut h, "the spoken answer", |app| app.worker.is_none());
+    assert_eq!(h.state().draft, "A typed draft");
+    assert!(h.state().attachment.is_some());
+    assert!(!seen.lock().unwrap().contains("Attachment stays here"));
+}
+
+#[test]
+fn image_attachment_is_sent_as_an_image_and_conflicts_with_screenshot() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(&["Seen."], Duration::ZERO)
+    });
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+        4,
+        3,
+        image::Rgba([5, 6, 7, 255]),
+    ))
+    .write_to(&mut png, image::ImageFormat::Png)
+    .unwrap();
+    h.state_mut().attachment = Some(attachments::Attachment {
+        name: "picture.png".into(),
+        content: attachments::Content::Image(png.into_inner()),
+    });
+    with_screen(&mut h);
+    h.state_mut().attach_screen = true;
+    h.state_mut().draft = "Describe this".into();
+    assert!(!h.state_mut().send(Ask::Chat));
+    assert!(h.state().attachment.is_some());
+    assert!(h.state().status.contains("either the screenshot"));
+    h.state_mut().attach_screen = false;
+    assert!(h.state_mut().send(Ask::Chat));
+    wait_until(&mut h, "the image answer", |app| app.worker.is_none());
+    let request: serde_json::Value = serde_json::from_str(&seen.lock().unwrap()).unwrap();
+    let images = request["messages"].as_array().unwrap().last().unwrap()["images"]
+        .as_array()
+        .unwrap();
+    let png = STANDARD.decode(images[0].as_str().unwrap()).unwrap();
+    assert_eq!(
+        image::load_from_memory(&png)
+            .unwrap()
+            .to_rgba8()
+            .get_pixel(0, 0)
+            .0,
+        [5, 6, 7, 255]
+    );
+}
+
+#[test]
 fn an_attached_question_transports_only_the_marked_crop_pixels() {
     let seen = Arc::new(Mutex::new(String::new()));
     let body = Arc::clone(&seen);
