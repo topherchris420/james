@@ -147,7 +147,7 @@ pub struct ShepherdState {
     pub port: String,
     /// This is never serialized or included in chat/model context.
     token: String,
-    connected: bool,
+    pub connected: bool,
     snapshot: Option<(Landscape, Instant)>,
     worker: Option<Receiver<Refresh>>,
     next: Instant,
