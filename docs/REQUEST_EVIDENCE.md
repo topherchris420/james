@@ -2,10 +2,11 @@
 
 Available on the development branch; not in the published preview download.
 
-James makes document answers inspectable without another model call. Attach a
-text file or extractable PDF, or preview and attach selected workspace files.
-Ask your question normally. James numbers the extracted text and asks the model
-to cite locations such as `[S1:L2]` and `[S2:L4-L7]`.
+Open **Add context** beside **Send** to attach a text file, an extractable PDF,
+or selected workspace files. The composer shows what goes with the question
+and lets you remove it before sending. In a narrow Companion window, open the
+**Context** menu to see the attached items. James numbers the extracted text
+and asks the model to cite locations such as `[S1:L2]` and `[S2:L4-L7]`.
 
 Under the latest document answer, **Check the sources** lists recognized
 references. Expand one to read the actual supplied lines. Unknown source IDs,
@@ -18,8 +19,9 @@ or that the model has cited every factual claim. Check the text yourself.
 
 ## Inspect a request
 
-Choose **Request evidence** in the conversation toolbar, or **Inspect request
-and sources** below a document answer. The window shows:
+Choose **Request evidence** in the conversation toolbar (**Options** in a narrow
+Companion window), or **Inspect request and sources** below a document answer.
+The window shows:
 
 - Model, provider and local port at the time of the request.
 - Prepared text messages, including instructions, included conversation history,

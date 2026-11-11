@@ -2009,6 +2009,12 @@ fn document_evidence_matches_the_request_and_never_enters_saved_history() {
     assert_eq!(exported["references"][0]["source"], 0);
     assert!(exported["references"][1]["source"].is_null());
     assert!(h.query_by_label("Check the sources").is_some());
+    h.get_by_label("[S1:L2] · experiment.txt").click();
+    frames(&mut h, 2);
+    assert!(
+        h.query_by_label("L2 | PRIVATE_SOURCE_MEASUREMENT")
+            .is_some()
+    );
     assert!(
         !std::fs::read_to_string(&h.state().session)
             .unwrap()
@@ -2118,11 +2124,81 @@ fn history_search_filters_by_answer_content_without_a_model_request() {
     let mut h = harness(app);
     h.get_by_label("History").click();
     frames(&mut h, 2);
-    h.get_by_label("Search conversation history").click();
+    assert!(h.get_by_label("Search conversation history").is_focused());
     h.get_by_label("Search conversation history")
         .type_text("CONTROL");
     frames(&mut h, 2);
     assert!(h.query_by_label("Earlier experiment").is_some());
     assert!(h.query_by_label("Dinner plans").is_none());
+    h.get_by_label("Clear search").click();
+    frames(&mut h, 2);
+    assert!(h.query_by_label("Dinner plans").is_some());
+    assert!(h.get_by_label("Search conversation history").is_focused());
     assert!(h.state().worker.is_none());
+}
+
+#[test]
+fn context_controls_attach_and_detach_without_changing_the_draft() {
+    let mut h = harness(james(Some("gemma3:4b")));
+    let path = h.state().session.parent().unwrap().join("sample.txt");
+    std::fs::write(&path, "A local observation").unwrap();
+    type_message(&mut h, "Keep my draft");
+    h.get_by_label("Add context").click();
+    frames(&mut h, 2);
+    h.get_by_label("Attach file…").click();
+    frames(&mut h, 2);
+    h.get_by_label("Attachment file path").click();
+    h.get_by_label("Attachment file path")
+        .type_text(path.to_str().unwrap());
+    frames(&mut h, 2);
+    h.get_by_label("Attach").click();
+    wait_until(&mut h, "the file to attach", |app| {
+        app.worker.is_none() && app.attachment.is_some()
+    });
+    h.get_by_label("sample.txt").click();
+    frames(&mut h, 2);
+    assert!(h.query_by_label("A local observation").is_some());
+    h.get_by_label("Remove attachment").click();
+    frames(&mut h, 2);
+    assert!(h.state().attachment.is_none());
+    h.state_mut().show_attachment = false;
+
+    with_screen(&mut h);
+    h.state_mut().page = Page::Screen;
+    frames(&mut h, 2);
+    h.get_by_label("Use screenshot in chat").click();
+    frames(&mut h, 2);
+    assert_eq!(h.state().page, Page::Chat);
+    assert!(h.state().attach_screen);
+    h.get_by_label("Detach screenshot").click();
+    frames(&mut h, 2);
+    assert!(!h.state().attach_screen);
+    assert!(h.state().screen.is_some());
+    assert_eq!(h.state().draft, "Keep my draft");
+    assert!(h.state().messages.is_empty());
+}
+
+#[test]
+fn a_long_draft_leaves_room_for_the_conversation_in_companion_mode() {
+    let mut app = james(Some("gemma3:4b"));
+    app.compact = true;
+    app.prefs.text_scale = 2.0;
+    app.draft = "An unsent draft line\n".repeat(200);
+    let h = harness_sized(app, egui::vec2(380.0, 460.0), 1.0);
+    let send = h.get_by_label("Send").bounding_box().unwrap();
+    let add_context = h.get_by_label("Add context").bounding_box().unwrap();
+    let heading = h.get_by_label("Ask James").bounding_box().unwrap();
+    assert!(
+        send.y1 <= 460.0 && add_context.y1 <= 460.0,
+        "send: {send:?}, context: {add_context:?}, heading: {heading:?}, screen: {:?}",
+        h.ctx.screen_rect()
+    );
+    assert!(
+        heading.y1 < send.y0,
+        "the conversation must be above the composer"
+    );
+    assert!(
+        h.get_by_label("Check a claim").is_disabled(),
+        "starter prompts must preserve an existing draft"
+    );
 }

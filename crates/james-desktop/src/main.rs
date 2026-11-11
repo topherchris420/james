@@ -2887,9 +2887,37 @@ impl JamesApp {
             self.dictate_once();
         }
     }
+    fn uses_compact_menus(&self, ctx: &egui::Context) -> bool {
+        self.compact && ctx.screen_rect().width() < 336.0
+    }
     fn top_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("brand").show(ctx, |ui| {
             ui.add_space(6.0);
+            if self.uses_compact_menus(ctx) {
+                ui.horizontal_wrapped(|ui| {
+                    ui.menu_button("Pages", |ui| {
+                        for (page, label, _) in Page::ALL {
+                            if ui.selectable_value(&mut self.page, page, label).clicked() {
+                                self.focus_composer = page == Page::Chat;
+                                ui.close_menu();
+                            }
+                        }
+                        ui.separator();
+                        chat::connection_badge(self, ui);
+                    });
+                    if ui.button("Full window").clicked() {
+                        self.set_compact(ctx, false);
+                    }
+                });
+                if self
+                    .info_now()
+                    .is_some_and(|info| info.remote_host.is_some())
+                {
+                    ui.colored_label(ui.visuals().warn_fg_color, "Model runs elsewhere");
+                }
+                ui.add_space(6.0);
+                return;
+            }
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new("JAMES")
@@ -2967,6 +2995,9 @@ impl JamesApp {
     }
     fn sidebar(&mut self, ctx: &egui::Context) {
         if self.compact {
+            if self.uses_compact_menus(ctx) {
+                return;
+            }
             egui::TopBottomPanel::top("compact-navigation").show(ctx, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     for (page, label, _) in Page::ALL {
