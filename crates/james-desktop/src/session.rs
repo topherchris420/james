@@ -44,6 +44,9 @@ pub struct Preferences {
     pub speak_replies: bool,
     /// Opt in to the system-wide shortcut that brings James to the front.
     pub summon_shortcut: bool,
+    /// Opt-in chords for starting the existing Talk and Dictate flows.
+    pub talk_shortcut: bool,
+    pub dictation_shortcut: bool,
     /// Guide me numbers its steps on the screenshot. Off by default: the
     /// model places the numbers, and small models often misplace them.
     pub guide_marks: bool,
@@ -61,6 +64,8 @@ impl Default for Preferences {
             reduce_motion: false,
             speak_replies: false,
             summon_shortcut: false,
+            talk_shortcut: false,
+            dictation_shortcut: false,
             guide_marks: false,
             review_actions: true,
         }
@@ -482,6 +487,8 @@ mod tests {
                 reduce_motion: true,
                 speak_replies: false,
                 summon_shortcut: false,
+                talk_shortcut: false,
+                dictation_shortcut: false,
                 guide_marks: true,
                 review_actions: false,
             },

@@ -105,6 +105,8 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     }
     let mut picked = None;
     let mut discard = false;
+    let prior_annotations = app.annotations.clone();
+    let mut overlay_error = None;
     // None leaves the selection as it is; Some(x) sets it after the read-only
     // borrow of the screenshot ends.
     let mut set_selection: Option<Option<PixelRect>> = None;
@@ -331,6 +333,48 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
             );
             ui.small("The numbers mark the steps in James's last Guide me answer. Your model placed them, and they may be off.");
         }
+        if app.overlay.is_open() {
+            if ui.button("Hide desktop guidance").clicked() {
+                app.overlay.close();
+            }
+        } else if ui
+            .add_enabled(
+                !app.busy() && age <= 60,
+                egui::Button::new("Show marks on desktop"),
+            )
+            .clicked()
+        {
+            let marks = app
+                .guide_marks
+                .as_ref()
+                .filter(|g| g.screenshot == screen.at)
+                .map(|g| {
+                    g.marks
+                        .iter()
+                        .map(|m| crate::overlay::GuideMark {
+                            step: m.step,
+                            x: f64::from(m.x),
+                            y: f64::from(m.y),
+                            label: String::new(),
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if let Err(error) = app.overlay.open(
+                ctx,
+                screen.capture.width,
+                screen.capture.height,
+                screen.from_primary,
+                &app.annotations,
+                &marks,
+            ) {
+                overlay_error = Some(error);
+            }
+        }
+        ui.small("Desktop marks are visual guidance only. Model-placed numbers may be wrong; verify the control before acting.");
+        if let Some(error) = &app.overlay.error {
+            ui.colored_label(ui.visuals().warn_fg_color, error);
+        }
         if let Some(rect) = screen.selection {
             ui.small(format!(
                 "Your next attached question will be about the selected {} × {} area only.",
@@ -380,11 +424,18 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     }
     if discard {
         app.screen = None;
+        app.overlay.close();
         app.annotations.clear();
         app.drawing = false;
         app.region_drag_start = None;
         app.pending = None;
         app.attach_screen = false;
+    }
+    if app.annotations != prior_annotations {
+        app.overlay.close();
+    }
+    if let Some(error) = overlay_error {
+        app.fail(error);
     }
     if let Some(selection) = set_selection
         && let Some(screen) = app.screen.as_mut()
@@ -1079,6 +1130,47 @@ fn help(app: &mut JamesApp, ui: &mut egui::Ui) {
         app.save_session();
     }
     ui.small("Summoning opens the compact companion. The shortcut does not capture your screen or start the microphone.");
+    let modifier = if cfg!(target_os = "macos") {
+        "Cmd"
+    } else {
+        "Ctrl"
+    };
+    if ui
+        .checkbox(
+            &mut app.prefs.talk_shortcut,
+            format!("Start Talk with {modifier}+Shift+V"),
+        )
+        .changed()
+    {
+        app.talk_shortcut_error = None;
+        app.save_session();
+    }
+    if ui
+        .checkbox(
+            &mut app.prefs.dictation_shortcut,
+            format!("Dictate into James with {modifier}+Shift+D"),
+        )
+        .changed()
+    {
+        app.dictation_shortcut_error = None;
+        app.save_session();
+    }
+    ui.small("These shortcuts start the microphone. Dictation ends when you pause; Talk keeps listening after each reply until stopped.");
+    for error in [
+        app.talk_shortcut_error.clone(),
+        app.dictation_shortcut_error.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        ui.colored_label(ui.visuals().warn_fg_color, error);
+    }
+    if (app.talk_shortcut_error.is_some() || app.dictation_shortcut_error.is_some())
+        && ui.button("Retry voice shortcuts").clicked()
+    {
+        app.talk_shortcut_error = None;
+        app.dictation_shortcut_error = None;
+    }
     if ui
         .button(if app.floating.visible {
             "Hide floating companion"

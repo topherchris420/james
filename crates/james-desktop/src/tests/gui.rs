@@ -1307,6 +1307,23 @@ fn floating_companion_starts_and_cancels_a_timer() {
 }
 
 #[test]
+fn floating_companion_adds_and_removes_a_reminder() {
+    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().floating.visible = true;
+    h.run();
+    h.get_by_label("Reminder text").click();
+    h.get_by_label("Reminder text").type_text("Check the oven");
+    h.run();
+    h.get_by_label("Add reminder").click();
+    h.run_steps(2);
+    assert!(h.query_by_label_contains("Check the oven").is_some());
+    h.get_by_label("Remove").click();
+    h.run();
+    assert!(h.query_by_label_contains("Check the oven").is_none());
+}
+
+#[test]
 fn floating_companion_is_suppressed_while_screen_capture_runs() {
     let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
     let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
@@ -1328,6 +1345,26 @@ fn floating_companion_is_suppressed_while_screen_capture_runs() {
     drop(tx);
     h.run();
     assert!(h.query_by_label("Start timer").is_some());
+}
+
+#[test]
+fn desktop_guidance_refuses_an_embedded_or_unsupported_viewport() {
+    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    with_screen(&mut h);
+    h.state_mut().page = Page::Screen;
+    h.state_mut().annotations.push(screen_context::Stroke {
+        points: vec![screen_context::Point { x: 10.0, y: 10.0 }],
+        color: screen_context::BrushColor::Accent,
+        width: 6.0,
+    });
+    h.run();
+    h.get_by_label("Show marks on desktop").click();
+    h.run();
+    assert!(!h.state().overlay.is_open());
+    assert!(
+        h.state().status.contains("native window") || h.state().status.contains("Windows only")
+    );
 }
 
 #[test]

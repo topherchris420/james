@@ -14,6 +14,9 @@ actual image request payloads. Cargo.lock pins their resolved dependencies.
 File attachment processing also uses `pdf-extract` 0.12.1 (MIT), and enables
 the JPEG and WebP features of the existing `image` dependency; their transitive
 dependencies are recorded in Cargo.lock and included in generated notices.
+The desktop guidance viewport, voice chord dispatcher, and in-process reminders
+are original James implementations informed by the same static investigation;
+they introduce no new direct dependencies.
 
 James's Rust source, tests, demonstration, architecture, and project documents were authored independently for this project on 2026-10-11. Functional requirements were informed by public Korso documentation and bounded REA inspection of its publicly downloadable Windows package.
 

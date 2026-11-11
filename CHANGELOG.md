@@ -13,6 +13,15 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Added
 
+- **Desktop guidance on Windows.** Show screenshot marks and numbered Guide me
+  steps over the primary display in a click-through window. It checks geometry,
+  expires with the screenshot, and is hidden during capture. Model-placed marks
+  may be wrong; native behavior still needs real-device verification.
+- **Optional voice shortcuts.** Ctrl+Shift+V starts Talk and Ctrl+Shift+D starts
+  Dictate into James (Command instead of Ctrl on macOS). Dictation ends on a
+  pause; these are not hold-to-record shortcuts. Wayland remains unsupported.
+- **Local reminders.** Add reminders to the floating companion. They appear
+  there while James is open and are not saved or delivered as OS notifications.
 - **Floating companion.** Settings can open a movable always-on-top companion
   with a simple timer. It is hidden during screen capture; the timer runs only
   while James is open and reports completion in the companion window.

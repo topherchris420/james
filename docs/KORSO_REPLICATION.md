@@ -381,11 +381,11 @@ added in this pass; integration and verification are recorded separately.
 | Region questions | Baseline, with new fail-closed image preparation and crop preview | A failed crop must not expand transmitted scope |
 | Point/freehand/circle context | New original PNG annotations, undo/clear marks | Korso overlay-to-model representation unknown |
 | Assistant numbered screenshot guidance | Baseline | Model coordinates may be wrong |
-| Persistent live desktop shapes/dismissal | Planned | James marks remain on its captured-image view |
+| Live desktop shapes/dismissal | Partial: user strokes and numbered steps over a Windows primary display | Explicitly opened and time-limited; no assistant arrows or arbitrary shapes; native DPI/transparent behavior still needs physical verification |
 | Guided checklist tied to live controls | Planned | Baseline Guide me is a bounded textual/screenshot answer |
 | Compact assistant surface | New compact conversation view and movable floating companion | No edge docking or full widget engine |
 | Global summon | New opt-in registration | Platform scope and binding differ from Korso |
-| Configurable hold/tap/dictation locks | Planned | Not reproduced by summon |
+| Configurable hold/tap/dictation locks | Partial: opt-in Talk/Dictate chords | Fixed chords start existing voice flows on press; no hold-to-record or dictation locks |
 | Local Talk, Dictate and read-aloud | Baseline | No recorded microphone parity experiment |
 | Preserve draft during Talk | New | Does not add voice authorization |
 | Dictation into another app/clipboard restoration | Planned | James Dictate targets its composer |
@@ -398,7 +398,7 @@ added in this pass; integration and verification are recorded separately.
 | Connected apps/email action editing | Planned | Service/backends and external effects unknown |
 | Text edit ledger and guarded undo | Planned | Universal rollback is unestablished |
 | File backups/script rollback/crash guarantees | Unknown | No verified general transaction/recovery contract recovered |
-| Edge-tab media/weather/pets/timers/reminders | Partial: in-process timer in floating companion | No docking, media, weather, pets or reminders; bundle/UI presence does not establish end-to-end reference behavior |
+| Edge-tab media/weather/pets/timers/reminders | Partial: in-process timer and reminders in floating companion | No docking, media, weather, pets or system notifications; bundle/UI presence does not establish end-to-end reference behavior |
 | Account/billing/usage/backend ratings | Outside this local replication pass | Service implementation unknown |
 | Installer/update/signing parity | Outside this pass | Existing James release readiness limits apply |
 
@@ -455,3 +455,19 @@ its in-process timer can be started, cancelled and dismissed. Automated GUI
 tests cover the embedded viewport and timer controls. Native floating-window
 behavior and its exclusion during a physical screen capture remain unverified.
 The timer does not persist across exits or send system notifications.
+
+The Windows-only desktop overlay can display screenshot strokes and numbered
+Guide me marks after checking primary-monitor geometry. It is click-through by
+design, closes on replacement or expiry of its screenshot, and is suppressed
+during capture. Geometry and embedded-viewport refusal are covered by tests;
+native transparency, pass-through, capture exclusion, and mixed-DPI behavior
+still need physical verification. Optional Talk and Dictate chords start existing
+voice flows on press; they are not release-to-stop or external-app dictation.
+The floating companion also supports bounded in-process reminders, without
+restart persistence or system notifications.
+
+The expanded workspace test run passed 255 tests, with four opt-in tests
+ignored; strict workspace Clippy passed. A separate file-edit prototype was
+not integrated: its replace/undo operations cannot yet preserve all file
+metadata or rule out concurrent changes between a check and replacement. It
+also does not provide model-driven automation. It remains outside this tree.

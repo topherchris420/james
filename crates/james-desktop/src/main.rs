@@ -7,6 +7,7 @@ mod floating;
 mod guide;
 mod lab_view;
 mod markdown;
+mod overlay;
 mod pages;
 mod review;
 mod screen_context;
@@ -676,6 +677,7 @@ struct JamesApp {
     sent_image: Option<(u32, u32)>,
     /// Where the latest Guide me answer's steps are on its screenshot.
     guide_marks: Option<guide::GuideMarks>,
+    overlay: overlay::Overlay,
     draft: String,
     attachment_path: String,
     attachment: Option<attachments::Attachment>,
@@ -700,6 +702,10 @@ struct JamesApp {
     full_size: Option<egui::Vec2>,
     summon: Option<shortcuts::SummonShortcut>,
     summon_error: Option<String>,
+    talk_shortcut: Option<shortcuts::VoiceShortcut>,
+    talk_shortcut_error: Option<String>,
+    dictation_shortcut: Option<shortcuts::VoiceShortcut>,
+    dictation_shortcut_error: Option<String>,
     /// The monitor to capture; empty is the primary one.
     capture_display: String,
     /// Connected monitors for the picker, loaded once off the UI thread.
@@ -792,6 +798,7 @@ impl JamesApp {
             asking: None,
             sent_image: None,
             guide_marks: None,
+            overlay: overlay::Overlay::default(),
             draft: String::new(),
             attachment_path: String::new(),
             attachment: None,
@@ -814,6 +821,10 @@ impl JamesApp {
             full_size: None,
             summon: None,
             summon_error: None,
+            talk_shortcut: None,
+            talk_shortcut_error: None,
+            dictation_shortcut: None,
+            dictation_shortcut_error: None,
             capture_display: String::new(),
             displays: None,
             displays_worker: None,
@@ -911,6 +922,7 @@ impl JamesApp {
     /// Keeps a Guide me answer's marks, mapped to full-screen pixels, and
     /// returns the answer without its Marks line.
     fn take_marks(&mut self, reply: &str) -> String {
+        self.overlay.close();
         self.guide_marks = None;
         let (Some(sent), Some(screen)) = (self.sent_image, &self.screen) else {
             return guide::split_marks(reply, (0, 0)).0;
@@ -1426,6 +1438,7 @@ impl JamesApp {
         self.asking = None;
         self.history_note = None;
         self.screen = None;
+        self.overlay.close();
         self.annotations.clear();
         self.drawing = false;
         self.region_drag_start = None;
@@ -1448,6 +1461,7 @@ impl JamesApp {
     fn delete_all_data(&mut self) {
         match session::delete_all(&self.session) {
             Ok(_) => {
+                self.overlay.close();
                 self.messages.clear();
                 self.archives.clear();
                 self.streaming = None;
@@ -1581,6 +1595,7 @@ impl JamesApp {
             None => (None, true),
         };
         self.capture_from_primary = primary;
+        self.overlay.close();
         self.screen = None;
         self.pending = None;
         self.attach_screen = false;
@@ -2231,6 +2246,66 @@ impl JamesApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
     }
+    fn poll_voice_shortcuts(&mut self, ctx: &egui::Context) {
+        fn sync(
+            enabled: bool,
+            slot: &mut Option<shortcuts::VoiceShortcut>,
+            error: &mut Option<String>,
+            ctx: &egui::Context,
+            kind: shortcuts::VoiceShortcutKind,
+        ) -> bool {
+            if !enabled {
+                *slot = None;
+                *error = None;
+                return false;
+            }
+            if slot.is_none() && error.is_none() {
+                match shortcuts::VoiceShortcut::register(ctx.clone(), kind) {
+                    Ok(shortcut) => *slot = Some(shortcut),
+                    Err(reason) => *error = Some(reason),
+                }
+            }
+            slot.as_ref().is_some_and(|shortcut| {
+                shortcut
+                    .take_events()
+                    .contains(&shortcuts::ShortcutEvent::Pressed)
+            })
+        }
+        let talk = sync(
+            self.prefs.talk_shortcut,
+            &mut self.talk_shortcut,
+            &mut self.talk_shortcut_error,
+            ctx,
+            shortcuts::VoiceShortcutKind::Talk,
+        );
+        let dictate = sync(
+            self.prefs.dictation_shortcut,
+            &mut self.dictation_shortcut,
+            &mut self.dictation_shortcut_error,
+            ctx,
+            shortcuts::VoiceShortcutKind::Dictate,
+        );
+        if !(talk || dictate) {
+            return;
+        }
+        if !self.setup_done()
+            || self.busy()
+            || self.voice != voice::Phase::Off
+            || !self.listening.is_ready()
+        {
+            self.tell(Tone::Warn, "Voice shortcut unavailable while James is busy, setup is incomplete, or listening is unavailable.");
+            return;
+        }
+        self.page = Page::Chat;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        if talk {
+            self.talk();
+        } else {
+            self.dictate_once();
+        }
+    }
     fn top_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("brand").show(ctx, |ui| {
             ui.add_space(6.0);
@@ -2534,6 +2609,22 @@ impl JamesApp {
             .worker
             .as_ref()
             .is_some_and(|w| w.label.starts_with("Capturing the screen"));
+        if self.overlay.is_open() {
+            if self
+                .screen
+                .as_ref()
+                .is_none_or(|screen| screen.at.elapsed() > SCREEN_MAX_AGE)
+            {
+                self.overlay.close();
+                self.tell(
+                    Tone::Warn,
+                    "Desktop guidance expired. Capture a fresh screen to show marks again.",
+                );
+            } else {
+                ctx.request_repaint_after(Duration::from_secs(1));
+            }
+        }
+        self.overlay.show(ctx, capturing);
         let status = self.worker.as_ref().map_or(self.voice.label(), |w| w.label);
         if self.floating.show(ctx, status, capturing) {
             if self.scheduled.take().is_some() {
@@ -2607,8 +2698,12 @@ impl Drop for JamesApp {
     }
 }
 impl eframe::App for JamesApp {
+    fn clear_color(&self, _: &egui::Visuals) -> [f32; 4] {
+        [0.0, 0.0, 0.0, 0.0]
+    }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_summon(ctx);
+        self.poll_voice_shortcuts(ctx);
         self.ui(ctx);
     }
 }
