@@ -3,6 +3,7 @@
 mod attachments;
 mod chat;
 mod conversations;
+mod floating;
 mod guide;
 mod lab_view;
 mod markdown;
@@ -695,6 +696,7 @@ struct JamesApp {
     brush_color: screen_context::BrushColor,
     drawing: bool,
     compact: bool,
+    floating: floating::Floating,
     full_size: Option<egui::Vec2>,
     summon: Option<shortcuts::SummonShortcut>,
     summon_error: Option<String>,
@@ -808,6 +810,7 @@ impl JamesApp {
             brush_color: screen_context::BrushColor::Accent,
             drawing: false,
             compact: false,
+            floating: floating::Floating::default(),
             full_size: None,
             summon: None,
             summon_error: None,
@@ -2527,6 +2530,18 @@ impl JamesApp {
         }
         self.shortcuts(ctx);
         self.run_schedule();
+        let capturing = self
+            .worker
+            .as_ref()
+            .is_some_and(|w| w.label.starts_with("Capturing the screen"));
+        let status = self.worker.as_ref().map_or(self.voice.label(), |w| w.label);
+        if self.floating.show(ctx, status, capturing) {
+            if self.scheduled.take().is_some() {
+                self.info("Action countdown cancelled when you opened James.");
+            }
+            self.page = Page::Chat;
+            self.focus_composer = true;
+        }
         if self.busy() || self.lab.connected || self.info_worker.is_some() || self.lab.finding() {
             ctx.request_repaint_after(Duration::from_millis(100));
         }

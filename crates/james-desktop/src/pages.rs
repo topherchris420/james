@@ -1079,6 +1079,17 @@ fn help(app: &mut JamesApp, ui: &mut egui::Ui) {
         app.save_session();
     }
     ui.small("Summoning opens the compact companion. The shortcut does not capture your screen or start the microphone.");
+    if ui
+        .button(if app.floating.visible {
+            "Hide floating companion"
+        } else {
+            "Show floating companion"
+        })
+        .clicked()
+    {
+        app.floating.visible = !app.floating.visible;
+    }
+    ui.small("The floating companion stays on top and includes a timer while James is open.");
     if let Some(error) = app.summon_error.clone() {
         ui.colored_label(ui.visuals().warn_fg_color, error);
         if ui.button("Retry shortcut registration").clicked() {

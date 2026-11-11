@@ -1290,6 +1290,23 @@ fn image_attachment_is_sent_as_an_image_and_conflicts_with_screenshot() {
 }
 
 #[test]
+fn floating_companion_starts_and_cancels_a_timer() {
+    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().floating.visible = true;
+    h.run();
+    h.get_by_label("Start timer").click();
+    h.run();
+    assert!(h.query_by_label("Cancel timer").is_some());
+    h.get_by_label("Cancel timer").click();
+    h.run();
+    assert!(h.query_by_label("Start timer").is_some());
+    h.get_by_label("Close tab").click();
+    h.run();
+    assert!(!h.state().floating.visible);
+}
+
+#[test]
 fn an_attached_question_transports_only_the_marked_crop_pixels() {
     let seen = Arc::new(Mutex::new(String::new()));
     let body = Arc::clone(&seen);

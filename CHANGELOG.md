@@ -13,6 +13,9 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Added
 
+- **Floating companion.** Settings can open a movable always-on-top companion
+  with a simple timer. It is hidden during screen capture; the timer runs only
+  while James is open and reports completion in the companion window.
 - **File attachments.** Drop a file on James or use **Attach file** to enter a
   path. Chat supports UTF-8 text, extractable PDF text, PNG, JPEG and WebP.
   Files are limited to 16 MiB and extracted text to 24 KiB. Image-only PDFs

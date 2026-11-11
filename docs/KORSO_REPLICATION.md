@@ -383,7 +383,7 @@ added in this pass; integration and verification are recorded separately.
 | Assistant numbered screenshot guidance | Baseline | Model coordinates may be wrong |
 | Persistent live desktop shapes/dismissal | Planned | James marks remain on its captured-image view |
 | Guided checklist tied to live controls | Planned | Baseline Guide me is a bounded textual/screenshot answer |
-| Compact assistant surface | New compact conversation view | No draggable edge tab or widget engine |
+| Compact assistant surface | New compact conversation view and movable floating companion | No edge docking or full widget engine |
 | Global summon | New opt-in registration | Platform scope and binding differ from Korso |
 | Configurable hold/tap/dictation locks | Planned | Not reproduced by summon |
 | Local Talk, Dictate and read-aloud | Baseline | No recorded microphone parity experiment |
@@ -398,7 +398,7 @@ added in this pass; integration and verification are recorded separately.
 | Connected apps/email action editing | Planned | Service/backends and external effects unknown |
 | Text edit ledger and guarded undo | Planned | Universal rollback is unestablished |
 | File backups/script rollback/crash guarantees | Unknown | No verified general transaction/recovery contract recovered |
-| Edge-tab media/weather/pets/timers/reminders | Planned | Bundle/UI presence; end-to-end behavior unverified |
+| Edge-tab media/weather/pets/timers/reminders | Partial: in-process timer in floating companion | No docking, media, weather, pets or reminders; bundle/UI presence does not establish end-to-end reference behavior |
 | Account/billing/usage/backend ratings | Outside this local replication pass | Service implementation unknown |
 | Installer/update/signing parity | Outside this pass | Existing James release readiness limits apply |
 
@@ -449,3 +449,9 @@ they are sent only with the next chat request and are not retained in history.
 Automated tests exercise real PDF extraction, request payloads, attachment
 privacy and preserving attachments during voice questions. Image-only PDFs need
 external OCR. This does not establish Korso attachment equivalence.
+
+The floating companion uses a separate movable, always-on-top egui viewport;
+its in-process timer can be started, cancelled and dismissed. Automated GUI
+tests cover the embedded viewport and timer controls. Native floating-window
+behavior and its exclusion during a physical screen capture remain unverified.
+The timer does not persist across exits or send system notifications.
