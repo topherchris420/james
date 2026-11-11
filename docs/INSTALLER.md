@@ -130,7 +130,7 @@ Pushing an explicit `v<version>` tag runs the release job, which:
 3. creates a [build-provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) for every package, signed through GitHub's OIDC identity for this workflow;
 4. publishes a GitHub release with the packages, `SHA256SUMS.txt` and `release-metadata.json`. The notes start with [`.github/release-notes.md`](../.github/release-notes.md) (which file to download, first-launch warnings, how to check a download), followed by GitHub's generated change list. Tags containing `-` are marked as prereleases.
 
-Only the release job can write release assets, and nothing but a pushed tag starts it: pull requests and manual runs never publish.
+Only the release job writes release assets. For `v0.4.0-preview.4`, creating the exact `release/v0.4.0-preview.4` branch at the prepared `main` commit also starts that job. It verifies the version and commit, runs the same checks, and creates the tag after attestation succeeds.
 
 To publish a release:
 

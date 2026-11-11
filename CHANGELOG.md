@@ -11,9 +11,16 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ## Unreleased
 
+## 0.4.0-preview.4 — 2026-11-11
+
+This preview brings document citations, request evidence, searchable history,
+and the optional read-only Shepherd panel to the downloadable apps. Manage
+context beside Send, review attached text, and keep long drafts in view in
+Companion mode. Windows builds also include reviewed file and desktop utilities.
+
 ### Added
 
-- **Optional Shepherd wallboard (developer branch).** The new Shepherd tab reads a locally self-hosted hub's authenticated workspace landscape, showing agent presence, work claims and announcements without running agents or granting them computer-input authority. Connection is opt-in; token and snapshots are memory-only. The tab uses James's existing loopback-only transport and cannot reach a hosted/remote hub. See [setup and limitations](docs/SHEPHERD.md). This is not yet part of a published release or a verified live-hub integration.
+- **Optional Shepherd wallboard.** The new Shepherd tab reads a locally self-hosted hub's authenticated workspace landscape, showing agent presence, work claims and announcements without running agents or granting them computer-input authority. Connection is opt-in; token and snapshots are memory-only. The tab uses James's existing loopback-only transport and cannot reach a hosted/remote hub. See [setup and limitations](docs/SHEPHERD.md). Automated fixtures cover the connection and parsing. A live hub has yet to be exercised.
 - **Inspectable document answers.** Text/PDF attachments and selected workspace
   files receive request-local source IDs and line numbers. Expand model citations
   to read the supplied lines; missing, malformed and out-of-range references are
@@ -32,8 +39,12 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
   or attachments. Previously only conversation history was trimmed. This is
   an estimate, not exact token accounting, and excludes image token costs.
 
-### Earlier additions
+### Other additions
 
+- **Conversation and Companion UX.** Preview and remove attachments beside
+  Send, use a screenshot in chat, open History with search focused, and scroll
+  a long draft inside the composer. Narrow windows group secondary controls
+  into menus.
 - **Revise a copy.** Preview one small source file, send its frozen contents
   with revision instructions, review the complete output and create a new file.
   Existing source and destination files are never overwritten.
