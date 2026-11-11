@@ -144,8 +144,21 @@ jobs:
     steps:
       - name: Build tools
         run: |
-          sudo apt-get -o Acquire::Retries=3 update
-          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends build-essential ca-certificates curl git jq desktop-file-utils appstream lintian
+          # Only Ubuntu packages are needed. Avoid refreshing unrelated runner repositories.
+          sudo tee /etc/apt/sources.list.d/james-ci.list >/dev/null <<'EOF'
+          deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu/ jammy main universe
+          deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu/ jammy-updates main universe
+          deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://security.ubuntu.com/ubuntu/ jammy-security main universe
+          EOF
+          sudo tee /etc/apt/apt.conf.d/99-james-ci >/dev/null <<'EOF'
+          Dir::Etc::sourcelist "/etc/apt/sources.list.d/james-ci.list";
+          Dir::Etc::sourceparts "-";
+          Acquire::https::Timeout "20";
+          Acquire::Retries "2";
+          APT::Update::Error-Mode "any";
+          EOF
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential ca-certificates curl git jq desktop-file-utils appstream lintian
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # pinned
         with:
           persist-credentials: false
@@ -170,7 +183,7 @@ jobs:
           tar -xzf dist/James-*-linux-x86_64.tar.gz -C /tmp/portable
           /tmp/portable/James-*/james --version
           test -s /tmp/portable/James-*/THIRD-PARTY-NOTICES.txt
-          sudo apt-get -o Acquire::Retries=3 install -y ./dist/james_*_amd64.deb
+          sudo apt-get install -y ./dist/james_*_amd64.deb
           james --version
           dpkg -L james
           # Inspect the packaged notice even on hosts that exclude documentation on install.
