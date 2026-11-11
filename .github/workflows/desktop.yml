@@ -136,22 +136,46 @@ jobs:
   linux-package:
     # Built on Ubuntu 22.04: a binary built on a newer system requires that
     # system's glibc and would not start on Ubuntu 22.04, Mint 21 or Debian 12.
-    runs-on: ubuntu-latest
-    container: ubuntu:22.04
+    # Run directly on Jammy to use the runner's network for package downloads.
+    runs-on: ubuntu-22.04
     env:
       DEBIAN_FRONTEND: noninteractive
+      RUSTUP_TOOLCHAIN: stable
     steps:
       - name: Build tools
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends build-essential ca-certificates curl git jq desktop-file-utils appstream lintian
+          # Only Ubuntu packages are needed. Avoid refreshing unrelated runner repositories.
+          sudo tee /etc/apt/apt.conf.d/99-james-ci >/dev/null <<'EOF'
+          Dir::Etc::sourcelist "/etc/apt/sources.list.d/james-ci.list";
+          Dir::Etc::sourceparts "-";
+          Acquire::https::Timeout "20";
+          Acquire::Retries "2";
+          APT::Update::Error-Mode "any";
+          EOF
+          mirror_ready=false
+          for mirror in https://archive.ubuntu.com/ubuntu https://mirrors.edge.kernel.org/ubuntu https://mirror.math.princeton.edu/pub/ubuntu; do
+            echo "Checking Ubuntu package mirror: $mirror"
+            if ! curl --proto '=https' --proto-redir '=https' -fsSL --max-time 12 -o /dev/null "$mirror/dists/jammy/InRelease"; then
+              continue
+            fi
+            for suite in jammy jammy-updates jammy-security; do
+              printf 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] %s %s main universe\n' "$mirror" "$suite"
+            done | sudo tee /etc/apt/sources.list.d/james-ci.list >/dev/null
+            if sudo apt-get update; then
+              mirror_ready=true
+              break
+            fi
+          done
+          if [[ "$mirror_ready" != true ]]; then
+            echo '::error::No Ubuntu mirror supplied reachable, signed Jammy package indexes.'
+            exit 1
+          fi
+          sudo apt-get install -y --no-install-recommends build-essential ca-certificates curl git jq desktop-file-utils appstream lintian
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # pinned
         with:
           persist-credentials: false
       - name: Rust stable
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+        run: rustup toolchain install stable --profile minimal
       - name: Build release binary
         run: cargo build -p james-desktop --release --locked
       - name: Package .deb and portable archive
@@ -171,10 +195,10 @@ jobs:
           tar -xzf dist/James-*-linux-x86_64.tar.gz -C /tmp/portable
           /tmp/portable/James-*/james --version
           test -s /tmp/portable/James-*/THIRD-PARTY-NOTICES.txt
-          apt-get install -y ./dist/james_*_amd64.deb
+          sudo apt-get install -y ./dist/james_*_amd64.deb
           james --version
           dpkg -L james
-          # Read from the package: this minimal container image skips /usr/share/doc on install.
+          # Inspect the packaged notice even on hosts that exclude documentation on install.
           dpkg-deb --fsys-tarfile dist/james_*_amd64.deb | tar -xO ./usr/share/doc/james/THIRD-PARTY-NOTICES.txt | grep -q '^eframe '
       - name: Upload Linux packages
         uses: actions/upload-artifact@v4

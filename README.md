@@ -53,6 +53,19 @@ James is most useful when you can inspect both the result **and its boundary**.
 
 For a guided first run, follow [Getting started](docs/GETTING_STARTED.md). For exact platform support and test status, use [the capability matrix](docs/PLATFORM_SUPPORT.md), not a screenshot or a badge.
 
+### Inspect the answer, not just the conversation
+
+On the development branch, attach a document and ask a question. James supplies
+line-numbered source text and asks the model to cite it. **Check the sources**
+expands references into the actual supplied lines and flags missing or invalid
+references. These checks establish a location, **not whether the claim is true**.
+
+**Request evidence** shows the model, prepared text messages, omitted history,
+source snapshots and whether the reply completed or was interrupted. Copy an
+evidence record explicitly or forget it; the record stays in memory and is never
+saved with chat history. **History** now searches retained titles and messages
+locally. [Workflow, privacy and validation limits](docs/REQUEST_EVIDENCE.md).
+
 ## 01. The apparatus
 
 | Assembly | Present implementation | Deliberate limit |
