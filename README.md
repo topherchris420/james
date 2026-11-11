@@ -8,7 +8,7 @@
 
 ### A local AI companion. A human-operated instrument.
 
-**Talk to a model you choose. Inspect what it sees. Authorize what happens next.**
+**Choose the model. Inspect the context. Review the action. Keep control.**
 
 [![Developer preview](https://img.shields.io/badge/status-developer%20preview-F2C14E?style=flat-square)](docs/END_USER_READINESS.md)
 [![Rust 1.88+](https://img.shields.io/badge/Rust-1.88%2B-dea584?style=flat-square&logo=rust&logoColor=white)](crates/james-desktop/Cargo.toml)
@@ -16,7 +16,7 @@
 [![Core CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/ci.yml?branch=main&style=flat-square&label=core%20CI)](.github/workflows/ci.yml)
 [![Desktop CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/desktop.yml?branch=main&style=flat-square&label=desktop%20CI)](.github/workflows/desktop.yml)
 
-**[Download the developer preview](https://github.com/topherchris420/james/releases)** · **[Installation and first run](#03-first-operation)** · [Design](#02-principle-of-operation) · [Evidence](#06-verification-record) · [Build](#08-build-and-inspect)
+**[Download](https://github.com/topherchris420/james/releases)** · **[Get started](#03-first-operation)** · [Capabilities](#01-the-apparatus) · [Architecture](#02-principle-of-operation) · [Safety](#04-human-control-of-computer-input) · [Evidence](#06-verification-record) · [Build](#08-build-and-inspect)
 
 <img src="docs/assets/james-conversation.png" alt="Recorded James desktop conversation with a locally served Gemma 3 4B model." width="1000" />
 
@@ -37,7 +37,21 @@ James is an open-source Rust desktop application developed at [Vers3Dynamics](ht
 No James account is required. James contains no analytics or automatic-update telemetry. Its own model and Lab transport is restricted to loopback addresses; the model server itself may use remote services. [The network and privacy boundary is documented here](SECURITY.md).
 
 > [!IMPORTANT]
-> **Development status: developer preview, not a production-ready assistant.** The latest published release is [`v0.4.0-preview.3`](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.3). This document describes `main`, which also contains unreleased improvements to conversation management, screen capture, reading voices, and action review. See the [changelog](CHANGELOG.md#unreleased). Windows and macOS downloads are unsigned; important real-device and accessibility tests remain open.
+> **Developer preview, not a production-ready assistant.** The latest published release is [`v0.4.0-preview.3`](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.3). The current `main` branch contains **unreleased** capabilities, including conversation history, attachments, companion controls, desktop guidance, and reviewed Windows file operations. They are not necessarily in release downloads. Check the [unreleased changelog](CHANGELOG.md#unreleased) and [platform evidence matrix](docs/PLATFORM_SUPPORT.md). Windows and macOS packages are unsigned; physical-device, accessibility, and independent security validation remain incomplete.
+
+### Pick an experiment
+
+James is most useful when you can inspect both the result **and its boundary**.
+
+| I want to… | First operation | What to verify |
+| --- | --- | --- |
+| **Talk with a chosen model** | Connect Ollama, LM Studio or llama.cpp; send a test question. | James identifies the selected model and reports connection failures instead of fabricating a reply. |
+| **Ask about what is on-screen** | Capture, inspect the preview, then send a question to a vision-capable model. | Nothing is sent merely by capturing; guidance can be inaccurate. |
+| **Work with a document** | On `main`, attach a text, extractable PDF or supported image; or select a workspace text-file preview. | The preview matches what you meant to share; scanned PDFs are not automatically read. |
+| **Review a proposed desktop action** | On Windows, capture a fresh screen and use **Suggest one action**. | You can refuse; approval allows at most one checked input, not an unattended task. |
+| **Inspect research context** | Connect a local R.A.I.N. Lab and open its read-only view. | Observations, simulations and hypotheses carry distinct labels. |
+
+For a guided first run, follow [Getting started](docs/GETTING_STARTED.md). For exact platform support and test status, use [the capability matrix](docs/PLATFORM_SUPPORT.md), not a screenshot or a badge.
 
 ## 01. The apparatus
 
@@ -53,23 +67,20 @@ No James account is required. James contains no analytics or automatic-update te
 
 A feature implemented on `main` is not necessarily present in the latest downloadable release. The [platform matrix](docs/PLATFORM_SUPPORT.md) distinguishes implemented functions, automated tests, and exercised real-software sessions.
 
-Use **New conversation** to archive a chat and **History** to resume it. **Companion**
-opens a compact, always-on-top window; Settings offers an optional global summon
-shortcut, configurable voice shortcuts, and a floating companion with a timer
-and optionally saved reminders.
-On Windows, screenshot marks and numbered guidance can also be shown over the
-primary display, the companion can dock at its edge, and opted-in dictation can
-be reviewed and sent to another app. Computer control can prepare and review a
-new text file or a revised copy with the model without overwriting existing
-files. It can also review and open a common Windows settings page.
-In **Screen context**, select an area or add colored point/freehand
-marks before sending a screenshot question. Drop a text, PDF, PNG, JPEG or WebP
-file onto James, or choose **Attach file** and enter its path, to include it in
-the next chat question. PDF attachment extracts text; scanned pages need OCR.
-**Workspace files** previews selected local text files before attaching them;
-the Windows floating companion can show and control the current media session.
-The [Korso replication report](docs/KORSO_REPLICATION.md)
-records the recovered requirements, implementation choices, and remaining gaps.
+### Beyond the published preview: current `main`
+
+These features are implemented on the development branch, **not a promise about the downloadable preview**. Some still lack real-device validation.
+
+| Area | Current development-branch behavior | Important boundary |
+| --- | --- | --- |
+| **Conversation** | New and resumed conversations, Copy conversation, Markdown replies and local history controls | Archive retention is bounded; disabling retention does not encrypt other stored data |
+| **Screen** | Select a monitor, crop a screenshot for a chat question, add point/freehand marks, and receive up to three guidance steps | Guide me and action suggestions use full-screen context; model-positioned markers can be wrong |
+| **Files & workspace** | Attach UTF-8 text, extractable PDF, PNG, JPEG or WebP; explicitly preview selected workspace text files | Attachment content is sent only with a question and is not persisted in chat history; scanned PDFs require separate OCR |
+| **Companion & voice** | Always-on-top companion, configurable summon/voice shortcuts, dictation, Talk, installed reading voices, local timer and optional saved reminders | Timer/reminders require James to be running; speech never approves an action |
+| **Windows desktop** | Reviewed dictation into another app, screenshot guidance overlay, companion docking and media-session controls | Platform-specific features; real-app behavior remains incompletely tested |
+| **Reviewed Windows utilities** | Prepare a new text file, revise into a **new copy**, or review opening a common settings page | No overwrite of existing files, automatic editing, settings changes or agent-controlled shell |
+
+The [Korso replication report](docs/KORSO_REPLICATION.md) explains which interaction requirements were reconstructed from static evidence and how James implements its **own Rust behavior**. It does not claim product parity or validate Korso at runtime. Consult the [unreleased changelog](CHANGELOG.md#unreleased) for feature-level limitations.
 
 ## 02. Principle of operation
 
@@ -98,6 +109,18 @@ flowchart TB
 - **Human authorization:** [`james-core`](crates/james-core) implements review and supervision contracts. On Windows, the desktop also records the exact pending input before execution, then checks approval expiry and the reviewed target window.
 - **Platform operations:** [`james-platform`](crates/james-platform) owns OS-specific capture, speech and reviewed Windows input. James does not provide a model-accessible shell.
 - **Research context:** [`james-lab`](crates/james-lab) reads local Lab status and evidence labels. An experiment's claim remains separate from its execution and reproduction records.
+
+### Data path and trust boundaries
+
+| Information | When James uses it | What the boundary does **not** prove |
+| --- | --- | --- |
+| **Chat text and selected attachments** | Sent to the configured model server after an explicit question | A server on loopback may itself relay to cloud inference; trust its configuration |
+| **Screenshots** | Captured on request, previewed locally and sent only when attached or used for guidance/action suggestion | Screenshot understanding and suggested coordinates are not verified facts |
+| **Lab snapshots** | Read from a local Lab and optionally included in ordinary chat after user preview and opt-in | Lab text cannot authorize input and is not included in guidance/action proposal requests |
+| **Conversation & preferences** | Stored in local `session.json` subject to the history setting | Local files are not encrypted against other processes with the same user access |
+| **Approved Windows input** | One reviewed input is dispatched after countdown and target checks; intent is recorded before sending | Sent input cannot be undone; James cannot prove its intended effect occurred |
+
+James itself has no telemetry or automatic update checks. Data-handling details, storage paths and the exact limitations of loopback transport are in [Security](SECURITY.md).
 
 The workspace forbids `unsafe` in its own Rust crates. That prohibition does not mean operating systems, external helpers, dependencies, or model outputs have been proven safe. Consult [the security scope](SECURITY.md) and [supervision contract](docs/SUPERVISION.md).
 
@@ -156,7 +179,7 @@ Then conduct three observations yourself:
 2. If you selected a vision-capable model, capture a screen, inspect its preview, and decide whether to attach it to a question. **Guide me** suggests steps but does not execute them.
 3. Open **Settings** and inspect history retention, voice configuration, and the action-review controls before enabling anything.
 
-On `main`, additional unreleased functions include monitor selection, in-memory screenshot cropping for attached chat questions, selectable installed reading voices, Copy conversation, New conversation, and an optional second-pass advisory review of proposed computer actions. None of those additions expands the model's authority to operate the desktop. [See the actual change record](CHANGELOG.md#unreleased).
+Development-branch features are itemized in [the apparatus](#beyond-the-published-preview-current-main) and the [changelog](CHANGELOG.md#unreleased). The optional second-pass review of a model-proposed action is **advisory only**; it does not expand the model's authority or substitute for human approval.
 
 ## 04. Human control of computer input
 
@@ -213,6 +236,12 @@ The [dated end-user readiness assessment](docs/END_USER_READINESS.md) rated Jame
 James has not demonstrated production-grade desktop reliability, universal provider compatibility, fully tested Windows input, independent security assurance, screen-reader usability, or accurate answers from every model.
 
 A passing CI badge establishes that the prescribed checks passed on that runner. It is not an end-user acceptance test.
+
+### A reproducible evaluation, not a product demo
+
+To assess James independently, record the **OS and device**, **James commit or release tag**, **model server and model versions**, **exact user action**, **observed output**, and **whether the result was repeated**. Useful falsification probes include: disconnecting the model mid-stream; refusing a proposed action; changing the target window before a Windows input; and reopening after an unresolved intent. Record failures as carefully as successes.
+
+The [validation ledger](docs/VALIDATION.md) records exercised sessions. The [acceptance scenarios](docs/ACCEPTANCE_TESTS.md) and [readiness scorecard](docs/END_USER_READINESS.md) identify which claims still require physical-device or accessibility testing.
 
 ## 07. Failure diagnosis
 
