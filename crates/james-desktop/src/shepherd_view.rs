@@ -109,24 +109,31 @@ fn fetch_landscape(port: u16, token: &str) -> Result<Landscape, String> {
         .header("Authorization", format!("Bearer {token}"))
         .header("Accept", "application/json")
         .send()
-        .map_err(|_| "Could not connect to the local Shepherd hub within five seconds.".to_owned())?;
+        .map_err(|_| {
+            "Could not connect to the local Shepherd hub within five seconds.".to_owned()
+        })?;
     match response.status() {
         200 => {}
         401 | 403 => {
-            return Err("Shepherd rejected the token. Verify the hub and token configuration.".into());
+            return Err(
+                "Shepherd rejected the token. Verify the hub and token configuration.".into(),
+            );
         }
         status => {
-            return Err(format!("Shepherd returned HTTP {status}; check that the hub supports the workspace landscape API."));
+            return Err(format!(
+                "Shepherd returned HTTP {status}; check that the hub supports the workspace landscape API."
+            ));
         }
     }
     if response.media_type().as_deref() != Some("application/json") {
         return Err("Shepherd did not return JSON. Check the hub port.".into());
     }
-    let body = response
-        .read_to_end(MAX_BODY)
-        .map_err(|_| "Shepherd's workspace response is unavailable or too large (512 KiB limit).".to_owned())?;
-    let mut view: Landscape = serde_json::from_slice(&body)
-        .map_err(|_| "Shepherd returned an incompatible workspace landscape response.".to_owned())?;
+    let body = response.read_to_end(MAX_BODY).map_err(|_| {
+        "Shepherd's workspace response is unavailable or too large (512 KiB limit).".to_owned()
+    })?;
+    let mut view: Landscape = serde_json::from_slice(&body).map_err(|_| {
+        "Shepherd returned an incompatible workspace landscape response.".to_owned()
+    })?;
     // Rendering caps are separate from the bounded on-the-wire response.
     view.agents.truncate(80);
     view.tasks.truncate(120);
@@ -271,7 +278,10 @@ fn draw(state: &mut ShepherdState, ui: &mut egui::Ui) {
     if !state.connected && state.snapshot.is_none() {
         ui.add_space(10.0);
         ui.label("First run a Shepherd hub and PostgreSQL locally, following its self-hosting instructions. Enter its local port and TEAM_TOKEN above, then connect.");
-        ui.hyperlink_to("Shepherd setup and source", "https://github.com/Korso-AI/Shepherd");
+        ui.hyperlink_to(
+            "Shepherd setup and source",
+            "https://github.com/Korso-AI/Shepherd",
+        );
         ui.small("James works normally without Shepherd. Hosted/remote hubs and automated agent actions are intentionally unsupported.");
         return;
     }
@@ -286,14 +296,28 @@ fn draw(state: &mut ShepherdState, ui: &mut egui::Ui) {
     ));
     ui.separator();
 
-    let live = view.agents.iter().filter(|agent| agent.presence == "live").count();
-    ui.label(RichText::new(format!("Agents · {live} live / {} shown", view.agents.len())).strong());
+    let live = view
+        .agents
+        .iter()
+        .filter(|agent| agent.presence == "live")
+        .count();
+    ui.label(
+        RichText::new(format!(
+            "Agents · {live} live / {} shown",
+            view.agents.len()
+        ))
+        .strong(),
+    );
     if view.agents.is_empty() {
         ui.small("No agents have joined this workspace.");
     }
     for agent in &view.agents {
         egui::Frame::group(ui.style()).show(ui, |ui| {
-            let label = if agent.presence == "live" { "Live" } else { "Offline" };
+            let label = if agent.presence == "live" {
+                "Live"
+            } else {
+                "Offline"
+            };
             ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new(clean(&agent.name, 120)).strong());
                 ui.small(label);
@@ -302,12 +326,24 @@ fn draw(state: &mut ShepherdState, ui: &mut egui::Ui) {
             ui.small(format!(
                 "Operator: {} · Model: {}",
                 clean(&agent.human, 80),
-                agent.model.as_deref().map(|s| clean(s, 80)).unwrap_or_else(|| "unspecified".into())
+                agent
+                    .model
+                    .as_deref()
+                    .map(|s| clean(s, 80))
+                    .unwrap_or_else(|| "unspecified".into())
             ));
             ui.small(format!(
                 "Repository: {} · Branch: {}",
-                agent.repo.as_deref().map(|s| clean(s, 120)).unwrap_or_else(|| "unknown".into()),
-                agent.branch.as_deref().map(|s| clean(s, 80)).unwrap_or_else(|| "unknown".into())
+                agent
+                    .repo
+                    .as_deref()
+                    .map(|s| clean(s, 120))
+                    .unwrap_or_else(|| "unknown".into()),
+                agent
+                    .branch
+                    .as_deref()
+                    .map(|s| clean(s, 80))
+                    .unwrap_or_else(|| "unknown".into())
             ));
             if let Some(seen) = &agent.last_heartbeat_at {
                 ui.small(format!("Last heartbeat: {}", clean(seen, 48)));
@@ -334,8 +370,13 @@ fn draw(state: &mut ShepherdState, ui: &mut egui::Ui) {
                 clean(&task.created_at, 48)
             ));
             if !task.path_globs.is_empty() {
-                let paths = task.path_globs.iter().take(8)
-                    .map(|p| clean(p, 96)).collect::<Vec<_>>().join(", ");
+                let paths = task
+                    .path_globs
+                    .iter()
+                    .take(8)
+                    .map(|p| clean(p, 96))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 ui.small(format!("Files claimed: {paths}"));
             }
         });
@@ -355,7 +396,10 @@ fn draw(state: &mut ShepherdState, ui: &mut egui::Ui) {
                 if note.to_admin { "→ operator " } else { "" },
                 clean(&note.repo, 100),
                 clean(&note.created_at, 48),
-                note.target_agent_name.as_deref().map(|name| format!(" · → {}", clean(name, 80))).unwrap_or_default()
+                note.target_agent_name
+                    .as_deref()
+                    .map(|name| format!(" · → {}", clean(name, 80)))
+                    .unwrap_or_default()
             ));
         });
     }
@@ -389,7 +433,9 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let join = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
             let mut incoming = [0; 2048];
             let size = stream.read(&mut incoming).unwrap();
             let request = String::from_utf8_lossy(&incoming[..size]);
