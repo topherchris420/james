@@ -145,11 +145,6 @@ jobs:
       - name: Build tools
         run: |
           # Only Ubuntu packages are needed. Avoid refreshing unrelated runner repositories.
-          sudo tee /etc/apt/sources.list.d/james-ci.list >/dev/null <<'EOF'
-          deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu/ jammy main universe
-          deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu/ jammy-updates main universe
-          deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://security.ubuntu.com/ubuntu/ jammy-security main universe
-          EOF
           sudo tee /etc/apt/apt.conf.d/99-james-ci >/dev/null <<'EOF'
           Dir::Etc::sourcelist "/etc/apt/sources.list.d/james-ci.list";
           Dir::Etc::sourceparts "-";
@@ -157,7 +152,24 @@ jobs:
           Acquire::Retries "2";
           APT::Update::Error-Mode "any";
           EOF
-          sudo apt-get update
+          mirror_ready=false
+          for mirror in https://archive.ubuntu.com/ubuntu https://mirrors.edge.kernel.org/ubuntu https://mirror.math.princeton.edu/pub/ubuntu; do
+            echo "Checking Ubuntu package mirror: $mirror"
+            if ! curl --proto '=https' --proto-redir '=https' -fsSL --max-time 12 -o /dev/null "$mirror/dists/jammy/InRelease"; then
+              continue
+            fi
+            for suite in jammy jammy-updates jammy-security; do
+              printf 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] %s %s main universe\n' "$mirror" "$suite"
+            done | sudo tee /etc/apt/sources.list.d/james-ci.list >/dev/null
+            if sudo apt-get update; then
+              mirror_ready=true
+              break
+            fi
+          done
+          if [[ "$mirror_ready" != true ]]; then
+            echo '::error::No Ubuntu mirror supplied reachable, signed Jammy package indexes.'
+            exit 1
+          fi
           sudo apt-get install -y --no-install-recommends build-essential ca-certificates curl git jq desktop-file-utils appstream lintian
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # pinned
         with:
