@@ -169,7 +169,7 @@ fn message_ui(app: &mut JamesApp, ui: &mut egui::Ui, index: usize, last_answer: 
                 if !user && last_answer {
                     again = ui
                         .add_enabled(!app.busy(), egui::Button::new("Ask again").small())
-                        .on_hover_text("Send your last question again and replace this answer. A screenshot is not sent again.")
+                        .on_hover_text("Send your last question again and replace this answer. Documents, Lab context and screenshots from the earlier request are not restored; reattach documents for a source-based follow-up.")
                         .clicked();
                 }
                 if !user {
@@ -198,6 +198,9 @@ fn message_ui(app: &mut JamesApp, ui: &mut egui::Ui, index: usize, last_answer: 
     if read {
         let text = voice::speakable(&app.messages[index].content);
         app.speak(text);
+    }
+    if index < app.messages.len() && app.messages[index].role == "assistant" {
+        crate::evidence_view::answer(app, ui, index);
     }
 }
 
@@ -297,6 +300,12 @@ pub fn header(app: &mut JamesApp, ui: &mut egui::Ui) {
         {
             app.show_history = true;
         }
+        if ui
+            .add_enabled(app.receipt.is_some(), egui::Button::new("Request evidence"))
+            .clicked()
+        {
+            app.show_evidence = true;
+        }
     });
     model_facts(app, ui);
     if !app.keep_history {
@@ -312,17 +321,6 @@ pub fn history(app: &mut JamesApp, ctx: &egui::Context) {
     let mut open = true;
     let mut resume = None;
     let mut remove = None;
-    let rows: Vec<_> = app
-        .archives
-        .iter()
-        .map(|conversation| {
-            (
-                conversation.id.clone(),
-                conversation.title.clone(),
-                conversation.messages.len(),
-            )
-        })
-        .collect();
     egui::Window::new("Conversation history")
         .open(&mut open)
         .default_width(440.0)
@@ -333,6 +331,15 @@ pub fn history(app: &mut JamesApp, ctx: &egui::Context) {
                 "History is kept in memory until James closes."
             });
             ui.small("Up to 20 previous conversations within the shared history limit. Screenshots, drafts and approvals are not saved in history.");
+            let search = ui.add(egui::TextEdit::singleline(&mut app.history_query).hint_text("Search titles and messages…").desired_width(f32::INFINITY));
+            search.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Search conversation history"));
+            let rows: Vec<_> = app.archives.iter()
+                .filter(|conversation| crate::conversations::matches(conversation, &app.history_query))
+                .map(|conversation| (conversation.id.clone(), conversation.title.clone(), conversation.messages.len()))
+                .collect();
+            if !app.archives.is_empty() && rows.is_empty() {
+                ui.label("No conversations match. Try a different word.");
+            }
             if let Some(id) = app.history_delete.clone() {
                 egui::Frame::group(ui.style()).show(ui, |ui| {
                     ui.label("Delete this saved conversation? This cannot be undone.");
@@ -589,6 +596,9 @@ pub fn composer(app: &mut JamesApp, ctx: &egui::Context) {
                 theme::busy(ui, app.prefs.reduce_motion);
                 ui.small(w.label);
             });
+        }
+        if app.attachment.is_some() || app.workspace_context.is_some() {
+            ui.small("Selected documents are sent with this question only. Use Request evidence afterward to inspect source text and references.");
         }
         let color = match app.tone {
             Tone::Info => ui.visuals().text_color(),

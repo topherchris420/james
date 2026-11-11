@@ -379,6 +379,16 @@ fn stop_closes_the_reply_and_keeps_what_arrived_marked_incomplete() {
             .ends_with("[Stopped by you before the reply finished.]")
     );
     assert!(h.state().status.starts_with("Stopped."));
+    let receipt = h.state().receipt.as_ref().unwrap();
+    assert_eq!(receipt.state, "incomplete");
+    assert_eq!(receipt.answer.as_deref(), Some("First part. "));
+    assert!(
+        receipt
+            .outcome_note
+            .as_deref()
+            .unwrap()
+            .contains("Stopped by you")
+    );
 }
 
 #[test]
@@ -1945,4 +1955,174 @@ fn guide_me_marks_its_steps_on_the_screenshot() {
     assert_eq!(points, [(1, 2, 3), (2, 7, 7)]);
     let marked = h.query_by_label("Your screenshot with the steps marked");
     assert!(marked.is_some());
+}
+
+#[test]
+fn document_evidence_matches_the_request_and_never_enters_saved_history() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(
+            &["A measured result [S1:L2]. An invented reference [S9:L8]."],
+            Duration::ZERO,
+        )
+    });
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().attachment = Some(attachments::Attachment {
+        name: "experiment.txt".into(),
+        content: attachments::Content::Text(
+            "PRIVATE_SOURCE_TITLE\nPRIVATE_SOURCE_MEASUREMENT".into(),
+        ),
+    });
+    type_message(&mut h, "What did the experiment measure?");
+    h.get_by_label("Send").click();
+    wait_until(&mut h, "document answer", |app| app.worker.is_none());
+    let receipt = h.state().receipt.as_ref().unwrap();
+    assert_eq!(receipt.state, "complete");
+    assert!(receipt.elapsed_ms.is_some());
+    assert_eq!(receipt.sources[0].lines[1], "PRIVATE_SOURCE_MEASUREMENT");
+    let wire: serde_json::Value = serde_json::from_str(&seen.lock().unwrap()).unwrap();
+    // The adapter coalesces system messages. The receipt deliberately records
+    // prepared messages before provider-specific wire encoding.
+    let prepared_system = receipt
+        .context
+        .iter()
+        .filter(|m| m.role == "system")
+        .map(|m| m.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    assert_eq!(wire["messages"][0]["content"], prepared_system);
+    let prepared_data: Vec<_> = receipt
+        .context
+        .iter()
+        .filter(|m| m.role != "system")
+        .collect();
+    assert_eq!(
+        wire["messages"].as_array().unwrap()[1..],
+        serde_json::to_value(prepared_data)
+            .unwrap()
+            .as_array()
+            .unwrap()[..]
+    );
+    let exported: serde_json::Value = serde_json::from_str(&receipt.export()).unwrap();
+    assert_eq!(exported["references"][0]["source"], 0);
+    assert!(exported["references"][1]["source"].is_null());
+    assert!(h.query_by_label("Check the sources").is_some());
+    assert!(
+        !std::fs::read_to_string(&h.state().session)
+            .unwrap()
+            .contains("PRIVATE_SOURCE")
+    );
+    assert!(JamesApp::new(h.state().session.clone()).receipt.is_none());
+    h.get_by_label("Inspect request and sources").click();
+    frames(&mut h, 3);
+    assert!(h.query_by_label("Copy evidence JSON").is_some());
+    h.get_by_label("Forget request evidence").click();
+    frames(&mut h, 2);
+    assert!(h.state().receipt.is_none());
+    assert_eq!(h.state().messages.len(), 2);
+}
+
+#[test]
+fn oversized_fixed_context_is_refused_without_consuming_the_draft_or_document() {
+    let count = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::clone(&count);
+    let port = ollama(move |_| {
+        requests.fetch_add(1, Ordering::SeqCst);
+        ndjson(&["must not be called"], Duration::ZERO)
+    });
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().model_info = Some((
+        "gemma3:4b".into(),
+        ModelInfo {
+            context_tokens: Some(4096),
+            ..ModelInfo::default()
+        },
+    ));
+    h.state_mut().attachment = Some(attachments::Attachment {
+        name: "large.txt".into(),
+        content: attachments::Content::Text("x".repeat(12_000)),
+    });
+    h.state_mut().draft = "Summarize this".into();
+    assert!(!h.state_mut().send(Ask::Chat));
+    assert!(h.state().status.contains("estimated text budget"));
+    assert_eq!(h.state().draft, "Summarize this");
+    assert!(h.state().attachment.is_some());
+    assert!(h.state().messages.is_empty());
+    assert!(h.state().receipt.is_none());
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn request_evidence_tracks_failure_replacement_and_conversation_clear() {
+    let mut h = harness(james(Some("gemma3:4b")));
+    h.state_mut().draft = "A question that cannot reach its model".into();
+    assert!(h.state_mut().send(Ask::Chat));
+    wait_until(&mut h, "connection failure", |app| app.worker.is_none());
+    assert_eq!(h.state().receipt.as_ref().unwrap().state, "failed");
+    let port = ollama(|_| ndjson(&["Next answer."], Duration::ZERO));
+    h.state_mut().port = port.to_string();
+    h.state_mut().draft = "Next question".into();
+    assert!(h.state_mut().send(Ask::Chat));
+    wait_until(&mut h, "next answer", |app| app.worker.is_none());
+    assert_eq!(h.state().receipt.as_ref().unwrap().question_index, 1);
+    assert_eq!(
+        h.state().receipt.as_ref().unwrap().answer.as_deref(),
+        Some("Next answer.")
+    );
+    h.state_mut().request_new_conversation();
+    assert!(h.state().receipt.is_none());
+    assert!(!h.state().archives.is_empty());
+}
+
+#[test]
+fn evidence_stays_bound_to_its_answer_after_history_retention() {
+    let port = ollama(|_| ndjson(&["A result [S1:L1]."], Duration::ZERO));
+    let mut app = james_on(port, Some("gemma3:4b"), SetupStep::Done);
+    app.messages = (0..80)
+        .map(|i| ChatMessage::new(if i % 2 == 0 { "user" } else { "assistant" }, "earlier"))
+        .collect();
+    app.attachment = Some(attachments::Attachment {
+        name: "source.txt".into(),
+        content: attachments::Content::Text("a result".into()),
+    });
+    app.draft = "Question".into();
+    let mut h = harness(app);
+    assert!(h.state_mut().send(Ask::Chat));
+    wait_until(&mut h, "retained answer", |app| app.worker.is_none());
+    let receipt = h.state().receipt.as_ref().unwrap();
+    assert_eq!(receipt.question_index, 78);
+    assert_eq!(
+        h.state().messages[receipt.question_index].content,
+        "Question"
+    );
+    assert_eq!(h.state().messages.len(), 80);
+    assert_eq!(receipt.omitted_messages, 50);
+}
+
+#[test]
+fn history_search_filters_by_answer_content_without_a_model_request() {
+    let mut app = james(Some("gemma3:4b"));
+    conversations::archive(
+        &mut app.archives,
+        &[
+            ChatMessage::new("user", "Earlier experiment"),
+            ChatMessage::new("assistant", "Keep a control group."),
+        ],
+    );
+    conversations::archive(
+        &mut app.archives,
+        &[ChatMessage::new("user", "Dinner plans")],
+    );
+    let mut h = harness(app);
+    h.get_by_label("History").click();
+    frames(&mut h, 2);
+    h.get_by_label("Search conversation history").click();
+    h.get_by_label("Search conversation history")
+        .type_text("CONTROL");
+    frames(&mut h, 2);
+    assert!(h.query_by_label("Earlier experiment").is_some());
+    assert!(h.query_by_label("Dinner plans").is_none());
+    assert!(h.state().worker.is_none());
 }

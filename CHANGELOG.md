@@ -13,6 +13,26 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Added
 
+- **Inspectable document answers.** Text/PDF attachments and selected workspace
+  files receive request-local source IDs and line numbers. Expand model citations
+  to read the supplied lines; missing, malformed and out-of-range references are
+  disclosed. Location checks do not verify that a claim is true or supported.
+- **Request evidence.** Inspect the latest chat's prepared messages, model,
+  source snapshots, image-selection description, omitted history and outcome.
+  Explicitly copy a JSON record or forget it. Records stay in memory and are
+  never saved in conversation history. See [Request evidence](docs/REQUEST_EVIDENCE.md).
+- **Local conversation search.** Filter retained history by literal words in
+  titles and messages without contacting a model.
+
+### Fixed
+
+- Refuse fixed document/question context that exceeds the model's advertised
+  window under the existing byte-budget heuristic, before consuming the draft
+  or attachments. Previously only conversation history was trimmed. This is
+  an estimate, not exact token accounting, and excludes image token costs.
+
+### Earlier additions
+
 - **Revise a copy.** Preview one small source file, send its frozen contents
   with revision instructions, review the complete output and create a new file.
   Existing source and destination files are never overwritten.

@@ -21,6 +21,25 @@ pub struct Conversation {
     pub messages: Vec<ChatMessage>,
 }
 
+/// Literal, case-insensitive local search. Every query word must occur in
+/// the title or a retained message; no files or model server are consulted.
+pub fn matches(conversation: &Conversation, query: &str) -> bool {
+    let terms: Vec<_> = query.split_whitespace().map(str::to_lowercase).collect();
+    if terms.is_empty() {
+        return true;
+    }
+    let text = std::iter::once(conversation.title.to_lowercase())
+        .chain(
+            conversation
+                .messages
+                .iter()
+                .map(|m| m.content.to_lowercase()),
+        )
+        .collect::<Vec<_>>()
+        .join("\n");
+    terms.iter().all(|term| text.contains(term))
+}
+
 fn title(messages: &[ChatMessage]) -> String {
     let question = messages
         .iter()
@@ -184,6 +203,20 @@ mod tests {
         assert!(remove(&mut archives, &second));
         assert!(!remove(&mut archives, &second));
         assert!(archives.is_empty());
+    }
+
+    #[test]
+    fn search_finds_answer_text_and_treats_patterns_literally() {
+        let mut saved = chat(1, 1);
+        saved
+            .messages
+            .push(ChatMessage::new("assistant", "Résultat: 🧪 voltage [3.2]"));
+        assert!(matches(&saved, "RÉSULTAT voltage"));
+        assert!(matches(&saved, "question 🧪"));
+        assert!(matches(&saved, "[3.2]"));
+        assert!(matches(&saved, "  "));
+        assert!(!matches(&saved, "voltage absent"));
+        assert!(!matches(&saved, ".*"));
     }
 
     #[test]

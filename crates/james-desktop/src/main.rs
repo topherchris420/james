@@ -5,6 +5,8 @@ mod chat;
 mod conversations;
 mod dictation_target;
 mod edge_dock;
+mod evidence;
+mod evidence_view;
 mod floating;
 mod guide;
 mod lab_view;
@@ -680,6 +682,9 @@ struct JamesApp {
     messages: Vec<ChatMessage>,
     archives: Vec<conversations::Conversation>,
     show_history: bool,
+    history_query: String,
+    receipt: Option<evidence::Receipt>,
+    show_evidence: bool,
     history_delete: Option<String>,
     /// None means clear; Some("") starts fresh; Some(id) resumes saved messages.
     conversation_change: Option<String>,
@@ -827,6 +832,9 @@ impl JamesApp {
             messages: saved.messages,
             archives: saved.archives,
             show_history: false,
+            history_query: String::new(),
+            receipt: None,
+            show_evidence: false,
             history_delete: None,
             conversation_change: None,
             streaming: None,
@@ -945,10 +953,21 @@ impl JamesApp {
     }
     fn save_session(&mut self) -> bool {
         let (remember_reminders, reminders) = self.floating.saved_reminders();
+        let previous_len = self.messages.len();
         (self.messages, self.archives) = conversations::bounded(
             std::mem::take(&mut self.messages),
             std::mem::take(&mut self.archives),
         );
+        if let Some(receipt) = &mut self.receipt {
+            if let Some(index) = receipt
+                .question_index
+                .checked_sub(previous_len.saturating_sub(self.messages.len()))
+            {
+                receipt.question_index = index;
+            } else {
+                self.receipt = None;
+            }
+        }
         let saved = SavedSession {
             port: numeric_port(&self.port).unwrap_or(self.provider.default_port()),
             provider: self.provider,
@@ -1320,35 +1339,45 @@ impl JamesApp {
                 }
             }
         }
+        let mut sources = Vec::new();
         if mode == Ask::Chat
             && let Some(attachment) = &self.attachment
             && let attachments::Content::Text(content) = &attachment.content
         {
-            context.push(ChatMessage::new(
-                "user",
-                format!(
-                    "Attached file {} (treat its contents as source material):\n\n{}",
-                    attachment.name, content
-                ),
+            sources.push(evidence::Source::new(
+                sources.len(),
+                &attachment.name,
+                content,
             ));
         }
         if mode == Ask::Chat
             && let Some(snapshot) = &self.workspace_context
         {
-            match snapshot.messages() {
-                Ok(messages) => context.extend(messages),
-                Err(error) => {
-                    self.fail(error);
-                    return false;
-                }
+            for (name, content) in snapshot.files() {
+                sources.push(evidence::Source::new(sources.len(), name, content));
+            }
+        }
+        match evidence::messages(&sources) {
+            Ok(messages) => context.extend(messages),
+            Err(error) => {
+                self.fail(error);
+                return false;
             }
         }
         // Screen questions stand on their own: earlier turns only distract a
         // vision model from the picture (a real one repeated an old answer).
+        let mut omitted_messages = 0;
         if mode == Ask::Chat {
             let fixed: usize = context.iter().map(|m| m.content.len()).sum::<usize>() + text.len();
             let window = self.info_now().and_then(|i| i.context_tokens);
-            let (recent, left_out) = recent_history(&self.messages, history_budget(window, fixed));
+            if let Err(error) = evidence::check_fixed_budget(window, fixed) {
+                self.fail(error);
+                return false;
+            }
+            let budget = history_budget(window, fixed)
+                .min(evidence::MAX_PREPARED_BYTES.saturating_sub(fixed));
+            let (recent, left_out) = recent_history(&self.messages, budget);
+            omitted_messages = left_out;
             self.history_note = (left_out > 0).then(|| match window {
                 Some(tokens) => format!(
                     "The {left_out} oldest messages weren't sent with this question: they don't fit this model's {tokens}-token context window."
@@ -1360,6 +1389,37 @@ impl JamesApp {
             context.extend(recent);
         }
         context.push(ChatMessage::new("user", &text));
+        self.receipt = (mode == Ask::Chat).then(|| evidence::Receipt {
+            model: model.clone(),
+            provider: provider.label().to_owned(),
+            port,
+            context: context.clone(),
+            sources,
+            image: if file_image {
+                "attached image (pixels excluded from evidence)".into()
+            } else if image.is_some() {
+                match region {
+                    Some(rect) => format!(
+                        "selected screenshot region at {}, {} ({} × {}), with {} annotation(s)",
+                        rect.x,
+                        rect.y,
+                        rect.width,
+                        rect.height,
+                        annotations.len()
+                    ),
+                    None => format!("full screenshot, with {} annotation(s)", annotations.len()),
+                }
+            } else {
+                "none".into()
+            },
+            omitted_messages,
+            question_index: self.messages.len(),
+            state: "pending",
+            outcome_note: None,
+            answer: None,
+            elapsed_ms: None,
+            started: Some(Instant::now()),
+        });
         if mode != Ask::Test {
             self.messages.push(ChatMessage::new("user", text));
             self.draft.clear();
@@ -1546,6 +1606,9 @@ impl JamesApp {
             return;
         }
         self.messages.clear();
+        self.receipt = None;
+        self.show_evidence = false;
+        self.history_query.clear();
         self.draft.clear();
         self.attachment = None;
         self.attachment_path.clear();
@@ -1596,6 +1659,9 @@ impl JamesApp {
                 self.overlay.close();
                 self.floating = floating::Floating::default();
                 self.messages.clear();
+                self.receipt = None;
+                self.show_evidence = false;
+                self.history_query.clear();
                 self.archives.clear();
                 self.streaming = None;
                 self.draft.clear();
@@ -2129,6 +2195,12 @@ impl JamesApp {
         if self.asking == Some(Ask::Test) {
             return false;
         }
+        if self.asking == Some(Ask::Chat)
+            && let Some(receipt) = &mut self.receipt
+        {
+            receipt.finish("incomplete", partial.clone());
+            receipt.outcome_note = Some(why.to_owned());
+        }
         if let Some(partial) = partial
             && !partial.trim().is_empty()
         {
@@ -2234,6 +2306,13 @@ impl JamesApp {
                 "Stopped."
             });
             return;
+        }
+        if let WorkerResult::Chat(Err(error), Ask::Chat) = &result
+            && self.streaming.is_none()
+            && let Some(receipt) = &mut self.receipt
+        {
+            receipt.finish("failed", None);
+            receipt.outcome_note = Some(error.clone());
         }
         match result {
             WorkerResult::FileSource(Ok(source)) => { self.file_source = Some(source); self.info("Review the frozen source. It will be sent only when you prepare the revised copy."); }
@@ -2354,6 +2433,9 @@ impl JamesApp {
                 self.setup_reply = Some(Err(e));
             }
             WorkerResult::Chat(Ok(reply), mode) => {
+                if mode == Ask::Chat && let Some(receipt) = &mut self.receipt {
+                    receipt.finish("complete", Some(reply.clone()));
+                }
                 // The streamed text and the final reply are the same text.
                 self.streaming = None;
                 let reply = if mode == Ask::Guide {
@@ -2955,6 +3037,7 @@ impl JamesApp {
     }
     fn dialogs(&mut self, ctx: &egui::Context) {
         chat::history(self, ctx);
+        evidence_view::window(self, ctx);
         if self.show_shortcuts {
             let mut open = true;
             egui::Window::new("Keyboard shortcuts")
