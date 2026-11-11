@@ -8,7 +8,6 @@ mod edge_dock;
 mod floating;
 mod guide;
 mod lab_view;
-mod shepherd_view;
 mod markdown;
 mod media_now;
 mod media_widget;
@@ -19,6 +18,7 @@ mod screen_context;
 mod session;
 mod settings_page;
 mod setup;
+mod shepherd_view;
 mod shortcuts;
 mod theme;
 mod timing;
@@ -3142,7 +3142,12 @@ impl JamesApp {
         if self.floating.take_changed() {
             self.save_session();
         }
-        if self.busy() || self.lab.connected || self.shepherd.connected || self.info_worker.is_some() || self.lab.finding() {
+        if self.busy()
+            || self.lab.connected
+            || self.shepherd.connected
+            || self.info_worker.is_some()
+            || self.lab.finding()
+        {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
         self.top_bar(ctx);
