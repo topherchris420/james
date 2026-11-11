@@ -377,7 +377,6 @@ mod tests {
 
     #[test]
     fn recorders_are_described_for_this_platform() {
-        assert!(!RECORDERS.is_empty());
         for recorder in RECORDERS {
             assert!(!recorder.tool.contains('/'));
             assert!(

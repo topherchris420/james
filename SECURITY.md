@@ -52,6 +52,24 @@ Everything James keeps is in one folder: `%LOCALAPPDATA%\Vers3Dynamics\James` on
 - **Keep my conversations on this computer** can be turned off, which removes the saved copy. **Clear conversation…** and **Delete all James data…** remove files after confirmation, but deletion is not secure erasure: backups and disk recovery may find old copies. Delete all keeps an unresolved action record until the person checks it.
 - Screenshots and raw audio are never saved by James. What is sent to a model, including dictated text, screen descriptions and attachments, may be logged by the model app under its own retention policy.
 
+## Development-branch request evidence
+
+The latest chat request retains prepared text messages and selected document
+snapshots in memory for inspection. It is not serialized into saved sessions.
+The next prepared chat replaces it; guidance/action-proposal requests,
+conversation changes, deleting all data, Forget, and exit clear it. Explicit
+**Copy evidence JSON** includes document contents, prompts and the answer in the
+clipboard; clipboard managers may retain them. Model answers can quote sources
+and are saved under the ordinary history setting. Forgetting the record does
+not erase those answers or the clipboard. No secure-memory-erasure claim is made.
+
+Source references are checked only for an existing source and line range.
+Neither source text nor a valid reference grants authority or verifies a claim.
+Sources are treated as untrusted data, never displayed as active Markdown in the
+inspector, and are excluded from guidance/action proposals. The context-window
+preflight uses an approximate byte budget, not tokenizer or image accounting.
+See [Request evidence](docs/REQUEST_EVIDENCE.md).
+
 ## Crash reports
 
 A panic on any thread writes `crash.log` beside the session file: the James version, operating system, thread name, the panic message and location, and a backtrace. Panic messages come from James's code, not from conversation text, though a dependency's message could include a value it was handling. The report is never sent anywhere. James shows it on the next launch with an option to delete it; the person decides whether to paste it into a public issue.

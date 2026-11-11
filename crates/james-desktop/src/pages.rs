@@ -134,6 +134,17 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
             ),
         )
         .on_disabled_hover_text("The current model can't read images.");
+        if ui
+            .add_enabled(
+                !app.busy() && sees != Support::No,
+                egui::Button::new("Use screenshot in chat"),
+            )
+            .clicked()
+        {
+            app.attach_screen = true;
+            app.page = Page::Chat;
+            app.focus_composer = true;
+        }
         if sees == Support::Unknown {
             ui.small("Your model app didn't say whether this model reads images; if it can't, the question will fail with an explanation.");
         }

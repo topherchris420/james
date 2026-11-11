@@ -21,6 +21,12 @@ session, microphone or screen reader.
 
 ## Capability matrix
 
+Development-branch additions on November 11, 2026: source references, the request
+evidence inspector and local history search have Linux fake-server/headless GUI
+coverage. Windows/macOS physical-device validation and real-model citation
+quality are not established. These features use the cross-platform desktop;
+see [Request evidence](REQUEST_EVIDENCE.md) for exact limits.
+
 | Capability | Windows 10/11 x64 | macOS 11+ (Apple silicon, Intel) | Linux x64 (Ubuntu 22.04+, Debian 12+, Mint 21+) |
 | --- | --- | --- | --- |
 | Package builds (installer/portable, universal app, .deb/archive) | Auto (CI builds the installer and portable `.exe`) | Auto (CI builds both slices, assembles and ad-hoc signs `James.app`, runs `--version` on arm64) | Real (container): `.deb` built on 22.04 in CI and installed there; installed, upgraded from 0.3.0 and removed on 24.04 |
