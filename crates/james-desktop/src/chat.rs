@@ -259,6 +259,16 @@ pub fn header(app: &mut JamesApp, ui: &mut egui::Ui) {
             app.show_attachment = true;
         }
         if ui
+            .button(if app.workspace_context.is_some() {
+                "Workspace attached…"
+            } else {
+                "Workspace files…"
+            })
+            .clicked()
+        {
+            app.show_workspace = true;
+        }
+        if ui
             .add_enabled(
                 !app.busy() && !app.messages.is_empty(),
                 egui::Button::new("Copy conversation"),
@@ -609,6 +619,65 @@ pub fn composer(app: &mut JamesApp, ctx: &egui::Context) {
         app.show_attachment = open && !attach;
         if attach {
             app.attach_file(std::path::PathBuf::from(app.attachment_path.trim()));
+        }
+    }
+    if app.show_workspace {
+        let mut open = true;
+        let mut list = false;
+        let mut preview = false;
+        let mut attach = false;
+        egui::Window::new("Workspace files").open(&mut open).resizable(true).vscroll(true).show(ctx, |ui| {
+            ui.label("Choose a directory and up to three relative UTF-8 text files (4 KiB each).");
+            ui.label("Directory");
+            if ui.add_enabled(!app.busy() && app.workspace_pending.is_none(), egui::TextEdit::singleline(&mut app.workspace_directory).desired_width(350.0)).changed() { app.workspace_entries.clear(); }
+            if ui.add_enabled(!app.busy() && app.workspace_pending.is_none(), egui::Button::new("List directory")).clicked() { list = true; }
+            egui::ScrollArea::vertical().id_salt("workspace_entries").max_height(100.0).show(ui, |ui| {
+                for entry in &app.workspace_entries {
+                    if entry.is_directory { ui.small(format!("{}/ (enter a relative file path below)", entry.name)); }
+                    else if ui.small_button(&entry.name).clicked() {
+                        if !app.workspace_paths.is_empty() { app.workspace_paths.push('\n'); }
+                        app.workspace_paths.push_str(&entry.name);
+                    }
+                }
+            });
+            ui.label("Relative file paths, one per line");
+            ui.add_enabled(!app.busy() && app.workspace_pending.is_none(), egui::TextEdit::multiline(&mut app.workspace_paths).desired_rows(3).desired_width(350.0));
+            if ui.add_enabled(!app.busy() && app.workspace_pending.is_none(), egui::Button::new("Preview selected files")).clicked() { preview = true; }
+            if let Some(snapshot) = &app.workspace_pending {
+                ui.separator();
+                ui.label(format!("Selected directory: {}", snapshot.root().display()));
+                egui::ScrollArea::vertical().id_salt("workspace_preview").max_height(240.0).show(ui, |ui| {
+                    for (path, content) in snapshot.files() {
+                        ui.label(RichText::new(path).strong());
+                        ui.add(egui::Label::new(RichText::new(content).monospace()).wrap());
+                    }
+                });
+                ui.small("These exact contents will be sent to the model service with your next chat question. The service may relay them elsewhere.");
+                if ui.button("Attach selected files").clicked() { attach = true; }
+                if ui.button("Discard workspace preview").clicked() { app.workspace_pending = None; }
+            }
+            if let Some(snapshot) = &app.workspace_context {
+                ui.separator();
+                ui.label(format!("Currently attached from: {}", snapshot.root().display()));
+                egui::ScrollArea::vertical().id_salt("workspace_attached").max_height(150.0).show(ui, |ui| {
+                    for (path, content) in snapshot.files() {
+                        ui.label(RichText::new(path).strong());
+                        ui.add(egui::Label::new(RichText::new(content).monospace()).wrap());
+                    }
+                });
+                if ui.button("Remove attached workspace files").clicked() { app.workspace_context = None; }
+            }
+        });
+        app.show_workspace = open && !attach;
+        if attach {
+            app.workspace_context = app.workspace_pending.take();
+            app.info("Workspace files attached to the next chat question.");
+        }
+        if list {
+            app.list_workspace();
+        }
+        if preview {
+            app.preview_workspace();
         }
     }
 }

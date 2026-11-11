@@ -1368,6 +1368,153 @@ fn desktop_guidance_refuses_an_embedded_or_unsupported_viewport() {
 }
 
 #[test]
+fn model_file_creation_requires_review_and_never_overwrites() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(&[r#"{"content":"Hello from the model"}"#], Duration::ZERO)
+    });
+    let root = std::env::temp_dir().join(format!("james-create-gui-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let path = root.join("hello.txt");
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().file_directory = root.display().to_string();
+    h.state_mut().file_name = "hello.txt".into();
+    h.state_mut().file_instruction = "Write a greeting".into();
+    h.state_mut().page = Page::Actions;
+    h.run();
+    h.get_by_label("Create a new text file with the model")
+        .click();
+    h.run();
+    h.get_by_label("Prepare file for review").click();
+    wait_until(&mut h, "the file proposal", |app| app.worker.is_none());
+    assert!(!path.exists(), "model generation must not create the file");
+    assert_eq!(
+        h.state().file_proposal.as_ref().unwrap().content(),
+        "Hello from the model"
+    );
+    assert!(seen.lock().unwrap().contains("Write a greeting"));
+    h.get_by_label("Create reviewed file").click();
+    wait_until(&mut h, "file creation", |app| app.worker.is_none());
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "Hello from the model"
+    );
+    h.state_mut().propose_new_file();
+    wait_until(&mut h, "existing file refusal", |app| app.worker.is_none());
+    assert!(h.state().file_proposal.is_none());
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "Hello from the model"
+    );
+    let raced = root.join("raced.txt");
+    h.state_mut().file_name = "raced.txt".into();
+    h.state_mut().propose_new_file();
+    wait_until(&mut h, "the second file proposal", |app| {
+        app.worker.is_none()
+    });
+    std::fs::write(&raced, "Created elsewhere").unwrap();
+    h.state_mut().create_reviewed_file();
+    wait_until(&mut h, "racing file refusal", |app| app.worker.is_none());
+    assert_eq!(
+        std::fs::read_to_string(&raced).unwrap(),
+        "Created elsewhere"
+    );
+    assert!(
+        h.state().file_proposal.is_some(),
+        "the reviewed proposal remains available"
+    );
+    std::fs::remove_file(raced).unwrap();
+    std::fs::remove_file(path).unwrap();
+    std::fs::remove_dir(root).unwrap();
+}
+
+#[test]
+fn external_dictation_shows_destination_and_text_before_delivery() {
+    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().draft = "Keep this draft".into();
+    h.state_mut().page = Page::Actions;
+    h.state_mut().external_dictation = Some((
+        dictation_target::DictationTarget {
+            window: 123,
+            focused_window: 456,
+            process_id: 42,
+            focused_process_id: 42,
+            process_name: "fixture editor".into(),
+            title: "fixture document".into(),
+            focus_class: "Edit".into(),
+        },
+        "A reviewed transcript".into(),
+    ));
+    h.run();
+    assert!(h.query_by_label_contains("fixture document").is_some());
+    assert!(h.query_by_label("A reviewed transcript").is_some());
+    assert!(
+        h.query_by_label("Send reviewed dictation in 3 seconds")
+            .is_some()
+    );
+    h.state_mut().external_attempted = true;
+    h.state_mut().deliver_external_dictation();
+    assert!(
+        !h.state().busy(),
+        "an attempted delivery must not be repeated"
+    );
+    h.run();
+    h.get_by_label("Discard dictation").click();
+    h.run();
+    assert!(h.state().external_dictation.is_none());
+    assert_eq!(h.state().draft, "Keep this draft");
+}
+
+#[test]
+fn selected_workspace_files_are_reviewed_and_sent_only_with_the_typed_question() {
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        body.lock().unwrap().push(request.to_owned());
+        ndjson(&["Answer."], Duration::ZERO)
+    });
+    let root = std::env::temp_dir().join(format!("james-read-gui-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("one.txt"), "First selected fixture").unwrap();
+    std::fs::write(root.join("two.txt"), "Second selected fixture").unwrap();
+    std::fs::write(root.join("unselected.txt"), "Never send this fixture").unwrap();
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().workspace_directory = root.display().to_string();
+    h.state_mut().workspace_paths = "one.txt\ntwo.txt".into();
+    h.state_mut().show_workspace = true;
+    h.state_mut().preview_workspace();
+    wait_until(&mut h, "workspace preview", |app| app.worker.is_none());
+    assert!(h.state().workspace_context.is_none());
+    assert!(h.state().workspace_pending.is_some());
+    h.get_by_label("Attach selected files").click();
+    h.run();
+    assert!(h.state().workspace_context.is_some());
+    h.state_mut().draft = "Typed question".into();
+    assert!(h.state_mut().send_voice_question("Spoken question".into()));
+    wait_until(&mut h, "spoken answer", |app| app.worker.is_none());
+    assert!(h.state().workspace_context.is_some());
+    assert!(!seen.lock().unwrap()[0].contains("selected fixture"));
+    assert!(h.state_mut().send(Ask::Chat));
+    wait_until(&mut h, "workspace answer", |app| app.worker.is_none());
+    let request = seen.lock().unwrap()[1].clone();
+    assert!(request.contains("First selected fixture"));
+    assert!(request.contains("Second selected fixture"));
+    assert!(!request.contains("Never send this fixture"));
+    assert!(
+        !std::fs::read_to_string(&h.state().session)
+            .unwrap()
+            .contains("selected fixture")
+    );
+    std::fs::remove_file(root.join("one.txt")).unwrap();
+    std::fs::remove_file(root.join("two.txt")).unwrap();
+    std::fs::remove_file(root.join("unselected.txt")).unwrap();
+    std::fs::remove_dir(root).unwrap();
+}
+
+#[test]
 fn an_attached_question_transports_only_the_marked_crop_pixels() {
     let seen = Arc::new(Mutex::new(String::new()));
     let body = Arc::clone(&seen);

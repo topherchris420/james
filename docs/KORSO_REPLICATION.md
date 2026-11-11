@@ -383,22 +383,22 @@ added in this pass; integration and verification are recorded separately.
 | Assistant numbered screenshot guidance | Baseline | Model coordinates may be wrong |
 | Live desktop shapes/dismissal | Partial: user strokes and numbered steps over a Windows primary display | Explicitly opened and time-limited; no assistant arrows or arbitrary shapes; native DPI/transparent behavior still needs physical verification |
 | Guided checklist tied to live controls | Planned | Baseline Guide me is a bounded textual/screenshot answer |
-| Compact assistant surface | New compact conversation view and movable floating companion | No edge docking or full widget engine |
+| Compact assistant surface | New compact conversation view and movable floating companion, with Windows primary-display edge docking | No multi-monitor docking or full widget engine; native docking remains unverified |
 | Global summon | New opt-in registration | Platform scope and binding differ from Korso |
 | Configurable hold/tap/dictation locks | Partial: opt-in Talk/Dictate chords | Fixed chords start existing voice flows on press; no hold-to-record or dictation locks |
 | Local Talk, Dictate and read-aloud | Baseline | No recorded microphone parity experiment |
 | Preserve draft during Talk | New | Does not add voice authorization |
-| Dictation into another app/clipboard restoration | Planned | James Dictate targets its composer |
+| Dictation into another app/clipboard restoration | Partial: reviewed Windows Unicode input after window/control checks | Clipboard untouched; custom controls and focus races remain; physical delivery unverified |
 | Live voice exchange, grace window, talk-over | Planned | James uses its existing local voice loop |
 | Microphone selection/speech-language picker | Planned | Existing platform facilities retain their limits |
 | Exact single-input review and recovery | Baseline James design | Korso's broader tool effects were not reproduced |
 | Advisory second action review | Baseline James design | Cannot approve an action |
 | Always/Auto/Never tool modes | Planned parity investigation only | James keeps explicit review per input |
-| Scripts/files/app launching/settings tools | Planned | Schema inventory is not a finished James tool system |
+| Scripts/files/app launching/settings tools | Partial: reviewed creation of a new text file and selected read-only workspace context | No overwriting, edits, scripts, app launching or general tool system |
 | Connected apps/email action editing | Planned | Service/backends and external effects unknown |
 | Text edit ledger and guarded undo | Planned | Universal rollback is unestablished |
 | File backups/script rollback/crash guarantees | Unknown | No verified general transaction/recovery contract recovered |
-| Edge-tab media/weather/pets/timers/reminders | Partial: in-process timer and reminders in floating companion | No docking, media, weather, pets or system notifications; bundle/UI presence does not establish end-to-end reference behavior |
+| Edge-tab media/weather/pets/timers/reminders | Partial: timer, reminders and explicit Windows media controls | No weather, pets or system notifications; native media and docking remain unverified |
 | Account/billing/usage/backend ratings | Outside this local replication pass | Service implementation unknown |
 | Installer/update/signing parity | Outside this pass | Existing James release readiness limits apply |
 
@@ -462,7 +462,8 @@ design, closes on replacement or expiry of its screenshot, and is suppressed
 during capture. Geometry and embedded-viewport refusal are covered by tests;
 native transparency, pass-through, capture exclusion, and mixed-DPI behavior
 still need physical verification. Optional Talk and Dictate chords start existing
-voice flows on press; they are not release-to-stop or external-app dictation.
+voice flows on press; they are not release-to-stop. External-app dictation was
+added separately as described below.
 The floating companion also supports bounded in-process reminders, without
 restart persistence or system notifications.
 
@@ -471,3 +472,33 @@ ignored; strict workspace Clippy passed. A separate file-edit prototype was
 not integrated: its replace/undo operations cannot yet preserve all file
 metadata or rule out concurrent changes between a check and replacement. It
 also does not provide model-driven automation. It remains outside this tree.
+
+Subsequently, a separate create-only file workflow was integrated: the model
+generates bounded UTF-8 content for a user-selected filename, the complete
+proposal is shown for review, and create-only filesystem linking refuses an
+existing name. It does not edit or undo existing files. Directory replacement
+by another process during the operation is not treated as a sandbox boundary.
+
+Windows external dictation now captures a foreground window and native control,
+records one utterance, and shows both the destination and transcript for review.
+After the user returns to the destination, it rechecks the window, process and
+native control before sending Unicode events. No clipboard formats are touched.
+The focused native control can contain multiple internal fields, focus can move
+after the check, and SendInput acceptance does not prove insertion. Automated
+tests use fixtures and do not inject input into real apps; physical verification
+is still required. The floating companion can also request left/right docking on
+the primary Windows display from fresh monitor geometry; native docking and
+mixed-DPI behavior remain unverified.
+
+Explicitly selected workspace files can be previewed and attached as frozen,
+read-only model context. The flow limits selection to three small UTF-8 files,
+omits hidden and linked paths, and labels file content as untrusted data; it
+does not make a model request until a chat question is sent. Windows media
+information and play/pause/next requests are available through explicit
+companion controls. A source-app check reduces stale-target mistakes, but Windows
+can expose multiple sessions from one app and native player behavior remains
+unverified. The model and media features do not establish Korso parity.
+
+The subsequent full workspace test run passed 276 tests, with four opt-in tests
+ignored. Strict workspace Clippy and PowerShell helper checks also passed. These
+automated checks do not replace the native-device verification described above.

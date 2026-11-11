@@ -288,6 +288,17 @@ pub struct Display {
     pub label: String,
     /// The primary monitor, the only one reviewed clicks can target.
     pub primary: bool,
+    /// Physical desktop coordinates, when the OS supplied trustworthy bounds.
+    pub bounds: Option<DisplayBounds>,
+}
+
+/// A display's physical desktop bounds; origins can be negative.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisplayBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Captures a monitor as PNG bytes. `display` is an id from [`list_displays`];
@@ -309,6 +320,19 @@ pub fn list_displays() -> Result<Vec<Display>, Error> {
     sys::list_displays()
 }
 
+/// Fresh physical monitor bounds for window positioning. Unlike the capture
+/// picker, this query requests per-monitor DPI awareness on Windows.
+pub fn list_display_bounds() -> Result<Vec<Display>, Error> {
+    #[cfg(windows)]
+    {
+        sys::list_display_bounds()
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(Vec::new())
+    }
+}
+
 /// A display id is chosen from [`list_displays`], but is still bounded and
 /// rejected if it carries control characters before it reaches an OS helper.
 fn valid_display_id(id: &str) -> Result<&str, Error> {
@@ -328,6 +352,14 @@ fn parse_displays(body: &[u8]) -> Result<Vec<Display>, Error> {
         id: String,
         label: String,
         primary: bool,
+        #[serde(default)]
+        x: Option<i32>,
+        #[serde(default)]
+        y: Option<i32>,
+        #[serde(default)]
+        width: Option<u32>,
+        #[serde(default)]
+        height: Option<u32>,
     }
     let rows: Vec<Row> = serde_json::from_slice(body)
         .map_err(|e| Error::Failed(format!("Could not read the monitors: {e}")))?;
@@ -349,6 +381,17 @@ fn parse_displays(body: &[u8]) -> Result<Vec<Display>, Error> {
                 .trim()
                 .to_owned(),
             primary: row.primary,
+            bounds: match (row.x, row.y, row.width, row.height) {
+                (Some(x), Some(y), Some(width @ 1..=32768), Some(height @ 1..=32768)) => {
+                    Some(DisplayBounds {
+                        x,
+                        y,
+                        width,
+                        height,
+                    })
+                }
+                _ => None,
+            },
         })
         .collect())
 }
@@ -790,6 +833,19 @@ mod tests {
         assert_eq!(displays[0].id, "\\\\.\\DISPLAY1");
         assert!(displays[0].primary && !displays[1].primary);
         assert_eq!(displays[1].label, "Display 2  1280 x 1024");
+        assert!(displays[0].bounds.is_none());
+        let bounds = parse_displays(br#"[{"id":"display","label":"Secondary","primary":false,"x":-1920,"y":-200,"width":1920,"height":1080}]"#).unwrap();
+        assert_eq!(
+            bounds[0].bounds,
+            Some(DisplayBounds {
+                x: -1920,
+                y: -200,
+                width: 1920,
+                height: 1080
+            })
+        );
+        let invalid = parse_displays(br#"[{"id":"display","label":"Bad","primary":false,"x":0,"y":0,"width":0,"height":1080}]"#).unwrap();
+        assert!(invalid[0].bounds.is_none());
 
         // A row with an empty id is dropped; malformed JSON is an error.
         assert_eq!(

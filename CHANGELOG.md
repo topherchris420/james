@@ -13,12 +13,31 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Added
 
+- **Reviewed workspace context.** List a selected directory, preview up to three
+  explicitly chosen text files, and attach their frozen contents to the next
+  chat question. Each file is limited to 4 KiB; hidden files and links are not
+  included. File contents are not saved in conversation history.
+- **Windows media controls.** The floating companion can explicitly refresh
+  now-playing information and request play/pause or next. Native media sessions
+  have not yet been verified against real players.
+- **Reviewed creation of a new text file.** Specify a directory, filename and
+  instruction, then review the model's proposed contents before creation.
+  Existing files are never overwritten; edits to existing files are not yet
+  supported.
+- **Reviewed dictation into another Windows app.** Opt in through the Dictate
+  shortcut, focus the destination field, and review the transcript and target.
+  After confirmation, return to the field during the three-second countdown.
+  James checks the native window and control before sending Unicode input; the
+  clipboard is unchanged. Custom controls can change internal focus, and native
+  delivery still needs real-app verification.
+- **Companion docking on Windows.** The floating companion can snap to the
+  left or right edge of the primary display when its geometry is verified.
 - **Desktop guidance on Windows.** Show screenshot marks and numbered Guide me
   steps over the primary display in a click-through window. It checks geometry,
   expires with the screenshot, and is hidden during capture. Model-placed marks
   may be wrong; native behavior still needs real-device verification.
 - **Optional voice shortcuts.** Ctrl+Shift+V starts Talk and Ctrl+Shift+D starts
-  Dictate into James (Command instead of Ctrl on macOS). Dictation ends on a
+  Dictate (Command instead of Ctrl on macOS). Dictation ends on a
   pause; these are not hold-to-record shortcuts. Wayland remains unsupported.
 - **Local reminders.** Add reminders to the floating companion. They appear
   there while James is open and are not saved or delivered as OS notifications.

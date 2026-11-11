@@ -47,6 +47,7 @@ pub struct Preferences {
     /// Opt-in chords for starting the existing Talk and Dictate flows.
     pub talk_shortcut: bool,
     pub dictation_shortcut: bool,
+    pub dictation_other_app: bool,
     /// Guide me numbers its steps on the screenshot. Off by default: the
     /// model places the numbers, and small models often misplace them.
     pub guide_marks: bool,
@@ -66,6 +67,7 @@ impl Default for Preferences {
             summon_shortcut: false,
             talk_shortcut: false,
             dictation_shortcut: false,
+            dictation_other_app: false,
             guide_marks: false,
             review_actions: true,
         }
@@ -489,6 +491,7 @@ mod tests {
                 summon_shortcut: false,
                 talk_shortcut: false,
                 dictation_shortcut: false,
+                dictation_other_app: false,
                 guide_marks: true,
                 review_actions: false,
             },

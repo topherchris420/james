@@ -536,6 +536,70 @@ pub fn actions(app: &mut JamesApp, ui: &mut egui::Ui) {
     if app.recovery.needs_check() {
         recovery_ui(app, ui);
     }
+    if let Some((target, text)) = &app.external_dictation {
+        ui.heading("Review dictation for another app");
+        ui.label(format!(
+            "Destination: {} ({})",
+            target.title, target.process_name
+        ));
+        ui.label(format!("Focused control: {}", target.focus_class));
+        ui.label("Text to send:");
+        egui::ScrollArea::vertical()
+            .id_salt("external_dictation_review")
+            .max_height(140.0)
+            .show(ui, |ui| {
+                ui.add(egui::Label::new(RichText::new(text).monospace()).wrap());
+            });
+        ui.small("After choosing Send, switch back to the same field within three seconds. Windows checks the window and native control, but a custom app can change fields inside that control. Check the result; sending may be partial.");
+        if ui.button("Copy dictation").clicked() {
+            ui.ctx().copy_text(text.clone());
+        }
+        if app.external_attempted {
+            ui.small("A delivery was attempted. Check the destination before copying or dictating again.");
+        }
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    !app.busy() && !app.external_attempted,
+                    theme::primary(ui, "Send reviewed dictation in 3 seconds"),
+                )
+                .clicked()
+            {
+                app.deliver_external_dictation();
+            }
+            if ui
+                .add_enabled(!app.busy(), egui::Button::new("Discard dictation"))
+                .clicked()
+            {
+                app.external_dictation = None;
+                app.external_attempted = false;
+            }
+        });
+        ui.separator();
+    }
+    egui::CollapsingHeader::new("Create a new text file with the model").show(ui, |ui| {
+        ui.small("Choose a directory and one new filename. Your filename and instructions are sent to the configured model service, which may relay them elsewhere. Existing files cannot be replaced.");
+        ui.label("Destination directory");
+        ui.add_enabled(!app.busy() && app.file_proposal.is_none(), egui::TextEdit::singleline(&mut app.file_directory).desired_width(420.0));
+        ui.label("New filename");
+        ui.add_enabled(!app.busy() && app.file_proposal.is_none(), egui::TextEdit::singleline(&mut app.file_name).desired_width(300.0));
+        ui.label("What should the file contain?");
+        ui.add_enabled(!app.busy() && app.file_proposal.is_none(), egui::TextEdit::multiline(&mut app.file_instruction).desired_rows(3).desired_width(420.0));
+        if ui.add_enabled(!app.busy() && app.file_proposal.is_none(), egui::Button::new("Prepare file for review")).clicked() { app.propose_new_file(); }
+        if let Some(proposal) = &app.file_proposal {
+            ui.separator();
+            ui.label(format!("New file: {}", proposal.root().join(proposal.filename()).display()));
+            ui.label("Review the complete generated text:");
+            egui::ScrollArea::vertical().id_salt("new_file_review").max_height(240.0).show(ui, |ui| {
+                ui.add(egui::Label::new(RichText::new(proposal.content()).monospace()).wrap());
+            });
+            ui.horizontal(|ui| {
+                if ui.add_enabled(!app.busy(), theme::primary(ui, "Create reviewed file")).clicked() { app.create_reviewed_file(); }
+                if ui.add_enabled(!app.busy(), egui::Button::new("Discard file proposal")).clicked() { app.file_proposal = None; }
+            });
+        }
+    });
+    ui.separator();
     if !james_platform::can_control_input() {
         ui.label("On this computer James never clicks or types. Use Guide me (under the message box) for step-by-step help with what's on screen; you stay in control of every action.");
         ui.small("Reviewed clicks and keystrokes are available on Windows only. macOS and Linux need their own, separately tested safety design, which doesn't exist yet.");
@@ -1156,6 +1220,19 @@ fn help(app: &mut JamesApp, ui: &mut egui::Ui) {
         app.save_session();
     }
     ui.small("These shortcuts start the microphone. Dictation ends when you pause; Talk keeps listening after each reply until stopped.");
+    if cfg!(windows)
+        && ui
+            .checkbox(
+                &mut app.prefs.dictation_other_app,
+                "Use the dictation shortcut for another app",
+            )
+            .changed()
+    {
+        app.save_session();
+    }
+    if cfg!(windows) {
+        ui.small("Focus a field in another app, then press the enabled dictation shortcut. Review the transcript and destination in James before sending.");
+    }
     for error in [
         app.talk_shortcut_error.clone(),
         app.dictation_shortcut_error.clone(),

@@ -3,10 +3,14 @@
 mod attachments;
 mod chat;
 mod conversations;
+mod dictation_target;
+mod edge_dock;
 mod floating;
 mod guide;
 mod lab_view;
 mod markdown;
+mod media_now;
+mod media_widget;
 mod overlay;
 mod pages;
 mod review;
@@ -17,6 +21,8 @@ mod shortcuts;
 mod theme;
 mod timing;
 mod voice;
+mod workspace_create;
+mod workspace_read;
 use eframe::egui;
 use james_models::{
     AbortHandle, ApiError, ChatMessage, FoundServer, LocalClient, LocalProvider, ModelInfo,
@@ -535,6 +541,13 @@ enum Tone {
 }
 enum WorkerResult {
     Attachment(Result<attachments::Attachment, String>),
+    FileProposal(Result<workspace_create::CreateProposal, String>),
+    FileCreated(Result<PathBuf, String>, workspace_create::CreateProposal),
+    WorkspaceList(Result<Vec<workspace_read::Entry>, String>),
+    WorkspaceSnapshot(Result<workspace_read::ReadContext, String>),
+    ExternalTarget(dictation_target::DictationTarget),
+    ExternalDictation(Result<(dictation_target::DictationTarget, String), String>),
+    ExternalDelivered(Result<(), String>),
     Models(Result<ModelList, String>),
     Found(Vec<FoundServer>),
     /// One streamed piece of the reply in progress. Never final.
@@ -682,6 +695,16 @@ struct JamesApp {
     attachment_path: String,
     attachment: Option<attachments::Attachment>,
     show_attachment: bool,
+    file_directory: String,
+    file_name: String,
+    file_instruction: String,
+    file_proposal: Option<workspace_create::CreateProposal>,
+    workspace_directory: String,
+    workspace_paths: String,
+    workspace_entries: Vec<workspace_read::Entry>,
+    workspace_pending: Option<workspace_read::ReadContext>,
+    workspace_context: Option<workspace_read::ReadContext>,
+    show_workspace: bool,
     status: String,
     tone: Tone,
     /// Older messages left out of the last request to fit the context window.
@@ -706,6 +729,8 @@ struct JamesApp {
     talk_shortcut_error: Option<String>,
     dictation_shortcut: Option<shortcuts::VoiceShortcut>,
     dictation_shortcut_error: Option<String>,
+    external_dictation: Option<(dictation_target::DictationTarget, String)>,
+    external_attempted: bool,
     /// The monitor to capture; empty is the primary one.
     capture_display: String,
     /// Connected monitors for the picker, loaded once off the UI thread.
@@ -803,6 +828,16 @@ impl JamesApp {
             attachment_path: String::new(),
             attachment: None,
             show_attachment: false,
+            file_directory: String::new(),
+            file_name: String::new(),
+            file_instruction: String::new(),
+            file_proposal: None,
+            workspace_directory: String::new(),
+            workspace_paths: String::new(),
+            workspace_entries: Vec::new(),
+            workspace_pending: None,
+            workspace_context: None,
+            show_workspace: false,
             status,
             tone: Tone::Info,
             history_note: None,
@@ -825,6 +860,8 @@ impl JamesApp {
             talk_shortcut_error: None,
             dictation_shortcut: None,
             dictation_shortcut_error: None,
+            external_dictation: None,
+            external_attempted: false,
             capture_display: String::new(),
             displays: None,
             displays_worker: None,
@@ -1269,6 +1306,17 @@ impl JamesApp {
                 ),
             ));
         }
+        if mode == Ask::Chat
+            && let Some(snapshot) = &self.workspace_context
+        {
+            match snapshot.messages() {
+                Ok(messages) => context.extend(messages),
+                Err(error) => {
+                    self.fail(error);
+                    return false;
+                }
+            }
+        }
         // Screen questions stand on their own: earlier turns only distract a
         // vision model from the picture (a real one repeated an old answer).
         if mode == Ask::Chat {
@@ -1295,6 +1343,7 @@ impl JamesApp {
         if mode == Ask::Chat {
             self.attachment = None;
             self.attachment_path.clear();
+            self.workspace_context = None;
         }
         self.pending = None;
         self.streaming = None;
@@ -1347,18 +1396,29 @@ impl JamesApp {
         // draft, not to this retry of an earlier question.
         let attach_screen = std::mem::replace(&mut self.attach_screen, false);
         let attachment = self.attachment.take();
+        let workspace_context = self.workspace_context.take();
         if !self.send(Ask::Chat) {
             self.messages = saved;
         }
         self.draft = draft;
         self.attach_screen = attach_screen;
         self.attachment = attachment;
+        self.workspace_context = workspace_context;
     }
     fn has_conversation_context(&self) -> bool {
         !self.messages.is_empty()
             || !self.draft.is_empty()
             || self.screen.is_some()
             || self.attachment.is_some()
+            || self.file_proposal.is_some()
+            || !self.file_directory.is_empty()
+            || !self.file_name.is_empty()
+            || !self.file_instruction.is_empty()
+            || self.external_dictation.is_some()
+            || self.workspace_pending.is_some()
+            || self.workspace_context.is_some()
+            || !self.workspace_paths.is_empty()
+            || !self.workspace_directory.is_empty()
             || self.pending.is_some()
             || self.lab.include
     }
@@ -1371,6 +1431,15 @@ impl JamesApp {
         if !self.draft.is_empty()
             || self.screen.is_some()
             || self.attachment.is_some()
+            || self.file_proposal.is_some()
+            || !self.file_directory.is_empty()
+            || !self.file_name.is_empty()
+            || !self.file_instruction.is_empty()
+            || self.external_dictation.is_some()
+            || self.workspace_pending.is_some()
+            || self.workspace_context.is_some()
+            || !self.workspace_paths.is_empty()
+            || !self.workspace_directory.is_empty()
             || self.pending.is_some()
         {
             self.confirm_clear = true;
@@ -1387,6 +1456,15 @@ impl JamesApp {
         if !self.draft.is_empty()
             || self.screen.is_some()
             || self.attachment.is_some()
+            || self.file_proposal.is_some()
+            || !self.file_directory.is_empty()
+            || !self.file_name.is_empty()
+            || !self.file_instruction.is_empty()
+            || self.external_dictation.is_some()
+            || self.workspace_pending.is_some()
+            || self.workspace_context.is_some()
+            || !self.workspace_paths.is_empty()
+            || !self.workspace_directory.is_empty()
             || self.pending.is_some()
         {
             self.confirm_clear = true;
@@ -1433,6 +1511,18 @@ impl JamesApp {
         self.draft.clear();
         self.attachment = None;
         self.attachment_path.clear();
+        self.file_proposal = None;
+        self.external_dictation = None;
+        self.external_attempted = false;
+        self.workspace_pending = None;
+        self.workspace_context = None;
+        self.workspace_directory.clear();
+        self.workspace_paths.clear();
+        self.workspace_entries.clear();
+        self.show_workspace = false;
+        self.file_directory.clear();
+        self.file_name.clear();
+        self.file_instruction.clear();
         self.streaming = None;
         self.thinking = false;
         self.asking = None;
@@ -1468,6 +1558,18 @@ impl JamesApp {
                 self.draft.clear();
                 self.attachment = None;
                 self.attachment_path.clear();
+                self.file_proposal = None;
+                self.external_dictation = None;
+                self.external_attempted = false;
+                self.workspace_pending = None;
+                self.workspace_context = None;
+                self.workspace_directory.clear();
+                self.workspace_paths.clear();
+                self.workspace_entries.clear();
+                self.show_workspace = false;
+                self.file_directory.clear();
+                self.file_name.clear();
+                self.file_instruction.clear();
                 self.crash_report = None;
                 self.model.clear();
                 self.model_info = None;
@@ -1495,12 +1597,14 @@ impl JamesApp {
         let typed = std::mem::replace(&mut self.draft, question);
         let attached = std::mem::replace(&mut self.attach_screen, false);
         let attachment = self.attachment.take();
+        let workspace_context = self.workspace_context.take();
         let sent = self.send(Ask::Chat);
         if sent || !typed.is_empty() {
             self.draft = typed;
         }
         self.attach_screen = attached;
         self.attachment = attachment;
+        self.workspace_context = workspace_context;
         sent
     }
     fn attach_file(&mut self, path: PathBuf) {
@@ -1509,6 +1613,97 @@ impl JamesApp {
         }
         self.launch_model("Reading attachment...", move |_| {
             WorkerResult::Attachment(attachments::load(&path))
+        });
+    }
+    fn list_workspace(&mut self) {
+        if self.busy() {
+            return;
+        }
+        let root = PathBuf::from(self.workspace_directory.trim());
+        self.launch("Listing the selected directory...", move |_| {
+            WorkerResult::WorkspaceList(
+                workspace_read::ReadWorkspace::open(&root)
+                    .and_then(|workspace| workspace.list(std::path::Path::new(""))),
+            )
+        });
+    }
+    fn preview_workspace(&mut self) {
+        if self.busy() {
+            return;
+        }
+        let root = PathBuf::from(self.workspace_directory.trim());
+        let paths = self
+            .workspace_paths
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(PathBuf::from)
+            .collect::<Vec<_>>();
+        self.launch("Reading selected files for review...", move |_| {
+            WorkerResult::WorkspaceSnapshot(
+                workspace_read::ReadWorkspace::open(&root)
+                    .and_then(|workspace| workspace.snapshot(&paths)),
+            )
+        });
+    }
+    fn propose_new_file(&mut self) {
+        if self.busy() || self.file_proposal.is_some() {
+            return;
+        }
+        let port = match numeric_port(&self.port) {
+            Ok(port) => port,
+            Err(error) => {
+                self.fail(error);
+                return;
+            }
+        };
+        let model = self.model.trim().to_owned();
+        if model.is_empty() {
+            self.fail("Choose a model before creating a file.");
+            return;
+        }
+        let provider = self.provider;
+        let root = PathBuf::from(self.file_directory.trim());
+        let name = self.file_name.trim().to_owned();
+        let instruction = self.file_instruction.clone();
+        self.launch_model("Preparing a new file for review...", move |job| {
+            let result = (|| {
+                let workspace = workspace_create::CreateWorkspace::open(&root)?;
+                let request = workspace.request(&name, &instruction)?;
+                let messages = request.messages()?;
+                let client = LocalClient::for_provider(provider, port)
+                    .map_err(|e| explain(provider, port, &model, e))?;
+                let reply = client
+                    .chat_stream(&model, &messages, None, |event| {
+                        if let StreamEvent::Connected(handle) = event {
+                            job.arm(handle);
+                        }
+                    })
+                    .map_err(|e| explain(provider, port, &model, e))?;
+                request.parse_response(&reply)
+            })();
+            WorkerResult::FileProposal(result)
+        });
+    }
+    fn create_reviewed_file(&mut self) {
+        if self.busy() {
+            return;
+        }
+        let Some(proposal) = self.file_proposal.take() else {
+            return;
+        };
+        self.launch("Creating the reviewed file...", move |job| {
+            if job.cancel.is_cancelled() {
+                return WorkerResult::FileCreated(
+                    Err("File creation stopped before it began.".into()),
+                    proposal,
+                );
+            }
+            WorkerResult::FileCreated(
+                workspace_create::CreateWorkspace::open(proposal.root())
+                    .and_then(|workspace| workspace.create(proposal.clone())),
+                proposal,
+            )
         });
     }
     /// Captures the screen, then asks the model how to get unstuck. The answer
@@ -1569,6 +1764,55 @@ impl JamesApp {
                     james_platform::dictate(Duration::from_secs(20), &config, &job.cancel)
                         .map_err(|e| e.to_string()),
                 )
+            },
+        );
+    }
+    fn dictate_to_other_app(&mut self) {
+        if self.busy() || self.external_dictation.is_some() {
+            return;
+        }
+        let config = self.voice_config();
+        self.launch("Listening for dictation to another app...", move |job| {
+            let result = (|| {
+                let target = dictation_target::inspect_foreground(&job.cancel)?;
+                job.send(WorkerResult::ExternalTarget(target.clone()));
+                let text = james_platform::dictate(Duration::from_secs(20), &config, &job.cancel)
+                    .map_err(|e| e.to_string())?;
+                if text.trim().is_empty() {
+                    return Err("No speech was recognized.".into());
+                }
+                Ok((target, text))
+            })();
+            WorkerResult::ExternalDictation(result)
+        });
+    }
+    fn deliver_external_dictation(&mut self) {
+        if self.busy() {
+            return;
+        }
+        if self.external_attempted {
+            return;
+        }
+        let Some((target, text)) = self.external_dictation.clone() else {
+            return;
+        };
+        self.external_attempted = true;
+        self.launch(
+            "Switch to the reviewed destination within 3 seconds...",
+            move |job| {
+                for _ in 0..30 {
+                    if job.cancel.is_cancelled() {
+                        return WorkerResult::ExternalDelivered(Err(
+                            "Stopped before delivery.".into()
+                        ));
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                WorkerResult::ExternalDelivered(dictation_target::deliver_reviewed(
+                    &target,
+                    &text,
+                    &job.cancel,
+                ))
             },
         );
     }
@@ -1802,6 +2046,19 @@ impl JamesApp {
                     }
                     self.worker = Some(worker);
                 }
+                Ok(WorkerResult::ExternalTarget(target)) => {
+                    if !worker.cancel.is_cancelled() {
+                        self.page = Page::Actions;
+                        self.info(format!(
+                            "Listening for {}. Review the transcript before sending.",
+                            target.title
+                        ));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                    }
+                    self.worker = Some(worker);
+                }
                 Err(TryRecvError::Disconnected) => {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                     self.voice = voice::Phase::Off;
@@ -1830,6 +2087,9 @@ impl JamesApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
         if worker.cancel.is_cancelled() {
+            if let WorkerResult::FileCreated(_, proposal) = &result {
+                self.file_proposal = Some(proposal.clone());
+            }
             self.voice = voice::Phase::Off;
             self.guide_after_capture = false;
             self.setup_capture = false;
@@ -1840,6 +2100,10 @@ impl JamesApp {
             }
             self.info(if kept {
                 "Stopped. James closed the connection; the part that arrived is kept and marked incomplete."
+            } else if matches!(result, WorkerResult::ExternalDelivered(_)) {
+                "Stopped. Check the destination; some text may already have been inserted."
+            } else if matches!(result, WorkerResult::FileCreated(..)) {
+                "Stopped. Check the selected directory; the file may already have been created."
             } else if matches!(result, WorkerResult::Action(_)) {
                 "Stopped. Check the target application; input may already have been sent."
             } else {
@@ -1848,6 +2112,28 @@ impl JamesApp {
             return;
         }
         match result {
+            WorkerResult::WorkspaceList(Ok(entries)) => { self.workspace_entries = entries; self.info("Directory listed. Choose files to preview."); }
+            WorkerResult::WorkspaceSnapshot(Ok(snapshot)) => { self.workspace_pending = Some(snapshot); self.show_workspace = true; self.info("Review the selected file contents before attaching them."); }
+            WorkerResult::WorkspaceList(Err(error)) | WorkerResult::WorkspaceSnapshot(Err(error)) => self.fail(error),
+            WorkerResult::ExternalTarget(_) => unreachable!("progress handled by receive"),
+            WorkerResult::ExternalDictation(Ok((target, text))) => {
+                self.external_dictation = Some((target, text));
+                self.external_attempted = false;
+                self.page = Page::Actions;
+                self.info("Review the destination and transcript before sending.");
+            }
+            WorkerResult::ExternalDelivered(Ok(())) => self.info("Windows accepted the input events. Check the destination to confirm the text appeared."),
+            WorkerResult::ExternalDictation(Err(error)) | WorkerResult::ExternalDelivered(Err(error)) => self.fail(error),
+            WorkerResult::FileProposal(Ok(proposal)) => {
+                self.file_proposal = Some(proposal);
+                self.info("Review the proposed file before creating it.");
+            }
+            WorkerResult::FileCreated(Ok(path), _) => self.info(format!("Created {}.", path.display())),
+            WorkerResult::FileCreated(Err(error), proposal) => {
+                self.file_proposal = Some(proposal);
+                self.fail(error);
+            }
+            WorkerResult::FileProposal(Err(error)) => self.fail(error),
             WorkerResult::Attachment(Ok(attachment)) => {
                 let name = attachment.name.clone();
                 self.attachment = Some(attachment);
@@ -2294,6 +2580,17 @@ impl JamesApp {
             || !self.listening.is_ready()
         {
             self.tell(Tone::Warn, "Voice shortcut unavailable while James is busy, setup is incomplete, or listening is unavailable.");
+            return;
+        }
+        if dictate && cfg!(windows) && self.prefs.dictation_other_app && !talk {
+            if self.external_dictation.is_some() {
+                self.tell(
+                    Tone::Warn,
+                    "Finish or discard the previous dictation first.",
+                );
+            } else {
+                self.dictate_to_other_app();
+            }
             return;
         }
         self.page = Page::Chat;

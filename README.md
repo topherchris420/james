@@ -57,10 +57,14 @@ Use **New conversation** to archive a chat and **History** to resume it. **Compa
 opens a compact, always-on-top window; Settings offers an optional global summon
 shortcut, voice shortcuts, and a floating companion with a timer and reminders.
 On Windows, screenshot marks and numbered guidance can also be shown over the
-primary display. In **Screen context**, select an area or add colored point/freehand
+primary display, the companion can dock at its edge, and opted-in dictation can
+be reviewed and sent to another app. Computer control can prepare and review a
+new text file with the model without overwriting existing files. In **Screen context**, select an area or add colored point/freehand
 marks before sending a screenshot question. Drop a text, PDF, PNG, JPEG or WebP
 file onto James, or choose **Attach file** and enter its path, to include it in
 the next chat question. PDF attachment extracts text; scanned pages need OCR.
+**Workspace files** previews selected local text files before attaching them;
+the Windows floating companion can show and control the current media session.
 The [Korso replication report](docs/KORSO_REPLICATION.md)
 records the recovered requirements, implementation choices, and remaining gaps.
 

@@ -1,6 +1,13 @@
 //! A small, movable companion window and an in-process timer.
+use crate::edge_dock::{self, Edge, Monitor};
 use eframe::egui::{self, ViewportBuilder, ViewportClass, ViewportCommand, ViewportId};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
+
+type DockResult = (
+    Edge,
+    Result<Vec<james_platform::Display>, james_platform::Error>,
+);
 
 pub struct Floating {
     pub visible: bool,
@@ -9,6 +16,9 @@ pub struct Floating {
     reminder_text: String,
     reminder_minutes: u32,
     reminders: Vec<Reminder>,
+    media: crate::media_widget::MediaWidget,
+    dock_pending: Option<Receiver<DockResult>>,
+    dock_error: Option<String>,
 }
 
 struct Reminder {
@@ -28,11 +38,73 @@ impl Default for Floating {
             reminder_text: String::new(),
             reminder_minutes: 5,
             reminders: Vec::new(),
+            media: crate::media_widget::MediaWidget::default(),
+            dock_pending: None,
+            dock_error: None,
         }
     }
 }
 
 impl Floating {
+    fn request_dock(&mut self, ctx: &egui::Context, edge: Edge) {
+        if self.dock_pending.is_some() {
+            return;
+        }
+        let (sender, receiver) = mpsc::channel();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let _ = sender.send((edge, james_platform::list_display_bounds()));
+            ctx.request_repaint();
+        });
+        self.dock_error = None;
+        self.dock_pending = Some(receiver);
+    }
+
+    fn finish_dock(&mut self, ctx: &egui::Context) {
+        let Some(receiver) = &self.dock_pending else {
+            return;
+        };
+        let result = match receiver.try_recv() {
+            Ok(result) => result,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => {
+                self.dock_pending = None;
+                self.dock_error = Some("Could not read display positions.".into());
+                return;
+            }
+        };
+        self.dock_pending = None;
+        let (edge, displays) = result;
+        let displays = match displays {
+            Ok(displays) => displays,
+            Err(_) => {
+                self.dock_error = Some("Could not read display positions.".into());
+                return;
+            }
+        };
+        let monitors: Vec<Monitor> = displays
+            .iter()
+            .filter(|display| display.primary)
+            .filter_map(|display| display.bounds)
+            .filter(|bounds| bounds.x == 0 && bounds.y == 0)
+            .map(|bounds| Monitor {
+                bounds: egui::Rect::from_min_size(
+                    egui::pos2(bounds.x as f32, bounds.y as f32),
+                    egui::vec2(bounds.width as f32, bounds.height as f32),
+                ),
+            })
+            .collect();
+        let (window, size) = ctx.input(|i| (i.viewport().outer_rect, i.viewport().monitor_size));
+        let position = window.and_then(|window| {
+            edge_dock::dock_position(window, ctx.pixels_per_point(), size, &monitors, edge)
+        });
+        if let Some(position) = position {
+            ctx.send_viewport_cmd(ViewportCommand::OuterPosition(position));
+            self.dock_error = None;
+        } else {
+            self.dock_error = Some("Display geometry changed or is unavailable; move the companion onto the primary display and try again.".into());
+        }
+    }
     fn add_reminder(&mut self, now: Instant) -> bool {
         let text = self.reminder_text.trim();
         if text.is_empty()
@@ -79,6 +151,14 @@ impl Floating {
                         }
                     });
                     ui.small(status);
+                    if cfg!(windows) && class != ViewportClass::Embedded {
+                        ui.horizontal(|ui| {
+                            let enabled = state.dock_pending.is_none();
+                            if ui.add_enabled(enabled, egui::Button::new("Dock left")).clicked() { state.request_dock(ctx, Edge::Left); }
+                            if ui.add_enabled(enabled, egui::Button::new("Dock right")).clicked() { state.request_dock(ctx, Edge::Right); }
+                        });
+                        if let Some(error) = &state.dock_error { ui.small(error); }
+                    }
                     ui.separator();
                     if let Some(deadline) = state.deadline {
                         let left = deadline.saturating_duration_since(Instant::now());
@@ -139,11 +219,14 @@ impl Floating {
                     if let Some(index) = remove { state.reminders.remove(index); }
                     if !state.reminders.is_empty() { ctx.request_repaint_after(Duration::from_secs(1)); }
                     ui.small("Reminders appear here while James is open; they are not saved or sent as system notifications.");
+                    ui.separator();
+                    state.media.show(ui);
                 };
                 if class == ViewportClass::Embedded {
                     egui::Window::new("James companion")
                         .show(ctx, |ui| content(ui, self, &mut open_main, &mut close));
                 } else {
+                    self.finish_dock(ctx);
                     egui::CentralPanel::default().show(ctx, |ui| {
                         egui::ScrollArea::vertical().show(ui, |ui| content(ui, self, &mut open_main, &mut close));
                     });
