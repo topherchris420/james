@@ -16,13 +16,18 @@ path = "src/main.rs"
 james-core = { path = "../james-core" }
 james-platform = { path = "../james-platform" }
 james-lab = { path = "../james-lab" }
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+pdf-extract = "0.12.1"
 james-models = { path = "../james-models" }
 eframe = { version = "0.31.1", default-features = false, features = ["accesskit", "default_fonts", "glow", "x11", "wayland"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+[target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
+global-hotkey = "0.10.0"
+
 [dev-dependencies]
+base64 = "0.22"
 egui_kittest = "0.31.1"
 socket2 = "0.6"
 

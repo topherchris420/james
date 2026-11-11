@@ -2,6 +2,7 @@
 //! accessibility tree, the way a keyboard or screen-reader user reaches it.
 //! Model and Lab servers are scripted sockets on random loopback ports.
 use super::super::*;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use egui_kittest::{Harness, kittest::Queryable};
 use socket2::{Domain, Socket, Type};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -232,6 +233,32 @@ fn with_screen(h: &mut Harness<'static, JamesApp>) {
     });
 }
 
+/// An actual PNG fixture, so image transport checks inspect the pixels the
+/// model server receives rather than only an attachment flag.
+fn with_image(h: &mut Harness<'static, JamesApp>, image: image::RgbaImage) {
+    let (width, height) = image.dimensions();
+    let texture = h.ctx.load_texture(
+        "pixel-fixture",
+        egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], image.as_raw()),
+        egui::TextureOptions::LINEAR,
+    );
+    let mut png = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut png, image::ImageFormat::Png).unwrap();
+    h.state_mut().screen = Some(Screen {
+        capture: Screenshot {
+            png: png.into_inner(),
+            width,
+            height,
+            target: None,
+            james_hidden: Some(true),
+        },
+        texture,
+        at: Instant::now(),
+        selection: None,
+        from_primary: true,
+    });
+}
+
 #[test]
 fn typing_in_the_message_box_fills_the_draft() {
     let mut h = harness(james(Some("gemma3:4b")));
@@ -450,19 +477,114 @@ fn conversation_controls_copy_messages_and_confirm_a_fresh_start() {
     h.press_key_modifiers(egui::Modifiers::COMMAND, egui::Key::N);
     frames(&mut h, 2);
     assert!(h.state().confirm_clear);
-    h.get_by_label("Clear conversation").click();
+    h.get_by_label("Start new conversation").click();
     frames(&mut h, 3);
     let app = h.state();
     assert!(app.messages.is_empty() && app.draft.is_empty());
     assert!(app.screen.is_none() && !app.attach_screen && !app.lab.include);
     assert!(app.pending.is_none() && app.action_text.is_empty());
-    assert!(session::load(&app.session).messages.is_empty());
+    let saved = session::load(&app.session);
+    assert!(saved.messages.is_empty());
+    assert_eq!(saved.archives.len(), 1);
+    assert_eq!(saved.archives[0].title, "How should I test this?");
+    assert_eq!(saved.archives[0].messages.len(), 2);
+    assert_eq!(app.archives, saved.archives);
+    let on_disk = std::fs::read_to_string(&app.session).unwrap();
+    assert!(!on_disk.contains("An unsent question"));
+    assert!(!on_disk.contains("unapproved text"));
     assert!(
         intent.exists(),
         "clearing never deletes an unresolved action record"
     );
     assert_eq!(app.model, "gemma3:4b");
     assert!(h.get_by_label("Message to James").is_focused());
+}
+
+#[test]
+fn history_opens_a_saved_chat_and_deletes_only_after_confirmation() {
+    let older = vec![
+        ChatMessage::new("user", "An earlier experiment"),
+        ChatMessage::new("assistant", "Keep a control group."),
+    ];
+    let current = vec![ChatMessage::new("user", "Today's experiment")];
+    let mut app = james(Some("gemma3:4b"));
+    let older_id = conversations::archive(&mut app.archives, &older).unwrap();
+    app.messages = current.clone();
+    app.draft = "Do not discard this without asking".into();
+    app.save_session();
+    let mut h = harness(app);
+    h.get_by_label("History").click();
+    frames(&mut h, 2);
+    assert!(h.query_by_label("An earlier experiment").is_some());
+    h.get_by_label("Open conversation").click();
+    frames(&mut h, 2);
+    assert!(h.state().confirm_clear);
+    assert!(!h.state().show_history);
+    assert_eq!(h.state().messages, current);
+    assert_eq!(h.state().draft, "Do not discard this without asking");
+    assert_eq!(h.state().archives[0].id, older_id);
+    h.get_by_label("Open saved conversation").click();
+    frames(&mut h, 3);
+    assert_eq!(h.state().messages, older);
+    assert!(h.state().draft.is_empty());
+    assert_eq!(h.state().archives.len(), 1);
+    assert_eq!(h.state().archives[0].messages, current);
+    let saved = session::load(&h.state().session);
+    assert_eq!(saved.messages, older);
+    assert_eq!(saved.archives[0].messages, current);
+
+    h.get_by_label("History").click();
+    frames(&mut h, 2);
+    h.get_by_label("Delete").click();
+    frames(&mut h, 2);
+    assert_eq!(h.state().archives.len(), 1, "a delete click only asks");
+    assert_eq!(session::load(&h.state().session).archives.len(), 1);
+    h.get_by_label("Keep conversation").click();
+    frames(&mut h, 2);
+    assert_eq!(h.state().archives.len(), 1);
+    h.get_by_label("Delete").click();
+    frames(&mut h, 2);
+    h.get_by_label("Delete saved conversation").click();
+    frames(&mut h, 2);
+    assert!(h.state().archives.is_empty());
+    assert_eq!(h.state().messages, older, "the resumed chat stays current");
+    let saved = session::load(&h.state().session);
+    assert!(saved.archives.is_empty());
+    assert_eq!(saved.messages, older);
+}
+
+#[test]
+fn the_companion_changes_window_level_and_keeps_navigation_available() {
+    let mut h = harness(james(Some("gemma3:4b")));
+    h.get_by_label("Companion").click();
+    h.step();
+    assert!(h.state().compact);
+    assert!(h.output().viewport_output.values().any(|viewport| {
+        viewport.commands.iter().any(|command| {
+            matches!(
+                command,
+                egui::ViewportCommand::WindowLevel(egui::WindowLevel::AlwaysOnTop)
+            )
+        })
+    }));
+    frames(&mut h, 2);
+    h.get_by_label("Screen context").click();
+    frames(&mut h, 2);
+    assert_eq!(h.state().page, Page::Screen);
+    h.get_by_label("Settings").click();
+    frames(&mut h, 2);
+    assert_eq!(h.state().page, Page::Settings);
+    h.get_by_label("Full window").click();
+    h.step();
+    assert!(!h.state().compact);
+    assert!(h.output().viewport_output.values().any(|viewport| {
+        viewport.commands.iter().any(|command| {
+            matches!(
+                command,
+                egui::ViewportCommand::WindowLevel(egui::WindowLevel::Normal)
+            )
+        })
+    }));
 }
 
 #[test]
@@ -646,10 +768,14 @@ fn deleting_everything_asks_first_and_keeps_an_unchecked_action_record() {
 }
 
 #[test]
-fn turning_off_history_removes_the_saved_conversation() {
+fn turning_off_history_removes_current_and_archived_text_from_disk() {
     let mut app = james(Some("gemma3:4b"));
     app.messages
         .push(ChatMessage::new("user", "keep this private"));
+    conversations::archive(
+        &mut app.archives,
+        &[ChatMessage::new("user", "an older private conversation")],
+    );
     app.save_session();
     let mut h = harness(app);
     h.press_key_modifiers(egui::Modifiers::COMMAND, egui::Key::Num5);
@@ -659,8 +785,12 @@ fn turning_off_history_removes_the_saved_conversation() {
     frames(&mut h, 2);
     let saved = std::fs::read_to_string(&h.state().session).unwrap();
     assert!(!saved.contains("keep this private"));
+    assert!(!saved.contains("an older private conversation"));
+    let loaded = session::load(&h.state().session);
+    assert!(loaded.messages.is_empty() && loaded.archives.is_empty());
     // Still on screen until James closes.
     assert_eq!(h.state().messages.len(), 1);
+    assert_eq!(h.state().archives.len(), 1);
 }
 
 #[test]
@@ -976,6 +1106,623 @@ mod review_screen {
         );
         assert!(!session::intent_path(&h.state().session).exists());
     }
+}
+
+#[test]
+fn a_spoken_question_preserves_the_typed_draft_and_its_selected_attachment() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(&["A written answer without playback."], Duration::ZERO)
+    });
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    type_message(&mut h, "A private typed question for later");
+    // Invalid image bytes make an accidental attachment fail before HTTP.
+    with_screen(&mut h);
+    let selection = Some(PixelRect {
+        x: 10,
+        y: 15,
+        width: 20,
+        height: 25,
+    });
+    h.state_mut().screen.as_mut().unwrap().selection = selection;
+    h.state_mut().attach_screen = true;
+    h.state_mut().voice = voice::Phase::Thinking;
+    assert!(
+        h.state_mut()
+            .send_voice_question("A spoken question".into())
+    );
+    // Exercise the actual voice request construction without invoking platform
+    // speech playback or starting another microphone turn when it finishes.
+    h.state_mut().voice = voice::Phase::Off;
+    wait_until(&mut h, "the spoken question's reply", |app| {
+        app.worker.is_none()
+    });
+    assert_eq!(h.state().draft, "A private typed question for later");
+    assert!(h.state().attach_screen);
+    assert_eq!(h.state().screen.as_ref().unwrap().selection, selection);
+    assert_eq!(h.state().messages[0].content, "A spoken question");
+    let request: serde_json::Value = serde_json::from_str(&seen.lock().unwrap()).unwrap();
+    let messages = request["messages"].as_array().unwrap();
+    assert_eq!(messages.last().unwrap()["content"], "A spoken question");
+    assert!(
+        messages
+            .iter()
+            .all(|message| message.get("images").is_none())
+    );
+    assert!(
+        !request
+            .to_string()
+            .contains("A private typed question for later")
+    );
+}
+
+#[test]
+fn a_failed_selected_crop_never_sends_the_whole_screenshot() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::clone(&calls);
+    let port = ollama(move |_| {
+        requests.fetch_add(1, Ordering::SeqCst);
+        ndjson(&["This request should never arrive."], Duration::ZERO)
+    });
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    with_image(
+        &mut h,
+        image::RgbaImage::from_pixel(8, 8, image::Rgba([17, 23, 41, 255])),
+    );
+    // A real PNG that decodes correctly, but a selection outside it: this
+    // specifically exercises crop failure, rather than a PNG decode failure.
+    h.state_mut().screen.as_mut().unwrap().selection = Some(PixelRect {
+        x: 100,
+        y: 100,
+        width: 4,
+        height: 4,
+    });
+    h.state_mut().attach_screen = true;
+    type_message(&mut h, "Only the selected area, please");
+    h.get_by_label("Send").click();
+    wait_until(&mut h, "the crop refusal", |app| app.worker.is_none());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(h.state().tone, Tone::Error);
+    assert!(
+        h.state()
+            .status
+            .contains("selected area is outside the screenshot")
+    );
+    assert_eq!(h.state().messages.len(), 1, "no model answer was received");
+}
+
+#[test]
+fn attached_text_reaches_only_the_intended_chat_request() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(&["Read it."], Duration::ZERO)
+    });
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().attachment = Some(attachments::Attachment {
+        name: "notes.txt".into(),
+        content: attachments::Content::Text("Private fixture content".into()),
+    });
+    type_message(&mut h, "Summarize the attachment");
+    h.get_by_label("Send").click();
+    wait_until(&mut h, "the attachment answer", |app| app.worker.is_none());
+    let request: serde_json::Value = serde_json::from_str(&seen.lock().unwrap()).unwrap();
+    assert!(request.to_string().contains("Private fixture content"));
+    assert!(request.to_string().contains("notes.txt"));
+    assert!(h.state().attachment.is_none());
+    assert!(
+        !std::fs::read_to_string(&h.state().session)
+            .unwrap()
+            .contains("Private fixture content")
+    );
+}
+
+#[test]
+fn spoken_question_leaves_a_file_attachment_for_the_typed_draft() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(&["Heard."], Duration::ZERO)
+    });
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().draft = "A typed draft".into();
+    h.state_mut().attachment = Some(attachments::Attachment {
+        name: "private.txt".into(),
+        content: attachments::Content::Text("Attachment stays here".into()),
+    });
+    assert!(
+        h.state_mut()
+            .send_voice_question("A spoken question".into())
+    );
+    wait_until(&mut h, "the spoken answer", |app| app.worker.is_none());
+    assert_eq!(h.state().draft, "A typed draft");
+    assert!(h.state().attachment.is_some());
+    assert!(!seen.lock().unwrap().contains("Attachment stays here"));
+}
+
+#[test]
+fn image_attachment_is_sent_as_an_image_and_conflicts_with_screenshot() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(&["Seen."], Duration::ZERO)
+    });
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+        4,
+        3,
+        image::Rgba([5, 6, 7, 255]),
+    ))
+    .write_to(&mut png, image::ImageFormat::Png)
+    .unwrap();
+    h.state_mut().attachment = Some(attachments::Attachment {
+        name: "picture.png".into(),
+        content: attachments::Content::Image(png.into_inner()),
+    });
+    with_screen(&mut h);
+    h.state_mut().attach_screen = true;
+    h.state_mut().draft = "Describe this".into();
+    assert!(!h.state_mut().send(Ask::Chat));
+    assert!(h.state().attachment.is_some());
+    assert!(h.state().status.contains("either the screenshot"));
+    h.state_mut().attach_screen = false;
+    assert!(h.state_mut().send(Ask::Chat));
+    wait_until(&mut h, "the image answer", |app| app.worker.is_none());
+    let request: serde_json::Value = serde_json::from_str(&seen.lock().unwrap()).unwrap();
+    let images = request["messages"].as_array().unwrap().last().unwrap()["images"]
+        .as_array()
+        .unwrap();
+    let png = STANDARD.decode(images[0].as_str().unwrap()).unwrap();
+    assert_eq!(
+        image::load_from_memory(&png)
+            .unwrap()
+            .to_rgba8()
+            .get_pixel(0, 0)
+            .0,
+        [5, 6, 7, 255]
+    );
+}
+
+#[test]
+fn floating_companion_starts_and_cancels_a_timer() {
+    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().floating.visible = true;
+    h.run();
+    h.get_by_label("Start timer").click();
+    h.run();
+    assert!(h.query_by_label("Cancel timer").is_some());
+    h.get_by_label("Cancel timer").click();
+    h.run();
+    assert!(h.query_by_label("Start timer").is_some());
+    h.get_by_label("Close tab").click();
+    h.run();
+    assert!(!h.state().floating.visible);
+}
+
+#[test]
+fn floating_companion_adds_and_removes_a_reminder() {
+    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().floating.visible = true;
+    h.run();
+    h.get_by_label("Reminder text").click();
+    h.get_by_label("Reminder text").type_text("Check the oven");
+    h.run();
+    h.get_by_label("Add reminder").click();
+    h.run_steps(2);
+    assert!(h.query_by_label_contains("Check the oven").is_some());
+    h.get_by_label("Remove").click();
+    h.run();
+    assert!(h.query_by_label_contains("Check the oven").is_none());
+}
+
+#[test]
+fn floating_companion_is_suppressed_while_screen_capture_runs() {
+    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().floating.visible = true;
+    h.run();
+    assert!(h.query_by_label("Start timer").is_some());
+    let (tx, rx) = std::sync::mpsc::channel();
+    h.state_mut().worker = Some(Worker {
+        rx,
+        cancel: Cancellation::default(),
+        abort: AbortSlot::default(),
+        label: "Capturing the screen after a 3-second delay...",
+        join: None,
+        wait_on_close: false,
+    });
+    h.run_steps(2);
+    assert!(h.query_by_label("Start timer").is_none());
+    h.state_mut().worker = None;
+    drop(tx);
+    h.run();
+    assert!(h.query_by_label("Start timer").is_some());
+}
+
+#[test]
+fn reminders_save_only_after_opt_in_and_can_be_removed_from_disk() {
+    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().floating.visible = true;
+    h.run();
+    h.get_by_label("Reminder text").click();
+    h.get_by_label("Reminder text").type_text("Local reminder");
+    h.run();
+    h.get_by_label("Add reminder").click();
+    h.run_steps(2);
+    assert!(session::load(&h.state().session).reminders.is_empty());
+    h.get_by_label("Save reminders on this computer").click();
+    h.run_steps(2);
+    let saved = session::load(&h.state().session);
+    assert!(saved.remember_reminders);
+    assert_eq!(saved.reminders[0].text, "Local reminder");
+    let restored = JamesApp::new(h.state().session.clone());
+    assert_eq!(restored.floating.saved_reminders().1, saved.reminders);
+    h.get_by_label("Save reminders on this computer").click();
+    h.run_steps(2);
+    assert!(session::load(&h.state().session).reminders.is_empty());
+    assert!(
+        !std::fs::read_to_string(&h.state().session)
+            .unwrap()
+            .contains("Local reminder")
+    );
+    assert!(h.query_by_label_contains("Local reminder").is_some());
+    h.state_mut().delete_all_data();
+    assert!(h.state().floating.saved_reminders().1.is_empty());
+    assert!(!h.state().floating.visible);
+}
+
+#[test]
+fn shortcut_changes_validate_active_conflicts_and_persist() {
+    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
+    let mut app = james_on(port, Some("gemma3:4b"), SetupStep::Done);
+    app.prefs.summon_shortcut = true;
+    app.prefs.talk_shortcut = true;
+    let original = app.prefs.shortcut_chords;
+    app.shortcut_drafts[1] = original.summon.label();
+    app.apply_shortcut_draft(1);
+    assert!(app.shortcut_config_error.is_some());
+    assert_eq!(app.prefs.shortcut_chords, original);
+    app.shortcut_drafts[1] = "Ctrl+Alt+9".into();
+    app.apply_shortcut_draft(1);
+    assert!(app.shortcut_config_error.is_none());
+    assert_eq!(
+        session::load(&app.session)
+            .preferences
+            .shortcut_chords
+            .talk
+            .label(),
+        "Ctrl+Alt+9"
+    );
+    app.shortcut_drafts[2] = "D".into();
+    app.apply_shortcut_draft(2);
+    assert!(app.shortcut_config_error.is_some());
+    assert_eq!(app.prefs.shortcut_chords.dictate, original.dictate);
+}
+
+#[test]
+fn settings_model_proposal_is_isolated_and_only_prepares_a_review() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(
+            &[r#"{"page":"sound","reason":"Choose an output device."}"#],
+            Duration::ZERO,
+        )
+    });
+    let mut app = james_on(port, Some("gemma3:4b"), SetupStep::Done);
+    app.draft = "Private unsent draft".into();
+    app.messages
+        .push(ChatMessage::new("user", "Private conversation"));
+    app.settings_instruction = "Find output device settings".into();
+    let mut h = harness(app);
+    h.state_mut().propose_settings_page();
+    wait_until(&mut h, "settings review", |app| app.worker.is_none());
+    assert_eq!(
+        h.state().settings_proposal.as_ref().unwrap().page(),
+        crate::settings_page::SettingsPage::Sound
+    );
+    let request = seen.lock().unwrap().clone();
+    assert!(request.contains("Find output device settings"));
+    assert!(!request.contains("Private unsent draft"));
+    assert!(!request.contains("Private conversation"));
+    assert_eq!(h.state().draft, "Private unsent draft");
+    if cfg!(windows) {
+        h.state_mut().page = Page::Actions;
+        h.run();
+        h.get_by_label("Open a Windows settings page").click();
+        h.run_steps(2);
+        assert!(h.query_by_label("Open reviewed Sound settings").is_some());
+        assert!(h.query_by_label("ms-settings:sound").is_some());
+    }
+    h.state_mut().model_changed();
+    assert!(h.state().settings_proposal.is_none());
+}
+
+#[test]
+fn desktop_guidance_refuses_an_embedded_or_unsupported_viewport() {
+    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    with_screen(&mut h);
+    h.state_mut().page = Page::Screen;
+    h.state_mut().annotations.push(screen_context::Stroke {
+        points: vec![screen_context::Point { x: 10.0, y: 10.0 }],
+        color: screen_context::BrushColor::Accent,
+        width: 6.0,
+    });
+    h.run();
+    h.get_by_label("Show marks on desktop").click();
+    h.run();
+    assert!(!h.state().overlay.is_open());
+    assert!(
+        h.state().status.contains("native window") || h.state().status.contains("Windows only")
+    );
+}
+
+#[test]
+fn model_file_creation_requires_review_and_never_overwrites() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(&[r#"{"content":"Hello from the model"}"#], Duration::ZERO)
+    });
+    let root = std::env::temp_dir().join(format!("james-create-gui-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let path = root.join("hello.txt");
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().file_directory = root.display().to_string();
+    h.state_mut().file_name = "hello.txt".into();
+    h.state_mut().file_instruction = "Write a greeting".into();
+    h.state_mut().page = Page::Actions;
+    h.run();
+    h.get_by_label("Create a new text file with the model")
+        .click();
+    h.run();
+    h.get_by_label("Prepare file for review").click();
+    wait_until(&mut h, "the file proposal", |app| app.worker.is_none());
+    assert!(!path.exists(), "model generation must not create the file");
+    assert_eq!(
+        h.state().file_proposal.as_ref().unwrap().content(),
+        "Hello from the model"
+    );
+    assert!(seen.lock().unwrap().contains("Write a greeting"));
+    h.get_by_label("Create reviewed file").click();
+    wait_until(&mut h, "file creation", |app| app.worker.is_none());
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "Hello from the model"
+    );
+    h.state_mut().propose_new_file();
+    wait_until(&mut h, "existing file refusal", |app| app.worker.is_none());
+    assert!(h.state().file_proposal.is_none());
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "Hello from the model"
+    );
+    let raced = root.join("raced.txt");
+    h.state_mut().file_name = "raced.txt".into();
+    h.state_mut().propose_new_file();
+    wait_until(&mut h, "the second file proposal", |app| {
+        app.worker.is_none()
+    });
+    std::fs::write(&raced, "Created elsewhere").unwrap();
+    h.state_mut().create_reviewed_file();
+    wait_until(&mut h, "racing file refusal", |app| app.worker.is_none());
+    assert_eq!(
+        std::fs::read_to_string(&raced).unwrap(),
+        "Created elsewhere"
+    );
+    assert!(
+        h.state().file_proposal.is_some(),
+        "the reviewed proposal remains available"
+    );
+    std::fs::remove_file(raced).unwrap();
+    std::fs::remove_file(path).unwrap();
+    std::fs::remove_dir(root).unwrap();
+}
+
+#[test]
+fn external_dictation_shows_destination_and_text_before_delivery() {
+    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().draft = "Keep this draft".into();
+    h.state_mut().page = Page::Actions;
+    h.state_mut().external_dictation = Some((
+        dictation_target::DictationTarget {
+            window: 123,
+            focused_window: 456,
+            process_id: 42,
+            focused_process_id: 42,
+            process_name: "fixture editor".into(),
+            title: "fixture document".into(),
+            focus_class: "Edit".into(),
+        },
+        "A reviewed transcript".into(),
+    ));
+    h.run();
+    assert!(h.query_by_label_contains("fixture document").is_some());
+    assert!(h.query_by_label("A reviewed transcript").is_some());
+    assert!(
+        h.query_by_label("Send reviewed dictation in 3 seconds")
+            .is_some()
+    );
+    h.state_mut().external_attempted = true;
+    h.state_mut().deliver_external_dictation();
+    assert!(
+        !h.state().busy(),
+        "an attempted delivery must not be repeated"
+    );
+    h.run();
+    h.get_by_label("Discard dictation").click();
+    h.run();
+    assert!(h.state().external_dictation.is_none());
+    assert_eq!(h.state().draft, "Keep this draft");
+}
+
+#[test]
+fn revised_copy_uses_reviewed_source_and_keeps_external_edits() {
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        body.lock().unwrap().push(request.to_owned());
+        ndjson(&[r#"{"content":"Revised fixture text"}"#], Duration::ZERO)
+    });
+    let root = std::env::temp_dir().join(format!("james-revision-gui-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let original = root.join("original.txt");
+    let copy = root.join("copy.txt");
+    std::fs::write(&original, "Reviewed original text").unwrap();
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().file_directory = root.display().to_string();
+    h.state_mut().file_source_name = "original.txt".into();
+    h.state_mut().file_name = "copy.txt".into();
+    h.state_mut().file_instruction = "Shorten this text".into();
+    h.state_mut().page = Page::Actions;
+    h.state_mut().preview_file_source();
+    wait_until(&mut h, "source review", |app| app.worker.is_none());
+    assert!(seen.lock().unwrap().is_empty());
+    h.get_by_label("Create a new text file with the model")
+        .click();
+    h.run_steps(2);
+    assert!(h.query_by_label("Reviewed original text").is_some());
+    std::fs::write(&original, "New text from another app").unwrap();
+    h.get_by_label("Prepare file for review").click();
+    wait_until(&mut h, "revised copy review", |app| app.worker.is_none());
+    assert!(!copy.exists());
+    let request = seen.lock().unwrap()[0].clone();
+    assert!(request.contains("Reviewed original text"));
+    assert!(!request.contains("New text from another app"));
+    assert!(h.query_by_label("Revised fixture text").is_some());
+    h.get_by_label("Create reviewed file").click();
+    wait_until(&mut h, "new copy", |app| app.worker.is_none());
+    assert_eq!(
+        std::fs::read_to_string(&copy).unwrap(),
+        "Revised fixture text"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&original).unwrap(),
+        "New text from another app"
+    );
+    assert!(
+        !std::fs::read_to_string(&h.state().session)
+            .unwrap()
+            .contains("Reviewed original text")
+    );
+    std::fs::remove_file(copy).unwrap();
+    std::fs::remove_file(original).unwrap();
+    std::fs::remove_dir(root).unwrap();
+}
+
+#[test]
+fn selected_workspace_files_are_reviewed_and_sent_only_with_the_typed_question() {
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        body.lock().unwrap().push(request.to_owned());
+        ndjson(&["Answer."], Duration::ZERO)
+    });
+    let root = std::env::temp_dir().join(format!("james-read-gui-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("one.txt"), "First selected fixture").unwrap();
+    std::fs::write(root.join("two.txt"), "Second selected fixture").unwrap();
+    std::fs::write(root.join("unselected.txt"), "Never send this fixture").unwrap();
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().workspace_directory = root.display().to_string();
+    h.state_mut().workspace_paths = "one.txt\ntwo.txt".into();
+    h.state_mut().show_workspace = true;
+    h.state_mut().preview_workspace();
+    wait_until(&mut h, "workspace preview", |app| app.worker.is_none());
+    assert!(h.state().workspace_context.is_none());
+    assert!(h.state().workspace_pending.is_some());
+    h.get_by_label("Attach selected files").click();
+    h.run();
+    assert!(h.state().workspace_context.is_some());
+    h.state_mut().draft = "Typed question".into();
+    assert!(h.state_mut().send_voice_question("Spoken question".into()));
+    wait_until(&mut h, "spoken answer", |app| app.worker.is_none());
+    assert!(h.state().workspace_context.is_some());
+    assert!(!seen.lock().unwrap()[0].contains("selected fixture"));
+    assert!(h.state_mut().send(Ask::Chat));
+    wait_until(&mut h, "workspace answer", |app| app.worker.is_none());
+    let request = seen.lock().unwrap()[1].clone();
+    assert!(request.contains("First selected fixture"));
+    assert!(request.contains("Second selected fixture"));
+    assert!(!request.contains("Never send this fixture"));
+    assert!(
+        !std::fs::read_to_string(&h.state().session)
+            .unwrap()
+            .contains("selected fixture")
+    );
+    std::fs::remove_file(root.join("one.txt")).unwrap();
+    std::fs::remove_file(root.join("two.txt")).unwrap();
+    std::fs::remove_file(root.join("unselected.txt")).unwrap();
+    std::fs::remove_dir(root).unwrap();
+}
+
+#[test]
+fn an_attached_question_transports_only_the_marked_crop_pixels() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(&["The marked control is visible."], Duration::ZERO)
+    });
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    let original =
+        image::RgbaImage::from_fn(20, 16, |x, y| image::Rgba([x as u8, y as u8, 50, 255]));
+    with_image(&mut h, original);
+    let original_png = h.state().screen.as_ref().unwrap().capture.png.clone();
+    h.state_mut().screen.as_mut().unwrap().selection = Some(PixelRect {
+        x: 4,
+        y: 3,
+        width: 12,
+        height: 10,
+    });
+    h.state_mut().annotations.push(screen_context::Stroke {
+        points: vec![
+            screen_context::Point { x: 8.0, y: 6.0 },
+            screen_context::Point { x: 10.0, y: 8.0 },
+        ],
+        color: screen_context::BrushColor::Accent,
+        width: 2.0,
+    });
+    h.state_mut().attach_screen = true;
+    type_message(&mut h, "Explain the marked control");
+    h.get_by_label("Send").click();
+    wait_until(&mut h, "the cropped image answer", |app| {
+        app.worker.is_none()
+    });
+    let request: serde_json::Value = serde_json::from_str(&seen.lock().unwrap()).unwrap();
+    let messages = request["messages"].as_array().unwrap();
+    let images = messages.last().unwrap()["images"].as_array().unwrap();
+    assert_eq!(images.len(), 1, "only the selected image is attached");
+    let png = STANDARD.decode(images[0].as_str().unwrap()).unwrap();
+    let sent = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
+        .unwrap()
+        .into_rgba8();
+    assert_eq!(sent.dimensions(), (12, 10));
+    assert_eq!(sent.get_pixel(0, 0).0, [4, 3, 50, 255]);
+    assert_eq!(sent.get_pixel(11, 9).0, [15, 12, 50, 255]);
+    assert_eq!(
+        sent.get_pixel(6, 5).0,
+        screen_context::BrushColor::Accent.rgba(),
+        "the user mark is transformed into the selected crop"
+    );
+    assert_eq!(
+        h.state().screen.as_ref().unwrap().capture.png,
+        original_png,
+        "request preparation leaves the captured source untouched"
+    );
 }
 
 #[test]

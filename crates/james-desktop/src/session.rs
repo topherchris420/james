@@ -8,6 +8,7 @@
 //! encryption: anyone who can sign in as you, or read the disk directly, can
 //! read these files. Full-disk encryption (BitLocker, FileVault, LUKS) is what
 //! protects them at rest.
+use crate::conversations::{self, Conversation};
 use james_models::{ChatMessage, LocalProvider};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -17,7 +18,7 @@ pub const MAX_SAVED_MESSAGES: usize = 80;
 pub const MAX_MESSAGE_BYTES: usize = 32_768;
 // JSON can use six bytes for one control character ("\u0000"). Leave
 // room for that expansion, settings and formatting below the load limit.
-const MAX_HISTORY_BYTES: usize = 512 * 1024;
+pub(crate) const MAX_HISTORY_BYTES: usize = 512 * 1024;
 const MAX_SESSION_BYTES: u64 = 4 * 1024 * 1024;
 const SHORTENED: &str = "\n\n[Message shortened to fit the conversation limit.]";
 
@@ -41,6 +42,13 @@ pub struct Preferences {
     /// No animations, spinners or smooth scrolling.
     pub reduce_motion: bool,
     pub speak_replies: bool,
+    /// Opt in to the system-wide shortcut that brings James to the front.
+    pub summon_shortcut: bool,
+    /// Opt-in chords for starting the existing Talk and Dictate flows.
+    pub talk_shortcut: bool,
+    pub dictation_shortcut: bool,
+    pub dictation_other_app: bool,
+    pub shortcut_chords: crate::shortcuts::ShortcutConfig,
     /// Guide me numbers its steps on the screenshot. Off by default: the
     /// model places the numbers, and small models often misplace them.
     pub guide_marks: bool,
@@ -57,6 +65,11 @@ impl Default for Preferences {
             text_scale: 1.0,
             reduce_motion: false,
             speak_replies: false,
+            summon_shortcut: false,
+            talk_shortcut: false,
+            dictation_shortcut: false,
+            dictation_other_app: false,
+            shortcut_chords: crate::shortcuts::ShortcutConfig::default(),
             guide_marks: false,
             review_actions: true,
         }
@@ -122,6 +135,8 @@ pub struct SavedSession {
     pub provider: LocalProvider,
     pub model: String,
     pub messages: Vec<ChatMessage>,
+    /// Other local conversations, newest first; absent in older session files.
+    pub archives: Vec<Conversation>,
     pub lab_port: u16,
     pub whisper_program: String,
     pub whisper_model: String,
@@ -135,6 +150,26 @@ pub struct SavedSession {
     /// The James version that last saved this session; empty in sessions
     /// saved before James recorded it.
     pub last_version: String,
+    pub remember_reminders: bool,
+    pub reminders: Vec<SavedReminder>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedReminder {
+    pub text: String,
+    pub due_unix_seconds: u64,
+}
+
+pub fn bounded_reminders(reminders: Vec<SavedReminder>) -> Vec<SavedReminder> {
+    reminders
+        .into_iter()
+        .filter(|r| {
+            !r.text.trim().is_empty()
+                && r.text.chars().count() <= 100
+                && !r.text.chars().any(char::is_control)
+        })
+        .take(10)
+        .collect()
 }
 
 impl Default for SavedSession {
@@ -144,6 +179,7 @@ impl Default for SavedSession {
             provider: LocalProvider::LmStudio,
             model: String::new(),
             messages: Vec::new(),
+            archives: Vec::new(),
             lab_port: 5173,
             whisper_program: String::new(),
             whisper_model: String::new(),
@@ -152,6 +188,8 @@ impl Default for SavedSession {
             preferences: Preferences::default(),
             setup: None,
             last_version: String::new(),
+            remember_reminders: false,
+            reminders: Vec::new(),
         }
     }
 }
@@ -173,6 +211,9 @@ impl SavedSession {
 
 /// Where James keeps its files. Tests and portable use can override it.
 pub fn default_session_path() -> PathBuf {
+    if let Some(path) = std::env::var_os("JAMES_DATA_DIR").filter(|path| !path.is_empty()) {
+        return PathBuf::from(path).join("session.json");
+    }
     if let Some(path) = std::env::var_os("LOCALAPPDATA") {
         PathBuf::from(path).join("Vers3Dynamics/James/session.json")
     } else if let Some(path) = std::env::var_os("HOME") {
@@ -238,10 +279,7 @@ pub fn load(path: &Path) -> SavedSession {
         .and_then(|_| std::fs::read(path).ok())
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default();
-    saved.messages = bounded(std::mem::take(&mut saved.messages));
-    if !saved.keep_history {
-        saved.messages.clear();
-    }
+    enforce_history(&mut saved);
     saved
 }
 
@@ -251,11 +289,7 @@ pub fn load(path: &Path) -> SavedSession {
 pub fn save(path: &Path, session: &SavedSession) -> std::io::Result<()> {
     // Enforce retention here, even if a caller forgets to strip messages.
     let mut saved = session.clone();
-    saved.messages = if saved.keep_history {
-        bounded(saved.messages)
-    } else {
-        Vec::new()
-    };
+    enforce_history(&mut saved);
     let bytes = serde_json::to_vec_pretty(&saved).map_err(std::io::Error::other)?;
     if bytes.len() as u64 > MAX_SESSION_BYTES {
         return Err(std::io::Error::new(
@@ -264,6 +298,25 @@ pub fn save(path: &Path, session: &SavedSession) -> std::io::Result<()> {
         ));
     }
     write_private(path, &bytes)
+}
+
+/// Applies the same privacy and whole-library retention boundary on both read
+/// and write, including files produced by older versions or other callers.
+fn enforce_history(saved: &mut SavedSession) {
+    saved.reminders = if saved.remember_reminders {
+        bounded_reminders(std::mem::take(&mut saved.reminders))
+    } else {
+        Vec::new()
+    };
+    if !saved.keep_history {
+        saved.messages.clear();
+        saved.archives.clear();
+        return;
+    }
+    (saved.messages, saved.archives) = conversations::bounded(
+        std::mem::take(&mut saved.messages),
+        std::mem::take(&mut saved.archives),
+    );
 }
 
 /// Creates the folder James keeps its files in, owner-only on Unix.
@@ -392,6 +445,37 @@ pub(crate) fn scratch_dir(name: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reminder_retention_is_explicit_bounded_and_independent_of_chat_history() {
+        let mut saved = SavedSession {
+            keep_history: false,
+            reminders: vec![SavedReminder {
+                text: "Remember this".into(),
+                due_unix_seconds: 100,
+            }],
+            ..SavedSession::default()
+        };
+        enforce_history(&mut saved);
+        assert!(saved.reminders.is_empty());
+        saved.remember_reminders = true;
+        saved.reminders = (0..20)
+            .map(|n| SavedReminder {
+                text: format!("Reminder {n}"),
+                due_unix_seconds: 100,
+            })
+            .collect();
+        saved.reminders.insert(
+            0,
+            SavedReminder {
+                text: "Hidden\ntext".into(),
+                due_unix_seconds: 100,
+            },
+        );
+        enforce_history(&mut saved);
+        assert_eq!(saved.reminders.len(), 10);
+        assert_eq!(saved.reminders[0].text, "Reminder 0");
+        assert!(!saved.keep_history);
+    }
 
     #[test]
     fn old_sessions_load_with_safe_defaults() {
@@ -400,6 +484,7 @@ mod tests {
         assert_eq!(saved.lab_port, 5173);
         assert_eq!(saved.provider, LocalProvider::LmStudio);
         assert!(saved.keep_history);
+        assert!(saved.archives.is_empty());
         assert_eq!(saved.preferences, Preferences::default());
         // An upgrade with a working model skips the tour; a blank one starts it.
         assert_eq!(saved.setup().step, SetupStep::Done);
@@ -451,12 +536,23 @@ mod tests {
             port: 11434,
             model: "qwen:latest".into(),
             messages: vec![ChatMessage::new("user", "A question")],
+            archives: vec![Conversation {
+                id: "chat-older".into(),
+                title: "An earlier question".into(),
+                updated_at: 1,
+                messages: vec![ChatMessage::new("user", "An earlier question")],
+            }],
             preferences: Preferences {
                 theme: ThemeChoice::Dark,
                 high_contrast: true,
                 text_scale: 1.5,
                 reduce_motion: true,
                 speak_replies: false,
+                summon_shortcut: false,
+                talk_shortcut: false,
+                dictation_shortcut: false,
+                dictation_other_app: false,
+                shortcut_chords: crate::shortcuts::ShortcutConfig::default(),
                 guide_marks: true,
                 review_actions: false,
             },
@@ -471,6 +567,7 @@ mod tests {
         let loaded = load(&path);
         assert_eq!(loaded.provider, LocalProvider::Ollama);
         assert_eq!(loaded.messages, session.messages);
+        assert_eq!(loaded.archives, session.archives);
         assert_eq!(loaded.preferences, session.preferences);
         assert_eq!(loaded.setup().step, SetupStep::Test);
         assert_eq!(loaded.last_version, "0.4.0");
@@ -487,7 +584,16 @@ mod tests {
                 .contains("A question"),
             "history must be absent on disk, not merely ignored on load"
         );
-        assert!(load(&path).messages.is_empty());
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        assert!(!on_disk.contains("An earlier question"));
+        let loaded = load(&path);
+        assert!(loaded.messages.is_empty());
+        assert!(loaded.archives.is_empty());
+        // Enforce the same rule while loading a file whose writer kept text.
+        std::fs::write(&path, serde_json::to_vec(&unsaved).unwrap()).unwrap();
+        let loaded = load(&path);
+        assert!(loaded.messages.is_empty());
+        assert!(loaded.archives.is_empty());
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -530,6 +636,53 @@ mod tests {
         assert!(loaded.messages.len() < saved.messages.len());
         assert_eq!(loaded.messages.last(), saved.messages.last());
         assert_eq!(loaded.messages, bounded(saved.messages));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn current_and_archived_escaped_unicode_histories_share_one_retention_budget() {
+        let dir = scratch_dir("archived-history");
+        let path = dir.join("session.json");
+        let content = "\0🧪\n".repeat(8_000);
+        let saved = SavedSession {
+            model: "still configured".into(),
+            messages: vec![ChatMessage::new("user", "Current question")],
+            archives: (0..40)
+                .map(|i| Conversation {
+                    id: format!("chat-{i}"),
+                    title: "ignored oversized title".repeat(10_000),
+                    updated_at: i,
+                    messages: (0..20)
+                        .map(|_| ChatMessage::new("user", content.clone()))
+                        .collect(),
+                })
+                .collect(),
+            ..SavedSession::default()
+        };
+        save(&path, &saved).unwrap();
+        assert!(std::fs::metadata(&path).unwrap().len() <= MAX_SESSION_BYTES);
+        let loaded = load(&path);
+        assert_eq!(loaded.model, saved.model);
+        assert_eq!(loaded.messages, saved.messages);
+        assert!(!loaded.archives.is_empty());
+        assert!(loaded.archives.len() <= conversations::MAX_CONVERSATIONS);
+        assert_eq!(loaded.archives[0].id, "chat-39");
+        let messages: Vec<_> = loaded
+            .messages
+            .iter()
+            .chain(loaded.archives.iter().flat_map(|chat| &chat.messages))
+            .collect();
+        assert!(messages.len() <= MAX_SAVED_MESSAGES);
+        assert!(
+            messages
+                .iter()
+                .map(|message| message.content.len())
+                .sum::<usize>()
+                <= MAX_HISTORY_BYTES
+        );
+        save(&path, &loaded).unwrap();
+        let restored = load(&path);
+        assert_eq!(restored.archives, loaded.archives);
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -1,5 +1,34 @@
 # Source provenance
 
+## November 2026 Korso replication
+
+The conversation archive, compact companion, global summon, screenshot annotations,
+and draft-preserving voice submission were independently implemented in Rust.
+The [reconstruction report](docs/KORSO_REPLICATION.md) records the exact Korso 0.7.8
+artifact, REA evidence, inspected source locations, and unresolved behavior.
+Recovered source and assets remain outside this repository.
+
+New direct dependencies are `global-hotkey` 0.10 (MIT OR Apache-2.0), for native
+shortcut registration, and test-only `base64` 0.22 (MIT OR Apache-2.0), for inspecting
+actual image request payloads. Cargo.lock pins their resolved dependencies.
+File attachment processing also uses `pdf-extract` 0.12.1 (MIT), and enables
+the JPEG and WebP features of the existing `image` dependency; their transitive
+dependencies are recorded in Cargo.lock and included in generated notices.
+The desktop guidance viewport, voice chord dispatcher, and in-process reminders
+are original James implementations informed by the same static investigation;
+they introduce no new direct dependencies.
+The create-only model proposal and reviewed Windows dictation helpers are also
+original James implementations; the latter uses documented Win32 focus and
+Unicode input APIs without altering the clipboard. The file workflow writes only
+a newly created name and does not reproduce Korso's broader editing tools.
+Read-only workspace snapshots and the media widget are original implementations;
+the Windows media helper uses the system's Global System Media Transport Controls
+API and introduces no new direct Rust dependency.
+Configurable chords, opt-in reminder retention, frozen revision sources, and
+the fixed Windows Settings-page opener are original extensions with no new
+direct dependencies. Settings destinations use Microsoft's documented
+`ms-settings` identifiers; models never provide launch URIs or commands.
+
 James's Rust source, tests, demonstration, architecture, and project documents were authored independently for this project on 2026-10-11. Functional requirements were informed by public Korso documentation and bounded REA inspection of its publicly downloadable Windows package.
 
 Research and implementation occurred in the same investigation. This is an independent implementation, not a claim of a formally segregated clean-room process. No reference code, source maps, prompts, UI layout, logos, fonts, images, sounds, or pet assets were copied into James. No Korso backend or private repository was accessed, and no Korso executable was launched. Public website JavaScript did run in an isolated browser during declared REA page captures.

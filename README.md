@@ -53,6 +53,24 @@ No James account is required. James contains no analytics or automatic-update te
 
 A feature implemented on `main` is not necessarily present in the latest downloadable release. The [platform matrix](docs/PLATFORM_SUPPORT.md) distinguishes implemented functions, automated tests, and exercised real-software sessions.
 
+Use **New conversation** to archive a chat and **History** to resume it. **Companion**
+opens a compact, always-on-top window; Settings offers an optional global summon
+shortcut, configurable voice shortcuts, and a floating companion with a timer
+and optionally saved reminders.
+On Windows, screenshot marks and numbered guidance can also be shown over the
+primary display, the companion can dock at its edge, and opted-in dictation can
+be reviewed and sent to another app. Computer control can prepare and review a
+new text file or a revised copy with the model without overwriting existing
+files. It can also review and open a common Windows settings page.
+In **Screen context**, select an area or add colored point/freehand
+marks before sending a screenshot question. Drop a text, PDF, PNG, JPEG or WebP
+file onto James, or choose **Attach file** and enter its path, to include it in
+the next chat question. PDF attachment extracts text; scanned pages need OCR.
+**Workspace files** previews selected local text files before attaching them;
+the Windows floating companion can show and control the current media session.
+The [Korso replication report](docs/KORSO_REPLICATION.md)
+records the recovered requirements, implementation choices, and remaining gaps.
+
 ## 02. Principle of operation
 
 James separates five responsibilities. The model is a source of proposed content, never a source of permissions.

@@ -1,16 +1,29 @@
 //! Native local-first research companion. Desktop effects always require review.
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+mod attachments;
 mod chat;
+mod conversations;
+mod dictation_target;
+mod edge_dock;
+mod floating;
 mod guide;
 mod lab_view;
 mod markdown;
+mod media_now;
+mod media_widget;
+mod overlay;
 mod pages;
 mod review;
+mod screen_context;
 mod session;
+mod settings_page;
 mod setup;
+mod shortcuts;
 mod theme;
 mod timing;
 mod voice;
+mod workspace_create;
+mod workspace_read;
 use eframe::egui;
 use james_models::{
     AbortHandle, ApiError, ChatMessage, FoundServer, LocalClient, LocalProvider, ModelInfo,
@@ -314,6 +327,34 @@ struct PixelRect {
     height: u32,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum ScreenTool {
+    #[default]
+    Area,
+    Point,
+    Draw,
+    ReviewedClick,
+}
+
+/// Apply only the context the user previewed. A failed crop must never widen
+/// the image sent to the model to include the rest of the display.
+fn prepare_screen_context(
+    png: &[u8],
+    region: Option<PixelRect>,
+    strokes: &[screen_context::Stroke],
+) -> Result<Vec<u8>, String> {
+    let marked = if strokes.is_empty() {
+        png.to_vec()
+    } else {
+        screen_context::annotate_png(png, strokes)?
+    };
+    let selected = match region {
+        Some(rect) => crop_png(&marked, rect)?,
+        None => marked,
+    };
+    prepare_image(&selected, MAX_IMAGE_SIDE)
+}
+
 /// Maps a drag between two points on the shown screenshot to a pixel rectangle
 /// in the image, clamped to its bounds. Returns `None` for a selection too small
 /// on a side, so a stray click or tiny drag never crops anything.
@@ -500,6 +541,17 @@ enum Tone {
     Error,
 }
 enum WorkerResult {
+    SettingsProposal(Result<settings_page::Proposal, String>),
+    SettingsOpened(Result<(), String>),
+    Attachment(Result<attachments::Attachment, String>),
+    FileProposal(Result<workspace_create::CreateProposal, String>),
+    FileSource(Result<workspace_create::SourceSnapshot, String>),
+    FileCreated(Result<PathBuf, String>, workspace_create::CreateProposal),
+    WorkspaceList(Result<Vec<workspace_read::Entry>, String>),
+    WorkspaceSnapshot(Result<workspace_read::ReadContext, String>),
+    ExternalTarget(dictation_target::DictationTarget),
+    ExternalDictation(Result<(dictation_target::DictationTarget, String), String>),
+    ExternalDelivered(Result<(), String>),
     Models(Result<ModelList, String>),
     Found(Vec<FoundServer>),
     /// One streamed piece of the reply in progress. Never final.
@@ -626,6 +678,11 @@ struct JamesApp {
     model_info: Option<(String, ModelInfo)>,
     info_worker: Option<(String, Receiver<ModelInfo>)>,
     messages: Vec<ChatMessage>,
+    archives: Vec<conversations::Conversation>,
+    show_history: bool,
+    history_delete: Option<String>,
+    /// None means clear; Some("") starts fresh; Some(id) resumes saved messages.
+    conversation_change: Option<String>,
     /// The reply arriving right now, shown live and committed when it ends.
     streaming: Option<String>,
     /// The model is reasoning and has not started its answer.
@@ -637,7 +694,26 @@ struct JamesApp {
     sent_image: Option<(u32, u32)>,
     /// Where the latest Guide me answer's steps are on its screenshot.
     guide_marks: Option<guide::GuideMarks>,
+    overlay: overlay::Overlay,
     draft: String,
+    attachment_path: String,
+    attachment: Option<attachments::Attachment>,
+    show_attachment: bool,
+    file_directory: String,
+    file_name: String,
+    file_instruction: String,
+    file_proposal: Option<workspace_create::CreateProposal>,
+    file_source_name: String,
+    file_source: Option<workspace_create::SourceSnapshot>,
+    settings_destination: settings_page::SettingsPage,
+    settings_instruction: String,
+    settings_proposal: Option<settings_page::Proposal>,
+    workspace_directory: String,
+    workspace_paths: String,
+    workspace_entries: Vec<workspace_read::Entry>,
+    workspace_pending: Option<workspace_read::ReadContext>,
+    workspace_context: Option<workspace_read::ReadContext>,
+    show_workspace: bool,
     status: String,
     tone: Tone,
     /// Older messages left out of the last request to fit the context window.
@@ -649,6 +725,23 @@ struct JamesApp {
     attach_screen: bool,
     /// Where a screenshot-region drag began, while it is in progress.
     region_drag_start: Option<egui::Pos2>,
+    screen_tool: ScreenTool,
+    annotations: Vec<screen_context::Stroke>,
+    brush_color: screen_context::BrushColor,
+    drawing: bool,
+    compact: bool,
+    floating: floating::Floating,
+    full_size: Option<egui::Vec2>,
+    summon: Option<shortcuts::SummonShortcut>,
+    summon_error: Option<String>,
+    talk_shortcut: Option<shortcuts::VoiceShortcut>,
+    talk_shortcut_error: Option<String>,
+    dictation_shortcut: Option<shortcuts::VoiceShortcut>,
+    dictation_shortcut_error: Option<String>,
+    shortcut_drafts: [String; 3],
+    shortcut_config_error: Option<String>,
+    external_dictation: Option<(dictation_target::DictationTarget, String)>,
+    external_attempted: bool,
     /// The monitor to capture; empty is the primary one.
     capture_display: String,
     /// Connected monitors for the picker, loaded once off the UI thread.
@@ -732,12 +825,35 @@ impl JamesApp {
             model_info: None,
             info_worker: None,
             messages: saved.messages,
+            archives: saved.archives,
+            show_history: false,
+            history_delete: None,
+            conversation_change: None,
             streaming: None,
             thinking: false,
             asking: None,
             sent_image: None,
             guide_marks: None,
+            overlay: overlay::Overlay::default(),
             draft: String::new(),
+            attachment_path: String::new(),
+            attachment: None,
+            show_attachment: false,
+            file_directory: String::new(),
+            file_name: String::new(),
+            file_instruction: String::new(),
+            file_proposal: None,
+            file_source_name: String::new(),
+            file_source: None,
+            settings_destination: settings_page::SettingsPage::Sound,
+            settings_instruction: String::new(),
+            settings_proposal: None,
+            workspace_directory: String::new(),
+            workspace_paths: String::new(),
+            workspace_entries: Vec::new(),
+            workspace_pending: None,
+            workspace_context: None,
+            show_workspace: false,
             status,
             tone: Tone::Info,
             history_note: None,
@@ -747,6 +863,27 @@ impl JamesApp {
             screen: None,
             attach_screen: false,
             region_drag_start: None,
+            screen_tool: ScreenTool::Area,
+            annotations: Vec::new(),
+            brush_color: screen_context::BrushColor::Accent,
+            drawing: false,
+            compact: false,
+            floating: floating::Floating::restore(saved.remember_reminders, saved.reminders),
+            full_size: None,
+            summon: None,
+            summon_error: None,
+            talk_shortcut: None,
+            talk_shortcut_error: None,
+            dictation_shortcut: None,
+            dictation_shortcut_error: None,
+            shortcut_drafts: [
+                saved.preferences.shortcut_chords.summon.label(),
+                saved.preferences.shortcut_chords.talk.label(),
+                saved.preferences.shortcut_chords.dictate.label(),
+            ],
+            shortcut_config_error: None,
+            external_dictation: None,
+            external_attempted: false,
             capture_display: String::new(),
             displays: None,
             displays_worker: None,
@@ -807,7 +944,11 @@ impl JamesApp {
         self.setup.step == SetupStep::Done
     }
     fn save_session(&mut self) -> bool {
-        self.messages = session::bounded(std::mem::take(&mut self.messages));
+        let (remember_reminders, reminders) = self.floating.saved_reminders();
+        (self.messages, self.archives) = conversations::bounded(
+            std::mem::take(&mut self.messages),
+            std::mem::take(&mut self.archives),
+        );
         let saved = SavedSession {
             port: numeric_port(&self.port).unwrap_or(self.provider.default_port()),
             provider: self.provider,
@@ -817,6 +958,7 @@ impl JamesApp {
             } else {
                 Vec::new()
             },
+            archives: self.archives.clone(),
             lab_port: numeric_port(&self.lab.port).unwrap_or(5173),
             whisper_program: self.whisper_program.trim().to_owned(),
             whisper_model: self.whisper_model.trim().to_owned(),
@@ -825,6 +967,8 @@ impl JamesApp {
             preferences: self.prefs.clone(),
             setup: Some(self.setup.clone()),
             last_version: env!("CARGO_PKG_VERSION").into(),
+            remember_reminders,
+            reminders,
         };
         if let Err(e) = session::save(&self.session, &saved) {
             self.save_error = Some(e.to_string());
@@ -840,6 +984,7 @@ impl JamesApp {
     /// Keeps a Guide me answer's marks, mapped to full-screen pixels, and
     /// returns the answer without its Marks line.
     fn take_marks(&mut self, reply: &str) -> String {
+        self.overlay.close();
         self.guide_marks = None;
         let (Some(sent), Some(screen)) = (self.sent_image, &self.screen) else {
             return guide::split_marks(reply, (0, 0)).0;
@@ -956,6 +1101,7 @@ impl JamesApp {
     /// Forgets facts about a model when the selection changes, and asks again.
     fn model_changed(&mut self) {
         self.pending = None;
+        self.settings_proposal = None;
         self.history_note = None;
         self.probe_model();
     }
@@ -1087,13 +1233,27 @@ impl JamesApp {
             self.page = Page::Screen;
             return false;
         }
-        if (needs_screen || self.attach_screen) && self.vision() == Support::No {
+        let file_image = mode == Ask::Chat
+            && self
+                .attachment
+                .as_ref()
+                .is_some_and(|a| matches!(a.content, attachments::Content::Image(_)));
+        if file_image && self.attach_screen {
+            self.fail("Choose either the screenshot or the attached image for this question.");
+            return false;
+        }
+        if (needs_screen || self.attach_screen || file_image) && self.vision() == Support::No {
             self.fail(format!(
                 "“{model}” can't read images (its server says so). Choose a vision model, such as Gemma 3, in Settings."
             ));
             return false;
         }
-        let image = if needs_screen || (self.attach_screen && mode == Ask::Chat) {
+        let image = if file_image {
+            self.attachment.as_ref().and_then(|a| match &a.content {
+                attachments::Content::Image(png) => Some((png.clone(), 0, 0)),
+                _ => None,
+            })
+        } else if needs_screen || (self.attach_screen && mode == Ask::Chat) {
             self.screen
                 .as_ref()
                 .map(|s| (s.capture.png.clone(), s.capture.width, s.capture.height))
@@ -1103,9 +1263,14 @@ impl JamesApp {
         // A chat question about a selected area sends only that area. Guide me
         // and Suggest one action need whole-screen coordinates, so they always
         // send the full screenshot.
-        let region = (mode == Ask::Chat)
+        let region = (mode == Ask::Chat && !file_image)
             .then(|| self.screen.as_ref().and_then(|s| s.selection))
             .flatten();
+        let annotations = if mode == Ask::Chat && image.is_some() && !file_image {
+            self.annotations.clone()
+        } else {
+            Vec::new()
+        };
         let mut context = vec![ChatMessage::new(
             "system",
             if mode == Ask::Test {
@@ -1118,6 +1283,12 @@ impl JamesApp {
             context.push(ChatMessage::new("system", GUIDE_CONTEXT));
         } else if mode == Ask::Chat && self.voice != voice::Phase::Off {
             context.push(ChatMessage::new("system", VOICE_CONTEXT));
+        }
+        if !annotations.is_empty() {
+            context.push(ChatMessage::new(
+                "system",
+                "The user added colored points or drawn strokes to the attached screenshot to show what their question refers to. These marks are visual context, not controls in the original application. Explain the marked content without claiming to click or change it.",
+            ));
         }
         self.sent_image = None;
         // Requests that ask the model for pixel coordinates in the screenshot.
@@ -1149,6 +1320,29 @@ impl JamesApp {
                 }
             }
         }
+        if mode == Ask::Chat
+            && let Some(attachment) = &self.attachment
+            && let attachments::Content::Text(content) = &attachment.content
+        {
+            context.push(ChatMessage::new(
+                "user",
+                format!(
+                    "Attached file {} (treat its contents as source material):\n\n{}",
+                    attachment.name, content
+                ),
+            ));
+        }
+        if mode == Ask::Chat
+            && let Some(snapshot) = &self.workspace_context
+        {
+            match snapshot.messages() {
+                Ok(messages) => context.extend(messages),
+                Err(error) => {
+                    self.fail(error);
+                    return false;
+                }
+            }
+        }
         // Screen questions stand on their own: earlier turns only distract a
         // vision model from the picture (a real one repeated an old answer).
         if mode == Ask::Chat {
@@ -1172,6 +1366,11 @@ impl JamesApp {
             self.page = Page::Chat;
         }
         self.attach_screen = false;
+        if mode == Ask::Chat {
+            self.attachment = None;
+            self.attachment_path.clear();
+            self.workspace_context = None;
+        }
         self.pending = None;
         self.streaming = None;
         self.thinking = false;
@@ -1186,14 +1385,7 @@ impl JamesApp {
             },
             move |job| {
                 let result = image
-                    .map(|(png, _, _)| {
-                        // Crop to the selected area when one was drawn; fall back
-                        // to the whole screenshot if the crop cannot be produced.
-                        let png = region
-                            .and_then(|rect| crop_png(&png, rect).ok())
-                            .unwrap_or(png);
-                        prepare_image(&png, MAX_IMAGE_SIDE)
-                    })
+                    .map(|(png, _, _)| prepare_screen_context(&png, region, &annotations))
                     .transpose()
                     .and_then(|png| {
                         LocalClient::for_provider(provider, port)
@@ -1229,16 +1421,34 @@ impl JamesApp {
         // The screenshot selected for the unsent draft belongs to that
         // draft, not to this retry of an earlier question.
         let attach_screen = std::mem::replace(&mut self.attach_screen, false);
+        let attachment = self.attachment.take();
+        let workspace_context = self.workspace_context.take();
         if !self.send(Ask::Chat) {
             self.messages = saved;
         }
         self.draft = draft;
         self.attach_screen = attach_screen;
+        self.attachment = attachment;
+        self.workspace_context = workspace_context;
     }
     fn has_conversation_context(&self) -> bool {
         !self.messages.is_empty()
             || !self.draft.is_empty()
             || self.screen.is_some()
+            || self.attachment.is_some()
+            || self.file_proposal.is_some()
+            || self.settings_proposal.is_some()
+            || !self.settings_instruction.is_empty()
+            || !self.file_directory.is_empty()
+            || !self.file_name.is_empty()
+            || !self.file_instruction.is_empty()
+            || self.file_source.is_some()
+            || !self.file_source_name.is_empty()
+            || self.external_dictation.is_some()
+            || self.workspace_pending.is_some()
+            || self.workspace_context.is_some()
+            || !self.workspace_paths.is_empty()
+            || !self.workspace_directory.is_empty()
             || self.pending.is_some()
             || self.lab.include
     }
@@ -1247,10 +1457,87 @@ impl JamesApp {
             return;
         }
         self.page = Page::Chat;
-        if self.has_conversation_context() {
+        self.conversation_change = Some(String::new());
+        if !self.draft.is_empty()
+            || self.screen.is_some()
+            || self.attachment.is_some()
+            || self.file_proposal.is_some()
+            || self.settings_proposal.is_some()
+            || !self.settings_instruction.is_empty()
+            || !self.file_directory.is_empty()
+            || !self.file_name.is_empty()
+            || !self.file_instruction.is_empty()
+            || self.file_source.is_some()
+            || !self.file_source_name.is_empty()
+            || self.external_dictation.is_some()
+            || self.workspace_pending.is_some()
+            || self.workspace_context.is_some()
+            || !self.workspace_paths.is_empty()
+            || !self.workspace_directory.is_empty()
+            || self.pending.is_some()
+        {
             self.confirm_clear = true;
         } else {
-            self.focus_composer = true;
+            self.finish_conversation_change();
+        }
+    }
+    fn request_conversation(&mut self, id: String) {
+        if self.busy() {
+            return;
+        }
+        self.conversation_change = Some(id);
+        self.show_history = false;
+        if !self.draft.is_empty()
+            || self.screen.is_some()
+            || self.attachment.is_some()
+            || self.file_proposal.is_some()
+            || self.settings_proposal.is_some()
+            || !self.settings_instruction.is_empty()
+            || !self.file_directory.is_empty()
+            || !self.file_name.is_empty()
+            || !self.file_instruction.is_empty()
+            || self.file_source.is_some()
+            || !self.file_source_name.is_empty()
+            || self.external_dictation.is_some()
+            || self.workspace_pending.is_some()
+            || self.workspace_context.is_some()
+            || !self.workspace_paths.is_empty()
+            || !self.workspace_directory.is_empty()
+            || self.pending.is_some()
+        {
+            self.confirm_clear = true;
+        } else {
+            self.finish_conversation_change();
+        }
+    }
+    fn finish_conversation_change(&mut self) {
+        if self.busy() {
+            return;
+        }
+        let change = self.conversation_change.take();
+        let restored = match change.as_deref() {
+            Some(id) if !id.is_empty() => {
+                let Some(messages) = conversations::restore(&mut self.archives, id) else {
+                    self.fail("That conversation is no longer in history.");
+                    return;
+                };
+                Some(messages)
+            }
+            _ => None,
+        };
+        if change.is_some() {
+            conversations::archive(&mut self.archives, &self.messages);
+        }
+        self.clear_conversation();
+        if let Some(messages) = restored {
+            self.messages = messages;
+            if self.save_session() {
+                self.info(
+                    "Conversation resumed. Screenshots and action proposals are not restored.",
+                );
+            }
+        } else if change.is_some() {
+            self.info("New conversation started. Previous messages are in History.");
         }
     }
     /// Starts a fresh conversation. The old one is gone from James.
@@ -1260,11 +1547,33 @@ impl JamesApp {
         }
         self.messages.clear();
         self.draft.clear();
+        self.attachment = None;
+        self.attachment_path.clear();
+        self.file_proposal = None;
+        self.file_source = None;
+        self.file_source_name.clear();
+        self.settings_proposal = None;
+        self.settings_instruction.clear();
+        self.external_dictation = None;
+        self.external_attempted = false;
+        self.workspace_pending = None;
+        self.workspace_context = None;
+        self.workspace_directory.clear();
+        self.workspace_paths.clear();
+        self.workspace_entries.clear();
+        self.show_workspace = false;
+        self.file_directory.clear();
+        self.file_name.clear();
+        self.file_instruction.clear();
         self.streaming = None;
         self.thinking = false;
         self.asking = None;
         self.history_note = None;
         self.screen = None;
+        self.overlay.close();
+        self.annotations.clear();
+        self.drawing = false;
+        self.region_drag_start = None;
         self.attach_screen = false;
         self.sent_image = None;
         self.guide_marks = None;
@@ -1284,9 +1593,30 @@ impl JamesApp {
     fn delete_all_data(&mut self) {
         match session::delete_all(&self.session) {
             Ok(_) => {
+                self.overlay.close();
+                self.floating = floating::Floating::default();
                 self.messages.clear();
+                self.archives.clear();
                 self.streaming = None;
                 self.draft.clear();
+                self.attachment = None;
+                self.attachment_path.clear();
+                self.file_proposal = None;
+                self.file_source = None;
+                self.file_source_name.clear();
+                self.settings_proposal = None;
+                self.settings_instruction.clear();
+                self.external_dictation = None;
+                self.external_attempted = false;
+                self.workspace_pending = None;
+                self.workspace_context = None;
+                self.workspace_directory.clear();
+                self.workspace_paths.clear();
+                self.workspace_entries.clear();
+                self.show_workspace = false;
+                self.file_directory.clear();
+                self.file_name.clear();
+                self.file_instruction.clear();
                 self.crash_report = None;
                 self.model.clear();
                 self.model_info = None;
@@ -1296,6 +1626,12 @@ impl JamesApp {
                 self.setup_reply = None;
                 self.setup_note = None;
                 self.prefs = Preferences::default();
+                self.shortcut_drafts = [
+                    self.prefs.shortcut_chords.summon.label(),
+                    self.prefs.shortcut_chords.talk.label(),
+                    self.prefs.shortcut_chords.dictate.label(),
+                ];
+                self.shortcut_config_error = None;
                 self.keep_history = true;
                 self.save_error = None;
                 self.page = Page::Chat;
@@ -1307,6 +1643,190 @@ impl JamesApp {
             }
             Err(e) => self.fail(e),
         }
+    }
+    /// A spoken question has its own input. It must not replace the typed
+    /// draft or consume the screenshot selected for that draft.
+    fn send_voice_question(&mut self, question: String) -> bool {
+        let typed = std::mem::replace(&mut self.draft, question);
+        let attached = std::mem::replace(&mut self.attach_screen, false);
+        let attachment = self.attachment.take();
+        let workspace_context = self.workspace_context.take();
+        let sent = self.send(Ask::Chat);
+        if sent || !typed.is_empty() {
+            self.draft = typed;
+        }
+        self.attach_screen = attached;
+        self.attachment = attachment;
+        self.workspace_context = workspace_context;
+        sent
+    }
+    fn attach_file(&mut self, path: PathBuf) {
+        if self.busy() {
+            return;
+        }
+        self.launch_model("Reading attachment...", move |_| {
+            WorkerResult::Attachment(attachments::load(&path))
+        });
+    }
+    fn list_workspace(&mut self) {
+        if self.busy() {
+            return;
+        }
+        let root = PathBuf::from(self.workspace_directory.trim());
+        self.launch("Listing the selected directory...", move |_| {
+            WorkerResult::WorkspaceList(
+                workspace_read::ReadWorkspace::open(&root)
+                    .and_then(|workspace| workspace.list(std::path::Path::new(""))),
+            )
+        });
+    }
+    fn preview_workspace(&mut self) {
+        if self.busy() {
+            return;
+        }
+        let root = PathBuf::from(self.workspace_directory.trim());
+        let paths = self
+            .workspace_paths
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(PathBuf::from)
+            .collect::<Vec<_>>();
+        self.launch("Reading selected files for review...", move |_| {
+            WorkerResult::WorkspaceSnapshot(
+                workspace_read::ReadWorkspace::open(&root)
+                    .and_then(|workspace| workspace.snapshot(&paths)),
+            )
+        });
+    }
+    fn propose_new_file(&mut self) {
+        if self.busy() || self.file_proposal.is_some() {
+            return;
+        }
+        let port = match numeric_port(&self.port) {
+            Ok(port) => port,
+            Err(error) => {
+                self.fail(error);
+                return;
+            }
+        };
+        let model = self.model.trim().to_owned();
+        if model.is_empty() {
+            self.fail("Choose a model before creating a file.");
+            return;
+        }
+        let provider = self.provider;
+        let root = PathBuf::from(self.file_directory.trim());
+        let name = self.file_name.trim().to_owned();
+        let instruction = self.file_instruction.clone();
+        let source = self.file_source.clone();
+        self.launch_model("Preparing a new file for review...", move |job| {
+            let result = (|| {
+                let workspace = workspace_create::CreateWorkspace::open(&root)?;
+                let request = if let Some(source) = &source {
+                    workspace.revision_request(&name, &instruction, source)?
+                } else {
+                    workspace.request(&name, &instruction)?
+                };
+                let messages = request.messages()?;
+                let client = LocalClient::for_provider(provider, port)
+                    .map_err(|e| explain(provider, port, &model, e))?;
+                let reply = client
+                    .chat_stream(&model, &messages, None, |event| {
+                        if let StreamEvent::Connected(handle) = event {
+                            job.arm(handle);
+                        }
+                    })
+                    .map_err(|e| explain(provider, port, &model, e))?;
+                request.parse_response(&reply)
+            })();
+            WorkerResult::FileProposal(result)
+        });
+    }
+    fn preview_file_source(&mut self) {
+        if self.busy() || self.file_proposal.is_some() {
+            return;
+        }
+        let root = PathBuf::from(self.file_directory.trim());
+        let name = self.file_source_name.trim().to_owned();
+        self.launch("Reading a source file for review...", move |_| {
+            WorkerResult::FileSource(workspace_create::SourceSnapshot::read(&root, &name))
+        });
+    }
+    fn propose_settings_page(&mut self) {
+        if self.busy() || self.settings_proposal.is_some() {
+            return;
+        }
+        if self.model.trim().is_empty() {
+            self.fail("Choose a model before asking for a settings page.");
+            return;
+        }
+        let messages = match settings_page::messages(&self.settings_instruction) {
+            Ok(messages) => messages,
+            Err(error) => {
+                self.fail(error);
+                return;
+            }
+        };
+        let port = match numeric_port(&self.port) {
+            Ok(port) => port,
+            Err(error) => {
+                self.fail(error);
+                return;
+            }
+        };
+        let provider = self.provider;
+        let model = self.model.trim().to_owned();
+        self.launch_model("Choosing a settings page for review...", move |job| {
+            WorkerResult::SettingsProposal((|| {
+                let client = LocalClient::for_provider(provider, port)
+                    .map_err(|e| explain(provider, port, &model, e))?;
+                let reply = client
+                    .chat_stream(&model, &messages, None, |event| {
+                        if let StreamEvent::Connected(handle) = event {
+                            job.arm(handle);
+                        }
+                    })
+                    .map_err(|e| explain(provider, port, &model, e))?;
+                settings_page::parse_proposal(&reply)
+            })())
+        });
+    }
+    fn open_reviewed_settings(&mut self) {
+        if self.busy() {
+            return;
+        }
+        let Some(proposal) = self.settings_proposal.take() else {
+            return;
+        };
+        let reviewed = settings_page::ReviewedOpen::approve(proposal);
+        self.launch(
+            "Opening the reviewed Windows settings page...",
+            move |job| {
+                WorkerResult::SettingsOpened(settings_page::open_reviewed(reviewed, &job.cancel))
+            },
+        );
+    }
+    fn create_reviewed_file(&mut self) {
+        if self.busy() {
+            return;
+        }
+        let Some(proposal) = self.file_proposal.take() else {
+            return;
+        };
+        self.launch("Creating the reviewed file...", move |job| {
+            if job.cancel.is_cancelled() {
+                return WorkerResult::FileCreated(
+                    Err("File creation stopped before it began.".into()),
+                    proposal,
+                );
+            }
+            WorkerResult::FileCreated(
+                workspace_create::CreateWorkspace::open(proposal.root())
+                    .and_then(|workspace| workspace.create(proposal.clone())),
+                proposal,
+            )
+        });
     }
     /// Captures the screen, then asks the model how to get unstuck. The answer
     /// is guidance for the user; it never becomes an action proposal.
@@ -1369,6 +1889,55 @@ impl JamesApp {
             },
         );
     }
+    fn dictate_to_other_app(&mut self) {
+        if self.busy() || self.external_dictation.is_some() {
+            return;
+        }
+        let config = self.voice_config();
+        self.launch("Listening for dictation to another app...", move |job| {
+            let result = (|| {
+                let target = dictation_target::inspect_foreground(&job.cancel)?;
+                job.send(WorkerResult::ExternalTarget(target.clone()));
+                let text = james_platform::dictate(Duration::from_secs(20), &config, &job.cancel)
+                    .map_err(|e| e.to_string())?;
+                if text.trim().is_empty() {
+                    return Err("No speech was recognized.".into());
+                }
+                Ok((target, text))
+            })();
+            WorkerResult::ExternalDictation(result)
+        });
+    }
+    fn deliver_external_dictation(&mut self) {
+        if self.busy() {
+            return;
+        }
+        if self.external_attempted {
+            return;
+        }
+        let Some((target, text)) = self.external_dictation.clone() else {
+            return;
+        };
+        self.external_attempted = true;
+        self.launch(
+            "Switch to the reviewed destination within 3 seconds...",
+            move |job| {
+                for _ in 0..30 {
+                    if job.cancel.is_cancelled() {
+                        return WorkerResult::ExternalDelivered(Err(
+                            "Stopped before delivery.".into()
+                        ));
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                WorkerResult::ExternalDelivered(dictation_target::deliver_reviewed(
+                    &target,
+                    &text,
+                    &job.cancel,
+                ))
+            },
+        );
+    }
     /// Speaks a reply when the user is in a voice conversation or asked for
     /// spoken answers. Returns false when nothing was spoken.
     fn answer_aloud(&mut self, reply: &str) -> bool {
@@ -1392,6 +1961,7 @@ impl JamesApp {
             None => (None, true),
         };
         self.capture_from_primary = primary;
+        self.overlay.close();
         self.screen = None;
         self.pending = None;
         self.attach_screen = false;
@@ -1598,6 +2168,19 @@ impl JamesApp {
                     }
                     self.worker = Some(worker);
                 }
+                Ok(WorkerResult::ExternalTarget(target)) => {
+                    if !worker.cancel.is_cancelled() {
+                        self.page = Page::Actions;
+                        self.info(format!(
+                            "Listening for {}. Review the transcript before sending.",
+                            target.title
+                        ));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                    }
+                    self.worker = Some(worker);
+                }
                 Err(TryRecvError::Disconnected) => {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                     self.voice = voice::Phase::Off;
@@ -1626,6 +2209,9 @@ impl JamesApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
         if worker.cancel.is_cancelled() {
+            if let WorkerResult::FileCreated(_, proposal) = &result {
+                self.file_proposal = Some(proposal.clone());
+            }
             self.voice = voice::Phase::Off;
             self.guide_after_capture = false;
             self.setup_capture = false;
@@ -1636,14 +2222,55 @@ impl JamesApp {
             }
             self.info(if kept {
                 "Stopped. James closed the connection; the part that arrived is kept and marked incomplete."
+            } else if matches!(result, WorkerResult::ExternalDelivered(_)) {
+                "Stopped. Check the destination; some text may already have been inserted."
+            } else if matches!(result, WorkerResult::FileCreated(..)) {
+                "Stopped. Check the selected directory; the file may already have been created."
             } else if matches!(result, WorkerResult::Action(_)) {
                 "Stopped. Check the target application; input may already have been sent."
+            } else if matches!(result, WorkerResult::SettingsOpened(_)) {
+                "Stopped. Windows may already have opened the settings page."
             } else {
                 "Stopped."
             });
             return;
         }
         match result {
+            WorkerResult::FileSource(Ok(source)) => { self.file_source = Some(source); self.info("Review the frozen source. It will be sent only when you prepare the revised copy."); }
+            WorkerResult::FileSource(Err(error)) => self.fail(error),
+            WorkerResult::SettingsProposal(Ok(proposal)) => { self.settings_proposal = Some(proposal); self.info("Review the chosen settings page before opening it."); }
+            WorkerResult::SettingsProposal(Err(error)) | WorkerResult::SettingsOpened(Err(error)) => self.fail(error),
+            WorkerResult::SettingsOpened(Ok(())) => self.info("Opening the reviewed settings page was requested. Check Windows Settings; James changed no setting."),
+            WorkerResult::WorkspaceList(Ok(entries)) => { self.workspace_entries = entries; self.info("Directory listed. Choose files to preview."); }
+            WorkerResult::WorkspaceSnapshot(Ok(snapshot)) => { self.workspace_pending = Some(snapshot); self.show_workspace = true; self.info("Review the selected file contents before attaching them."); }
+            WorkerResult::WorkspaceList(Err(error)) | WorkerResult::WorkspaceSnapshot(Err(error)) => self.fail(error),
+            WorkerResult::ExternalTarget(_) => unreachable!("progress handled by receive"),
+            WorkerResult::ExternalDictation(Ok((target, text))) => {
+                self.external_dictation = Some((target, text));
+                self.external_attempted = false;
+                self.page = Page::Actions;
+                self.info("Review the destination and transcript before sending.");
+            }
+            WorkerResult::ExternalDelivered(Ok(())) => self.info("Windows accepted the input events. Check the destination to confirm the text appeared."),
+            WorkerResult::ExternalDictation(Err(error)) | WorkerResult::ExternalDelivered(Err(error)) => self.fail(error),
+            WorkerResult::FileProposal(Ok(proposal)) => {
+                self.file_proposal = Some(proposal);
+                self.info("Review the proposed file before creating it.");
+            }
+            WorkerResult::FileCreated(Ok(path), _) => self.info(format!("Created {}.", path.display())),
+            WorkerResult::FileCreated(Err(error), proposal) => {
+                self.file_proposal = Some(proposal);
+                self.fail(error);
+            }
+            WorkerResult::FileProposal(Err(error)) => self.fail(error),
+            WorkerResult::Attachment(Ok(attachment)) => {
+                let name = attachment.name.clone();
+                self.attachment = Some(attachment);
+                self.info(format!(
+                    "Attached {name}. It will be sent with your next chat question."
+                ));
+            }
+            WorkerResult::Attachment(Err(error)) => self.fail(error),
             WorkerResult::Models(Ok(list)) => {
                 self.available_models = list.models;
                 self.remote_models = list.remote;
@@ -1813,6 +2440,9 @@ impl JamesApp {
                             selection: None,
                             from_primary: self.capture_from_primary,
                         });
+                        self.annotations.clear();
+                        self.drawing = false;
+                        self.region_drag_start = None;
                         if std::mem::take(&mut self.setup_capture) {
                             self.info(format!("Screenshot taken. It stays in memory; discard it whenever you like.{shows_james}"));
                         } else {
@@ -1844,8 +2474,7 @@ impl JamesApp {
                     }
                     voice::Heard::Ask(question) => {
                         self.voice = voice::Phase::Thinking;
-                        self.draft = question;
-                        if !self.send(Ask::Chat) {
+                        if !self.send_voice_question(question) {
                             // send() explained why it could not ask (busy, no model...).
                             self.voice = voice::Phase::Off;
                         }
@@ -1942,6 +2571,9 @@ impl JamesApp {
             if self.confirm_clear || self.confirm_delete {
                 self.confirm_clear = false;
                 self.confirm_delete = false;
+                self.conversation_change = None;
+            } else if self.show_history {
+                self.show_history = false;
             } else if markdown::dismiss_link(ctx) {
                 // Esc closed the link dialog; nothing else stops.
             } else if self.show_shortcuts {
@@ -1977,6 +2609,202 @@ impl JamesApp {
             self.info("Copied James's last answer.");
         }
     }
+    fn set_compact(&mut self, ctx: &egui::Context, compact: bool) {
+        if compact == self.compact {
+            return;
+        }
+        if compact {
+            self.full_size = ctx.input(|i| i.viewport().inner_rect.map(|r| r.size()));
+        }
+        self.compact = compact;
+        let (minimum, size, level) = if compact {
+            (
+                egui::vec2(380.0, 460.0),
+                egui::vec2(460.0, 680.0),
+                egui::WindowLevel::AlwaysOnTop,
+            )
+        } else {
+            (
+                egui::vec2(760.0, 560.0),
+                self.full_size.take().unwrap_or(egui::vec2(1120.0, 820.0)),
+                egui::WindowLevel::Normal,
+            )
+        };
+        ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(minimum));
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+        ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
+        self.focus_composer = true;
+    }
+    fn save_shortcut_preferences(&mut self, previous: Preferences) {
+        if let Err(error) = self.prefs.shortcut_chords.validate_enabled(
+            self.prefs.summon_shortcut,
+            self.prefs.talk_shortcut,
+            self.prefs.dictation_shortcut,
+        ) {
+            self.prefs = previous;
+            self.shortcut_config_error = Some(error);
+        } else {
+            self.shortcut_config_error = None;
+            self.save_session();
+        }
+    }
+    fn apply_shortcut_draft(&mut self, index: usize) {
+        let chord = match shortcuts::ShortcutChord::parse(&self.shortcut_drafts[index]) {
+            Ok(chord) => chord,
+            Err(error) => {
+                self.shortcut_config_error = Some(error);
+                return;
+            }
+        };
+        let previous = self.prefs.clone();
+        match index {
+            0 => self.prefs.shortcut_chords.summon = chord,
+            1 => self.prefs.shortcut_chords.talk = chord,
+            2 => self.prefs.shortcut_chords.dictate = chord,
+            _ => return,
+        }
+        self.save_shortcut_preferences(previous);
+        if self.shortcut_config_error.is_none() {
+            self.shortcut_drafts[index] = chord.label();
+            match index {
+                0 => self.summon_error = None,
+                1 => self.talk_shortcut_error = None,
+                _ => self.dictation_shortcut_error = None,
+            }
+        }
+    }
+    /// Called on the real native event-loop thread, rather than by GUI tests.
+    fn poll_summon(&mut self, ctx: &egui::Context) {
+        if !self.prefs.summon_shortcut {
+            self.summon = None;
+            self.summon_error = None;
+            return;
+        }
+        if self.summon.is_none() && self.summon_error.is_none() {
+            match shortcuts::SummonShortcut::register_chord(
+                ctx.clone(),
+                self.prefs.shortcut_chords.summon,
+            ) {
+                Ok(shortcut) => self.summon = Some(shortcut),
+                Err(error) => self.summon_error = Some(error),
+            }
+        }
+        if self.summon_error.is_none()
+            && let Some(shortcut) = &mut self.summon
+            && shortcut.chord() != self.prefs.shortcut_chords.summon
+            && let Err(error) =
+                shortcut.update_chord(ctx.clone(), self.prefs.shortcut_chords.summon)
+        {
+            self.prefs.shortcut_chords.summon = shortcut.chord();
+            self.shortcut_drafts[0] = shortcut.chord().label();
+            self.summon_error = Some(format!("{error} The previous shortcut is still active."));
+            self.save_session();
+        }
+        if self.summon.as_ref().is_some_and(|s| s.take_pressed()) {
+            if self.scheduled.is_some() {
+                self.stop();
+                self.info("Action countdown cancelled when you summoned James.");
+            }
+            self.set_compact(ctx, true);
+            self.page = Page::Chat;
+            self.focus_composer = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+    }
+    fn poll_voice_shortcuts(&mut self, ctx: &egui::Context) {
+        fn sync(
+            enabled: bool,
+            slot: &mut Option<shortcuts::VoiceShortcut>,
+            error: &mut Option<String>,
+            ctx: &egui::Context,
+            kind: shortcuts::VoiceShortcutKind,
+            chord: &mut shortcuts::ShortcutChord,
+        ) -> (bool, bool) {
+            if !enabled {
+                *slot = None;
+                *error = None;
+                return (false, false);
+            }
+            if slot.is_none() && error.is_none() {
+                match shortcuts::VoiceShortcut::register_chord(ctx.clone(), kind, *chord) {
+                    Ok(shortcut) => *slot = Some(shortcut),
+                    Err(reason) => *error = Some(reason),
+                }
+            }
+            let mut rolled_back = false;
+            if error.is_none()
+                && let Some(shortcut) = slot
+                && shortcut.chord() != *chord
+                && let Err(reason) = shortcut.update_chord(ctx.clone(), kind, *chord)
+            {
+                *chord = shortcut.chord();
+                *error = Some(format!("{reason} The previous shortcut is still active."));
+                rolled_back = true;
+            }
+            (
+                slot.as_ref().is_some_and(|shortcut| {
+                    shortcut
+                        .take_events()
+                        .contains(&shortcuts::ShortcutEvent::Pressed)
+                }),
+                rolled_back,
+            )
+        }
+        let (talk, talk_rollback) = sync(
+            self.prefs.talk_shortcut,
+            &mut self.talk_shortcut,
+            &mut self.talk_shortcut_error,
+            ctx,
+            shortcuts::VoiceShortcutKind::Talk,
+            &mut self.prefs.shortcut_chords.talk,
+        );
+        let (dictate, dictate_rollback) = sync(
+            self.prefs.dictation_shortcut,
+            &mut self.dictation_shortcut,
+            &mut self.dictation_shortcut_error,
+            ctx,
+            shortcuts::VoiceShortcutKind::Dictate,
+            &mut self.prefs.shortcut_chords.dictate,
+        );
+        if talk_rollback || dictate_rollback {
+            self.shortcut_drafts[1] = self.prefs.shortcut_chords.talk.label();
+            self.shortcut_drafts[2] = self.prefs.shortcut_chords.dictate.label();
+            self.save_session();
+        }
+        if !(talk || dictate) {
+            return;
+        }
+        if !self.setup_done()
+            || self.busy()
+            || self.voice != voice::Phase::Off
+            || !self.listening.is_ready()
+        {
+            self.tell(Tone::Warn, "Voice shortcut unavailable while James is busy, setup is incomplete, or listening is unavailable.");
+            return;
+        }
+        if dictate && cfg!(windows) && self.prefs.dictation_other_app && !talk {
+            if self.external_dictation.is_some() {
+                self.tell(
+                    Tone::Warn,
+                    "Finish or discard the previous dictation first.",
+                );
+            } else {
+                self.dictate_to_other_app();
+            }
+            return;
+        }
+        self.page = Page::Chat;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        if talk {
+            self.talk();
+        } else {
+            self.dictate_once();
+        }
+    }
     fn top_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("brand").show(ctx, |ui| {
             ui.add_space(6.0);
@@ -1988,11 +2816,31 @@ impl JamesApp {
                         .color(theme::accent(ui)),
                 );
                 ui.separator();
-                ui.label("Your local research companion");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    chat::connection_badge(self, ui);
-                });
+                if !self.compact {
+                    ui.label("Your local research companion");
+                }
+                if ui
+                    .button(if self.compact {
+                        "Full window"
+                    } else {
+                        "Companion"
+                    })
+                    .on_hover_text(
+                        "Switch between the full workspace and a small window that stays on top",
+                    )
+                    .clicked()
+                {
+                    self.set_compact(ctx, !self.compact);
+                }
+                if !self.compact {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        chat::connection_badge(self, ui);
+                    });
+                }
             });
+            if self.compact {
+                ui.horizontal_wrapped(|ui| chat::connection_badge(self, ui));
+            }
             ui.add_space(6.0);
         });
         if let Some(s) = &self.scheduled {
@@ -2036,6 +2884,20 @@ impl JamesApp {
         }
     }
     fn sidebar(&mut self, ctx: &egui::Context) {
+        if self.compact {
+            egui::TopBottomPanel::top("compact-navigation").show(ctx, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    for (page, label, _) in Page::ALL {
+                        if ui.selectable_value(&mut self.page, page, label).clicked()
+                            && page == Page::Chat
+                        {
+                            self.focus_composer = true;
+                        }
+                    }
+                });
+            });
+            return;
+        }
         egui::SidePanel::left("navigation")
             .default_width(196.0)
             .resizable(false)
@@ -2092,6 +2954,7 @@ impl JamesApp {
             });
     }
     fn dialogs(&mut self, ctx: &egui::Context) {
+        chat::history(self, ctx);
         if self.show_shortcuts {
             let mut open = true;
             egui::Window::new("Keyboard shortcuts")
@@ -2152,22 +3015,32 @@ impl JamesApp {
         }
         if self.confirm_clear {
             let modal = egui::Modal::new(egui::Id::new("confirm-clear")).show(ctx, |ui| {
-                ui.heading("Clear this conversation?");
-                ui.label(
-                    "This clears the messages, your unsent draft, screenshot, attachments and any unapproved action proposal. Your settings stay. Copy the conversation first if you want to keep it.",
-                );
+                let changing = self.conversation_change.is_some();
+                ui.heading(if changing { "Leave this conversation?" } else { "Clear this conversation?" });
+                ui.label(if changing {
+                    "Your messages stay in History. Your unsent draft, screenshot, attachments and any unapproved action proposal will be cleared."
+                } else {
+                    "This clears the current messages, unsent draft, screenshot, attachments and any unapproved action proposal. Previous conversations in History stay. Copy this conversation first if you want to keep it."
+                });
                 ui.horizontal(|ui| {
-                    if ui.add(theme::danger(ui, "Clear conversation")).clicked() {
-                        self.clear_conversation();
+                    let label = match self.conversation_change.as_deref() {
+                        Some("") => "Start new conversation",
+                        Some(_) => "Open saved conversation",
+                        None => "Clear conversation",
+                    };
+                    if ui.add(theme::danger(ui, label)).clicked() {
+                        self.finish_conversation_change();
                         self.confirm_clear = false;
                     }
                     if ui.button("Keep it").clicked() {
                         self.confirm_clear = false;
+                        self.conversation_change = None;
                     }
                 });
             });
             if modal.should_close() {
                 self.confirm_clear = false;
+                self.conversation_change = None;
             }
         }
         if self.confirm_delete {
@@ -2216,8 +3089,53 @@ impl JamesApp {
         self.poll_voices();
         self.poll_displays();
         self.lab.poll();
+        let dropped = ctx.input(|input| input.raw.dropped_files.clone());
+        if !dropped.is_empty() {
+            if self.busy() {
+                self.fail("Finish the current task before attaching a file.");
+            } else if dropped.len() != 1 {
+                self.fail("Drop one file at a time.");
+            } else if let Some(path) = dropped[0].path.clone() {
+                self.attachment_path = path.display().to_string();
+                self.attach_file(path);
+            } else {
+                self.fail("This file drop did not include a local path. Use Attach file instead.");
+            }
+        }
         self.shortcuts(ctx);
         self.run_schedule();
+        let capturing = self
+            .worker
+            .as_ref()
+            .is_some_and(|w| w.label.starts_with("Capturing the screen"));
+        if self.overlay.is_open() {
+            if self
+                .screen
+                .as_ref()
+                .is_none_or(|screen| screen.at.elapsed() > SCREEN_MAX_AGE)
+            {
+                self.overlay.close();
+                self.tell(
+                    Tone::Warn,
+                    "Desktop guidance expired. Capture a fresh screen to show marks again.",
+                );
+            } else {
+                ctx.request_repaint_after(Duration::from_secs(1));
+            }
+        }
+        self.overlay.show(ctx, capturing);
+        let status = self.worker.as_ref().map_or(self.voice.label(), |w| w.label);
+        self.floating.tick(ctx);
+        if self.floating.show(ctx, status, capturing) {
+            if self.scheduled.take().is_some() {
+                self.info("Action countdown cancelled when you opened James.");
+            }
+            self.page = Page::Chat;
+            self.focus_composer = true;
+        }
+        if self.floating.take_changed() {
+            self.save_session();
+        }
         if self.busy() || self.lab.connected || self.info_worker.is_some() || self.lab.finding() {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
@@ -2283,7 +3201,12 @@ impl Drop for JamesApp {
     }
 }
 impl eframe::App for JamesApp {
+    fn clear_color(&self, _: &egui::Visuals) -> [f32; 4] {
+        [0.0, 0.0, 0.0, 0.0]
+    }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_summon(ctx);
+        self.poll_voice_shortcuts(ctx);
         self.ui(ctx);
     }
 }

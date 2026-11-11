@@ -249,6 +249,26 @@ pub fn header(app: &mut JamesApp, ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
         ui.heading("Conversation");
         if ui
+            .button(if app.attachment.is_some() {
+                "Attachment attached…"
+            } else {
+                "Attach file…"
+            })
+            .clicked()
+        {
+            app.show_attachment = true;
+        }
+        if ui
+            .button(if app.workspace_context.is_some() {
+                "Workspace attached…"
+            } else {
+                "Workspace files…"
+            })
+            .clicked()
+        {
+            app.show_workspace = true;
+        }
+        if ui
             .add_enabled(
                 !app.busy() && !app.messages.is_empty(),
                 egui::Button::new("Copy conversation"),
@@ -266,12 +286,16 @@ pub fn header(app: &mut JamesApp, ui: &mut egui::Ui) {
                 !app.busy() && app.has_conversation_context(),
                 egui::Button::new("New conversation"),
             )
-            .on_hover_text(
-                "Start fresh after reviewing what will be cleared (Ctrl+N, or ⌘N on Mac)",
-            )
+            .on_hover_text("Start fresh and keep these messages in History (Ctrl+N, or ⌘N on Mac)")
             .clicked()
         {
             app.request_new_conversation();
+        }
+        if ui
+            .add_enabled(!app.busy(), egui::Button::new("History"))
+            .clicked()
+        {
+            app.show_history = true;
         }
     });
     model_facts(app, ui);
@@ -279,6 +303,83 @@ pub fn header(app: &mut JamesApp, ui: &mut egui::Ui) {
         ui.small("This conversation isn't saved: it disappears when you close James (Settings > Privacy).");
     }
     ui.separator();
+}
+
+pub fn history(app: &mut JamesApp, ctx: &egui::Context) {
+    if !app.show_history {
+        return;
+    }
+    let mut open = true;
+    let mut resume = None;
+    let mut remove = None;
+    let rows: Vec<_> = app
+        .archives
+        .iter()
+        .map(|conversation| {
+            (
+                conversation.id.clone(),
+                conversation.title.clone(),
+                conversation.messages.len(),
+            )
+        })
+        .collect();
+    egui::Window::new("Conversation history")
+        .open(&mut open)
+        .default_width(440.0)
+        .show(ctx, |ui| {
+            ui.label(if app.keep_history {
+                "Previous conversations saved on this computer."
+            } else {
+                "History is kept in memory until James closes."
+            });
+            ui.small("Up to 20 previous conversations within the shared history limit. Screenshots, drafts and approvals are not saved in history.");
+            if let Some(id) = app.history_delete.clone() {
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.label("Delete this saved conversation? This cannot be undone.");
+                    ui.horizontal(|ui| {
+                        if ui.add_enabled(!app.busy(), theme::danger(ui, "Delete saved conversation")).clicked() {
+                            remove = Some(id);
+                        }
+                        if ui.button("Keep conversation").clicked() {
+                            app.history_delete = None;
+                        }
+                    });
+                });
+            }
+            if app.archives.is_empty() {
+                ui.add_space(10.0);
+                ui.label("No previous conversations yet. Start a New conversation to keep this one here.");
+            }
+            egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
+                for (id, title, count) in &rows {
+                    ui.push_id(id, |ui| {
+                        egui::Frame::group(ui.style()).show(ui, |ui| {
+                            ui.label(RichText::new(title).strong());
+                            ui.small(format!("{count} messages"));
+                            ui.horizontal(|ui| {
+                                if ui.add_enabled(!app.busy(), egui::Button::new("Open conversation")).clicked() {
+                                    resume = Some(id.clone());
+                                }
+                                if ui.add_enabled(!app.busy(), egui::Button::new("Delete")).clicked() {
+                                    app.history_delete = Some(id.clone());
+                                }
+                            });
+                        });
+                    });
+                }
+            });
+        });
+    app.show_history &= open;
+    if let Some(id) = remove {
+        crate::conversations::remove(&mut app.archives, &id);
+        app.history_delete = None;
+        if app.save_session() {
+            app.info("Saved conversation deleted.");
+        }
+    }
+    if let Some(id) = resume {
+        app.request_conversation(id);
+    }
 }
 
 pub fn conversation(app: &mut JamesApp, ui: &mut egui::Ui) {
@@ -502,4 +603,81 @@ pub fn composer(app: &mut JamesApp, ctx: &egui::Context) {
         });
         ui.add_space(6.0);
     });
+    if app.show_attachment {
+        let mut open = true;
+        let mut attach = false;
+        egui::Window::new("Attachment").open(&mut open).show(ctx, |ui| {
+            ui.label("Enter a file path, or drop a file on James:");
+            ui.add(egui::TextEdit::singleline(&mut app.attachment_path).desired_width(300.0));
+            if ui.add_enabled(!app.busy() && !app.attachment_path.trim().is_empty(), egui::Button::new("Attach")).clicked() { attach = true; }
+            if let Some(attachment) = &app.attachment {
+                ui.label(format!("Attached: {}", attachment.name));
+                if ui.button("Remove attachment").clicked() { app.attachment = None; }
+            }
+            ui.small("PDF text, UTF-8 text, PNG, JPEG or WebP. Sent with the next chat question; not saved in history.");
+        });
+        app.show_attachment = open && !attach;
+        if attach {
+            app.attach_file(std::path::PathBuf::from(app.attachment_path.trim()));
+        }
+    }
+    if app.show_workspace {
+        let mut open = true;
+        let mut list = false;
+        let mut preview = false;
+        let mut attach = false;
+        egui::Window::new("Workspace files").open(&mut open).resizable(true).vscroll(true).show(ctx, |ui| {
+            ui.label("Choose a directory and up to three relative UTF-8 text files (4 KiB each).");
+            ui.label("Directory");
+            if ui.add_enabled(!app.busy() && app.workspace_pending.is_none(), egui::TextEdit::singleline(&mut app.workspace_directory).desired_width(350.0)).changed() { app.workspace_entries.clear(); }
+            if ui.add_enabled(!app.busy() && app.workspace_pending.is_none(), egui::Button::new("List directory")).clicked() { list = true; }
+            egui::ScrollArea::vertical().id_salt("workspace_entries").max_height(100.0).show(ui, |ui| {
+                for entry in &app.workspace_entries {
+                    if entry.is_directory { ui.small(format!("{}/ (enter a relative file path below)", entry.name)); }
+                    else if ui.small_button(&entry.name).clicked() {
+                        if !app.workspace_paths.is_empty() { app.workspace_paths.push('\n'); }
+                        app.workspace_paths.push_str(&entry.name);
+                    }
+                }
+            });
+            ui.label("Relative file paths, one per line");
+            ui.add_enabled(!app.busy() && app.workspace_pending.is_none(), egui::TextEdit::multiline(&mut app.workspace_paths).desired_rows(3).desired_width(350.0));
+            if ui.add_enabled(!app.busy() && app.workspace_pending.is_none(), egui::Button::new("Preview selected files")).clicked() { preview = true; }
+            if let Some(snapshot) = &app.workspace_pending {
+                ui.separator();
+                ui.label(format!("Selected directory: {}", snapshot.root().display()));
+                egui::ScrollArea::vertical().id_salt("workspace_preview").max_height(240.0).show(ui, |ui| {
+                    for (path, content) in snapshot.files() {
+                        ui.label(RichText::new(path).strong());
+                        ui.add(egui::Label::new(RichText::new(content).monospace()).wrap());
+                    }
+                });
+                ui.small("These exact contents will be sent to the model service with your next chat question. The service may relay them elsewhere.");
+                if ui.button("Attach selected files").clicked() { attach = true; }
+                if ui.button("Discard workspace preview").clicked() { app.workspace_pending = None; }
+            }
+            if let Some(snapshot) = &app.workspace_context {
+                ui.separator();
+                ui.label(format!("Currently attached from: {}", snapshot.root().display()));
+                egui::ScrollArea::vertical().id_salt("workspace_attached").max_height(150.0).show(ui, |ui| {
+                    for (path, content) in snapshot.files() {
+                        ui.label(RichText::new(path).strong());
+                        ui.add(egui::Label::new(RichText::new(content).monospace()).wrap());
+                    }
+                });
+                if ui.button("Remove attached workspace files").clicked() { app.workspace_context = None; }
+            }
+        });
+        app.show_workspace = open && !attach;
+        if attach {
+            app.workspace_context = app.workspace_pending.take();
+            app.info("Workspace files attached to the next chat question.");
+        }
+        if list {
+            app.list_workspace();
+        }
+        if preview {
+            app.preview_workspace();
+        }
+    }
 }

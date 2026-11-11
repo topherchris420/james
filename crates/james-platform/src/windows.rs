@@ -86,6 +86,17 @@ pub fn list_displays() -> Result<Vec<Display>, Error> {
     crate::parse_displays(&output)
 }
 
+/// Fetch physical monitor geometry independently of capture's DPI context.
+pub fn list_display_bounds() -> Result<Vec<Display>, Error> {
+    let output = run(
+        include_str!("display_bounds.ps1"),
+        &serde_json::json!({}),
+        Duration::from_secs(20),
+        &Cancellation::default(),
+    )?;
+    crate::parse_displays(&output)
+}
+
 pub fn dictate(timeout: Duration, _: &VoiceConfig, cancel: &Cancellation) -> Result<String, Error> {
     let value = run(
         include_str!("dictate.ps1"),

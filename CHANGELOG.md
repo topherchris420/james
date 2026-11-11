@@ -13,6 +13,64 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Added
 
+- **Revise a copy.** Preview one small source file, send its frozen contents
+  with revision instructions, review the complete output and create a new file.
+  Existing source and destination files are never overwritten.
+- **Reviewed Windows settings pages.** Choose a common settings page manually
+  or ask the model to select one, then review its fixed destination before opening.
+  James does not change the setting.
+- **Configurable global shortcuts.** Edit summon, Talk and Dictate chords in
+  Settings. Enabled chords must be distinct; a failed replacement keeps the
+  previously registered chord.
+- **Reviewed workspace context.** List a selected directory, preview up to three
+  explicitly chosen text files, and attach their frozen contents to the next
+  chat question. Each file is limited to 4 KiB; hidden files and links are not
+  included. File contents are not saved in conversation history.
+- **Windows media controls.** The floating companion can explicitly refresh
+  now-playing information and request play/pause or next. Native media sessions
+  have not yet been verified against real players.
+- **Reviewed creation of a new text file.** Specify a directory, filename and
+  instruction, then review the model's proposed contents before creation.
+  Existing files are never overwritten; edits to existing files are not yet
+  supported.
+- **Reviewed dictation into another Windows app.** Opt in through the Dictate
+  shortcut, focus the destination field, and review the transcript and target.
+  After confirmation, return to the field during the three-second countdown.
+  James checks the native window and control before sending Unicode input; the
+  clipboard is unchanged. Custom controls can change internal focus, and native
+  delivery still needs real-app verification.
+- **Companion docking on Windows.** The floating companion can snap to the
+  left or right edge of the primary display when its geometry is verified.
+- **Desktop guidance on Windows.** Show screenshot marks and numbered Guide me
+  steps over the primary display in a click-through window. It checks geometry,
+  expires with the screenshot, and is hidden during capture. Model-placed marks
+  may be wrong; native behavior still needs real-device verification.
+- **Optional voice shortcuts.** Ctrl+Shift+V starts Talk and Ctrl+Shift+D starts
+  Dictate (Command instead of Ctrl on macOS). Dictation ends on a
+  pause; these are not hold-to-record shortcuts. Wayland remains unsupported.
+- **Local reminders.** Due reminders open the floating companion while James
+  runs. Optionally save them on this computer to resume after restart.
+  They are not delivered as OS notifications.
+- **Floating companion.** Settings can open a movable always-on-top companion
+  with a simple timer. It is hidden during screen capture; the timer runs only
+  while James is open and reports completion in the companion window.
+- **File attachments.** Drop a file on James or use **Attach file** to enter a
+  path. Chat supports UTF-8 text, extractable PDF text, PNG, JPEG and WebP.
+  Files are limited to 16 MiB and extracted text to 24 KiB. Image-only PDFs
+  need OCR outside James. Attachments are not saved in conversation history.
+- **Conversation history.** New conversation archives the current chat; History
+  resumes or deletes earlier chats. Up to 20 archives share the existing
+  80-message/512 KiB retention budget. Turning off history removes current and
+  archived conversation text from saved settings.
+- **Compact companion and optional global summon.** Companion opens a smaller,
+  always-on-top view. Enable Ctrl+Shift+Space (Command+Shift+Space on macOS) in
+  Settings to summon it. Registration errors are shown; Wayland is unsupported.
+- **Point and draw on screen context.** Add colored marks, undo or clear them,
+  and inspect the selected region before sending. A failed crop stops the
+  request. Talk preserves the typed draft and its screenshot attachment.
+- **Korso reconstruction report.** [Static findings and replication coverage](docs/KORSO_REPLICATION.md)
+  trace the inspected client behavior and identify remaining parity work.
+
 - **Second-pass review of a proposed action.** Before you review a click, key
   press or typing that **Suggest one action** proposed, a second model pass
   looks at the same screenshot and writes a short note — flagging anything

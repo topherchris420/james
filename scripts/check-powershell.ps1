@@ -4,6 +4,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $scripts = Get-ChildItem -Path (Join-Path $root 'crates/james-platform/src') -Filter '*.ps1'
+$scripts += Get-ChildItem -Path (Join-Path $root 'crates/james-desktop/src') -Filter '*.ps1'
 $failed = $false
 foreach ($script in $scripts) {
     $tokens = $null
