@@ -16,6 +16,7 @@ mod pages;
 mod review;
 mod screen_context;
 mod session;
+mod settings_page;
 mod setup;
 mod shortcuts;
 mod theme;
@@ -540,8 +541,11 @@ enum Tone {
     Error,
 }
 enum WorkerResult {
+    SettingsProposal(Result<settings_page::Proposal, String>),
+    SettingsOpened(Result<(), String>),
     Attachment(Result<attachments::Attachment, String>),
     FileProposal(Result<workspace_create::CreateProposal, String>),
+    FileSource(Result<workspace_create::SourceSnapshot, String>),
     FileCreated(Result<PathBuf, String>, workspace_create::CreateProposal),
     WorkspaceList(Result<Vec<workspace_read::Entry>, String>),
     WorkspaceSnapshot(Result<workspace_read::ReadContext, String>),
@@ -699,6 +703,11 @@ struct JamesApp {
     file_name: String,
     file_instruction: String,
     file_proposal: Option<workspace_create::CreateProposal>,
+    file_source_name: String,
+    file_source: Option<workspace_create::SourceSnapshot>,
+    settings_destination: settings_page::SettingsPage,
+    settings_instruction: String,
+    settings_proposal: Option<settings_page::Proposal>,
     workspace_directory: String,
     workspace_paths: String,
     workspace_entries: Vec<workspace_read::Entry>,
@@ -729,6 +738,8 @@ struct JamesApp {
     talk_shortcut_error: Option<String>,
     dictation_shortcut: Option<shortcuts::VoiceShortcut>,
     dictation_shortcut_error: Option<String>,
+    shortcut_drafts: [String; 3],
+    shortcut_config_error: Option<String>,
     external_dictation: Option<(dictation_target::DictationTarget, String)>,
     external_attempted: bool,
     /// The monitor to capture; empty is the primary one.
@@ -832,6 +843,11 @@ impl JamesApp {
             file_name: String::new(),
             file_instruction: String::new(),
             file_proposal: None,
+            file_source_name: String::new(),
+            file_source: None,
+            settings_destination: settings_page::SettingsPage::Sound,
+            settings_instruction: String::new(),
+            settings_proposal: None,
             workspace_directory: String::new(),
             workspace_paths: String::new(),
             workspace_entries: Vec::new(),
@@ -852,7 +868,7 @@ impl JamesApp {
             brush_color: screen_context::BrushColor::Accent,
             drawing: false,
             compact: false,
-            floating: floating::Floating::default(),
+            floating: floating::Floating::restore(saved.remember_reminders, saved.reminders),
             full_size: None,
             summon: None,
             summon_error: None,
@@ -860,6 +876,12 @@ impl JamesApp {
             talk_shortcut_error: None,
             dictation_shortcut: None,
             dictation_shortcut_error: None,
+            shortcut_drafts: [
+                saved.preferences.shortcut_chords.summon.label(),
+                saved.preferences.shortcut_chords.talk.label(),
+                saved.preferences.shortcut_chords.dictate.label(),
+            ],
+            shortcut_config_error: None,
             external_dictation: None,
             external_attempted: false,
             capture_display: String::new(),
@@ -922,6 +944,7 @@ impl JamesApp {
         self.setup.step == SetupStep::Done
     }
     fn save_session(&mut self) -> bool {
+        let (remember_reminders, reminders) = self.floating.saved_reminders();
         (self.messages, self.archives) = conversations::bounded(
             std::mem::take(&mut self.messages),
             std::mem::take(&mut self.archives),
@@ -944,6 +967,8 @@ impl JamesApp {
             preferences: self.prefs.clone(),
             setup: Some(self.setup.clone()),
             last_version: env!("CARGO_PKG_VERSION").into(),
+            remember_reminders,
+            reminders,
         };
         if let Err(e) = session::save(&self.session, &saved) {
             self.save_error = Some(e.to_string());
@@ -1076,6 +1101,7 @@ impl JamesApp {
     /// Forgets facts about a model when the selection changes, and asks again.
     fn model_changed(&mut self) {
         self.pending = None;
+        self.settings_proposal = None;
         self.history_note = None;
         self.probe_model();
     }
@@ -1411,9 +1437,13 @@ impl JamesApp {
             || self.screen.is_some()
             || self.attachment.is_some()
             || self.file_proposal.is_some()
+            || self.settings_proposal.is_some()
+            || !self.settings_instruction.is_empty()
             || !self.file_directory.is_empty()
             || !self.file_name.is_empty()
             || !self.file_instruction.is_empty()
+            || self.file_source.is_some()
+            || !self.file_source_name.is_empty()
             || self.external_dictation.is_some()
             || self.workspace_pending.is_some()
             || self.workspace_context.is_some()
@@ -1432,9 +1462,13 @@ impl JamesApp {
             || self.screen.is_some()
             || self.attachment.is_some()
             || self.file_proposal.is_some()
+            || self.settings_proposal.is_some()
+            || !self.settings_instruction.is_empty()
             || !self.file_directory.is_empty()
             || !self.file_name.is_empty()
             || !self.file_instruction.is_empty()
+            || self.file_source.is_some()
+            || !self.file_source_name.is_empty()
             || self.external_dictation.is_some()
             || self.workspace_pending.is_some()
             || self.workspace_context.is_some()
@@ -1457,9 +1491,13 @@ impl JamesApp {
             || self.screen.is_some()
             || self.attachment.is_some()
             || self.file_proposal.is_some()
+            || self.settings_proposal.is_some()
+            || !self.settings_instruction.is_empty()
             || !self.file_directory.is_empty()
             || !self.file_name.is_empty()
             || !self.file_instruction.is_empty()
+            || self.file_source.is_some()
+            || !self.file_source_name.is_empty()
             || self.external_dictation.is_some()
             || self.workspace_pending.is_some()
             || self.workspace_context.is_some()
@@ -1512,6 +1550,10 @@ impl JamesApp {
         self.attachment = None;
         self.attachment_path.clear();
         self.file_proposal = None;
+        self.file_source = None;
+        self.file_source_name.clear();
+        self.settings_proposal = None;
+        self.settings_instruction.clear();
         self.external_dictation = None;
         self.external_attempted = false;
         self.workspace_pending = None;
@@ -1552,6 +1594,7 @@ impl JamesApp {
         match session::delete_all(&self.session) {
             Ok(_) => {
                 self.overlay.close();
+                self.floating = floating::Floating::default();
                 self.messages.clear();
                 self.archives.clear();
                 self.streaming = None;
@@ -1559,6 +1602,10 @@ impl JamesApp {
                 self.attachment = None;
                 self.attachment_path.clear();
                 self.file_proposal = None;
+                self.file_source = None;
+                self.file_source_name.clear();
+                self.settings_proposal = None;
+                self.settings_instruction.clear();
                 self.external_dictation = None;
                 self.external_attempted = false;
                 self.workspace_pending = None;
@@ -1579,6 +1626,12 @@ impl JamesApp {
                 self.setup_reply = None;
                 self.setup_note = None;
                 self.prefs = Preferences::default();
+                self.shortcut_drafts = [
+                    self.prefs.shortcut_chords.summon.label(),
+                    self.prefs.shortcut_chords.talk.label(),
+                    self.prefs.shortcut_chords.dictate.label(),
+                ];
+                self.shortcut_config_error = None;
                 self.keep_history = true;
                 self.save_error = None;
                 self.page = Page::Chat;
@@ -1666,10 +1719,15 @@ impl JamesApp {
         let root = PathBuf::from(self.file_directory.trim());
         let name = self.file_name.trim().to_owned();
         let instruction = self.file_instruction.clone();
+        let source = self.file_source.clone();
         self.launch_model("Preparing a new file for review...", move |job| {
             let result = (|| {
                 let workspace = workspace_create::CreateWorkspace::open(&root)?;
-                let request = workspace.request(&name, &instruction)?;
+                let request = if let Some(source) = &source {
+                    workspace.revision_request(&name, &instruction, source)?
+                } else {
+                    workspace.request(&name, &instruction)?
+                };
                 let messages = request.messages()?;
                 let client = LocalClient::for_provider(provider, port)
                     .map_err(|e| explain(provider, port, &model, e))?;
@@ -1684,6 +1742,70 @@ impl JamesApp {
             })();
             WorkerResult::FileProposal(result)
         });
+    }
+    fn preview_file_source(&mut self) {
+        if self.busy() || self.file_proposal.is_some() {
+            return;
+        }
+        let root = PathBuf::from(self.file_directory.trim());
+        let name = self.file_source_name.trim().to_owned();
+        self.launch("Reading a source file for review...", move |_| {
+            WorkerResult::FileSource(workspace_create::SourceSnapshot::read(&root, &name))
+        });
+    }
+    fn propose_settings_page(&mut self) {
+        if self.busy() || self.settings_proposal.is_some() {
+            return;
+        }
+        if self.model.trim().is_empty() {
+            self.fail("Choose a model before asking for a settings page.");
+            return;
+        }
+        let messages = match settings_page::messages(&self.settings_instruction) {
+            Ok(messages) => messages,
+            Err(error) => {
+                self.fail(error);
+                return;
+            }
+        };
+        let port = match numeric_port(&self.port) {
+            Ok(port) => port,
+            Err(error) => {
+                self.fail(error);
+                return;
+            }
+        };
+        let provider = self.provider;
+        let model = self.model.trim().to_owned();
+        self.launch_model("Choosing a settings page for review...", move |job| {
+            WorkerResult::SettingsProposal((|| {
+                let client = LocalClient::for_provider(provider, port)
+                    .map_err(|e| explain(provider, port, &model, e))?;
+                let reply = client
+                    .chat_stream(&model, &messages, None, |event| {
+                        if let StreamEvent::Connected(handle) = event {
+                            job.arm(handle);
+                        }
+                    })
+                    .map_err(|e| explain(provider, port, &model, e))?;
+                settings_page::parse_proposal(&reply)
+            })())
+        });
+    }
+    fn open_reviewed_settings(&mut self) {
+        if self.busy() {
+            return;
+        }
+        let Some(proposal) = self.settings_proposal.take() else {
+            return;
+        };
+        let reviewed = settings_page::ReviewedOpen::approve(proposal);
+        self.launch(
+            "Opening the reviewed Windows settings page...",
+            move |job| {
+                WorkerResult::SettingsOpened(settings_page::open_reviewed(reviewed, &job.cancel))
+            },
+        );
     }
     fn create_reviewed_file(&mut self) {
         if self.busy() {
@@ -2106,12 +2228,19 @@ impl JamesApp {
                 "Stopped. Check the selected directory; the file may already have been created."
             } else if matches!(result, WorkerResult::Action(_)) {
                 "Stopped. Check the target application; input may already have been sent."
+            } else if matches!(result, WorkerResult::SettingsOpened(_)) {
+                "Stopped. Windows may already have opened the settings page."
             } else {
                 "Stopped."
             });
             return;
         }
         match result {
+            WorkerResult::FileSource(Ok(source)) => { self.file_source = Some(source); self.info("Review the frozen source. It will be sent only when you prepare the revised copy."); }
+            WorkerResult::FileSource(Err(error)) => self.fail(error),
+            WorkerResult::SettingsProposal(Ok(proposal)) => { self.settings_proposal = Some(proposal); self.info("Review the chosen settings page before opening it."); }
+            WorkerResult::SettingsProposal(Err(error)) | WorkerResult::SettingsOpened(Err(error)) => self.fail(error),
+            WorkerResult::SettingsOpened(Ok(())) => self.info("Opening the reviewed settings page was requested. Check Windows Settings; James changed no setting."),
             WorkerResult::WorkspaceList(Ok(entries)) => { self.workspace_entries = entries; self.info("Directory listed. Choose files to preview."); }
             WorkerResult::WorkspaceSnapshot(Ok(snapshot)) => { self.workspace_pending = Some(snapshot); self.show_workspace = true; self.info("Review the selected file contents before attaching them."); }
             WorkerResult::WorkspaceList(Err(error)) | WorkerResult::WorkspaceSnapshot(Err(error)) => self.fail(error),
@@ -2506,6 +2635,44 @@ impl JamesApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
         self.focus_composer = true;
     }
+    fn save_shortcut_preferences(&mut self, previous: Preferences) {
+        if let Err(error) = self.prefs.shortcut_chords.validate_enabled(
+            self.prefs.summon_shortcut,
+            self.prefs.talk_shortcut,
+            self.prefs.dictation_shortcut,
+        ) {
+            self.prefs = previous;
+            self.shortcut_config_error = Some(error);
+        } else {
+            self.shortcut_config_error = None;
+            self.save_session();
+        }
+    }
+    fn apply_shortcut_draft(&mut self, index: usize) {
+        let chord = match shortcuts::ShortcutChord::parse(&self.shortcut_drafts[index]) {
+            Ok(chord) => chord,
+            Err(error) => {
+                self.shortcut_config_error = Some(error);
+                return;
+            }
+        };
+        let previous = self.prefs.clone();
+        match index {
+            0 => self.prefs.shortcut_chords.summon = chord,
+            1 => self.prefs.shortcut_chords.talk = chord,
+            2 => self.prefs.shortcut_chords.dictate = chord,
+            _ => return,
+        }
+        self.save_shortcut_preferences(previous);
+        if self.shortcut_config_error.is_none() {
+            self.shortcut_drafts[index] = chord.label();
+            match index {
+                0 => self.summon_error = None,
+                1 => self.talk_shortcut_error = None,
+                _ => self.dictation_shortcut_error = None,
+            }
+        }
+    }
     /// Called on the real native event-loop thread, rather than by GUI tests.
     fn poll_summon(&mut self, ctx: &egui::Context) {
         if !self.prefs.summon_shortcut {
@@ -2514,10 +2681,24 @@ impl JamesApp {
             return;
         }
         if self.summon.is_none() && self.summon_error.is_none() {
-            match shortcuts::SummonShortcut::register(ctx.clone()) {
+            match shortcuts::SummonShortcut::register_chord(
+                ctx.clone(),
+                self.prefs.shortcut_chords.summon,
+            ) {
                 Ok(shortcut) => self.summon = Some(shortcut),
                 Err(error) => self.summon_error = Some(error),
             }
+        }
+        if self.summon_error.is_none()
+            && let Some(shortcut) = &mut self.summon
+            && shortcut.chord() != self.prefs.shortcut_chords.summon
+            && let Err(error) =
+                shortcut.update_chord(ctx.clone(), self.prefs.shortcut_chords.summon)
+        {
+            self.prefs.shortcut_chords.summon = shortcut.chord();
+            self.shortcut_drafts[0] = shortcut.chord().label();
+            self.summon_error = Some(format!("{error} The previous shortcut is still active."));
+            self.save_session();
         }
         if self.summon.as_ref().is_some_and(|s| s.take_pressed()) {
             if self.scheduled.is_some() {
@@ -2539,38 +2720,59 @@ impl JamesApp {
             error: &mut Option<String>,
             ctx: &egui::Context,
             kind: shortcuts::VoiceShortcutKind,
-        ) -> bool {
+            chord: &mut shortcuts::ShortcutChord,
+        ) -> (bool, bool) {
             if !enabled {
                 *slot = None;
                 *error = None;
-                return false;
+                return (false, false);
             }
             if slot.is_none() && error.is_none() {
-                match shortcuts::VoiceShortcut::register(ctx.clone(), kind) {
+                match shortcuts::VoiceShortcut::register_chord(ctx.clone(), kind, *chord) {
                     Ok(shortcut) => *slot = Some(shortcut),
                     Err(reason) => *error = Some(reason),
                 }
             }
-            slot.as_ref().is_some_and(|shortcut| {
-                shortcut
-                    .take_events()
-                    .contains(&shortcuts::ShortcutEvent::Pressed)
-            })
+            let mut rolled_back = false;
+            if error.is_none()
+                && let Some(shortcut) = slot
+                && shortcut.chord() != *chord
+                && let Err(reason) = shortcut.update_chord(ctx.clone(), kind, *chord)
+            {
+                *chord = shortcut.chord();
+                *error = Some(format!("{reason} The previous shortcut is still active."));
+                rolled_back = true;
+            }
+            (
+                slot.as_ref().is_some_and(|shortcut| {
+                    shortcut
+                        .take_events()
+                        .contains(&shortcuts::ShortcutEvent::Pressed)
+                }),
+                rolled_back,
+            )
         }
-        let talk = sync(
+        let (talk, talk_rollback) = sync(
             self.prefs.talk_shortcut,
             &mut self.talk_shortcut,
             &mut self.talk_shortcut_error,
             ctx,
             shortcuts::VoiceShortcutKind::Talk,
+            &mut self.prefs.shortcut_chords.talk,
         );
-        let dictate = sync(
+        let (dictate, dictate_rollback) = sync(
             self.prefs.dictation_shortcut,
             &mut self.dictation_shortcut,
             &mut self.dictation_shortcut_error,
             ctx,
             shortcuts::VoiceShortcutKind::Dictate,
+            &mut self.prefs.shortcut_chords.dictate,
         );
+        if talk_rollback || dictate_rollback {
+            self.shortcut_drafts[1] = self.prefs.shortcut_chords.talk.label();
+            self.shortcut_drafts[2] = self.prefs.shortcut_chords.dictate.label();
+            self.save_session();
+        }
         if !(talk || dictate) {
             return;
         }
@@ -2923,12 +3125,16 @@ impl JamesApp {
         }
         self.overlay.show(ctx, capturing);
         let status = self.worker.as_ref().map_or(self.voice.label(), |w| w.label);
+        self.floating.tick(ctx);
         if self.floating.show(ctx, status, capturing) {
             if self.scheduled.take().is_some() {
                 self.info("Action countdown cancelled when you opened James.");
             }
             self.page = Page::Chat;
             self.focus_composer = true;
+        }
+        if self.floating.take_changed() {
+            self.save_session();
         }
         if self.busy() || self.lab.connected || self.info_worker.is_some() || self.lab.finding() {
             ctx.request_repaint_after(Duration::from_millis(100));

@@ -13,6 +13,15 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ### Added
 
+- **Revise a copy.** Preview one small source file, send its frozen contents
+  with revision instructions, review the complete output and create a new file.
+  Existing source and destination files are never overwritten.
+- **Reviewed Windows settings pages.** Choose a common settings page manually
+  or ask the model to select one, then review its fixed destination before opening.
+  James does not change the setting.
+- **Configurable global shortcuts.** Edit summon, Talk and Dictate chords in
+  Settings. Enabled chords must be distinct; a failed replacement keeps the
+  previously registered chord.
 - **Reviewed workspace context.** List a selected directory, preview up to three
   explicitly chosen text files, and attach their frozen contents to the next
   chat question. Each file is limited to 4 KiB; hidden files and links are not
@@ -39,8 +48,9 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 - **Optional voice shortcuts.** Ctrl+Shift+V starts Talk and Ctrl+Shift+D starts
   Dictate (Command instead of Ctrl on macOS). Dictation ends on a
   pause; these are not hold-to-record shortcuts. Wayland remains unsupported.
-- **Local reminders.** Add reminders to the floating companion. They appear
-  there while James is open and are not saved or delivered as OS notifications.
+- **Local reminders.** Due reminders open the floating companion while James
+  runs. Optionally save them on this computer to resume after restart.
+  They are not delivered as OS notifications.
 - **Floating companion.** Settings can open a movable always-on-top companion
   with a simple timer. It is hidden during screen capture; the timer runs only
   while James is open and reports completion in the companion window.

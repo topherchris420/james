@@ -580,10 +580,23 @@ pub fn actions(app: &mut JamesApp, ui: &mut egui::Ui) {
     egui::CollapsingHeader::new("Create a new text file with the model").show(ui, |ui| {
         ui.small("Choose a directory and one new filename. Your filename and instructions are sent to the configured model service, which may relay them elsewhere. Existing files cannot be replaced.");
         ui.label("Destination directory");
-        ui.add_enabled(!app.busy() && app.file_proposal.is_none(), egui::TextEdit::singleline(&mut app.file_directory).desired_width(420.0));
+        ui.add_enabled(!app.busy() && app.file_proposal.is_none() && app.file_source.is_none(), egui::TextEdit::singleline(&mut app.file_directory).desired_width(420.0));
+        egui::CollapsingHeader::new("Revise an existing file as a new copy").show(ui, |ui| {
+            ui.small("Optional: preview one UTF-8 file in this directory (up to 4 KiB). The preview freezes the source sent with your instructions. The original file stays intact, including later changes made by other apps.");
+            let label = ui.label("Source filename relative to this directory");
+            ui.add_enabled(!app.busy() && app.file_proposal.is_none() && app.file_source.is_none(), egui::TextEdit::singleline(&mut app.file_source_name).desired_width(300.0)).labelled_by(label.id);
+            if ui.add_enabled(!app.busy() && app.file_proposal.is_none() && app.file_source.is_none(), egui::Button::new("Preview revision source")).clicked() { app.preview_file_source(); }
+        });
+        if let Some(source) = &app.file_source {
+            ui.label(format!("Frozen source: {}", source.root().join(source.filename()).display()));
+            egui::ScrollArea::vertical().id_salt("revision_source_review").max_height(180.0).show(ui, |ui| {
+                ui.add(egui::Label::new(RichText::new(source.content()).monospace()).wrap());
+            });
+            if ui.add_enabled(!app.busy() && app.file_proposal.is_none(), egui::Button::new("Remove revision source")).clicked() { app.file_source = None; app.file_source_name.clear(); }
+        }
         ui.label("New filename");
         ui.add_enabled(!app.busy() && app.file_proposal.is_none(), egui::TextEdit::singleline(&mut app.file_name).desired_width(300.0));
-        ui.label("What should the file contain?");
+        ui.label(if app.file_source.is_some() { "How should the revised copy change?" } else { "What should the file contain?" });
         ui.add_enabled(!app.busy() && app.file_proposal.is_none(), egui::TextEdit::multiline(&mut app.file_instruction).desired_rows(3).desired_width(420.0));
         if ui.add_enabled(!app.busy() && app.file_proposal.is_none(), egui::Button::new("Prepare file for review")).clicked() { app.propose_new_file(); }
         if let Some(proposal) = &app.file_proposal {
@@ -596,6 +609,29 @@ pub fn actions(app: &mut JamesApp, ui: &mut egui::Ui) {
             ui.horizontal(|ui| {
                 if ui.add_enabled(!app.busy(), theme::primary(ui, "Create reviewed file")).clicked() { app.create_reviewed_file(); }
                 if ui.add_enabled(!app.busy(), egui::Button::new("Discard file proposal")).clicked() { app.file_proposal = None; }
+            });
+        }
+    });
+    egui::CollapsingHeader::new("Open a Windows settings page").show(ui, |ui| {
+        if !cfg!(windows) { ui.label("Opening these settings pages is available on Windows only."); return; }
+        ui.small("Choose a page yourself or ask the configured model to select one. Review the destination before opening it. James opens the page; you change the settings.");
+        ui.add_enabled_ui(!app.busy() && app.settings_proposal.is_none(), |ui| {
+            egui::ComboBox::from_id_salt("settings_destination").selected_text(app.settings_destination.label()).show_ui(ui, |ui| {
+                for page in crate::settings_page::SettingsPage::ALL { ui.selectable_value(&mut app.settings_destination, page, page.label()); }
+            });
+            if ui.button("Review selected settings page").clicked() { app.settings_proposal = Some(crate::settings_page::Proposal::manual(app.settings_destination)); }
+            let label = ui.label("What setting do you need help finding?");
+            ui.add(egui::TextEdit::singleline(&mut app.settings_instruction).desired_width(420.0).char_limit(4096)).labelled_by(label.id);
+            if ui.button("Ask model for a settings page").clicked() { app.propose_settings_page(); }
+        });
+        if let Some(proposal) = &app.settings_proposal {
+            ui.strong(format!("Windows {} settings", proposal.page().label()));
+            ui.label(proposal.page().uri());
+            ui.label(proposal.reason());
+            let label = format!("Open reviewed {} settings", proposal.page().label());
+            ui.horizontal(|ui| {
+                if ui.add_enabled(!app.busy(), theme::primary(ui, &label)).clicked() { app.open_reviewed_settings(); }
+                if ui.add_enabled(!app.busy(), egui::Button::new("Discard settings proposal")).clicked() { app.settings_proposal = None; }
             });
         }
     });
@@ -1178,11 +1214,8 @@ fn privacy(app: &mut JamesApp, ui: &mut egui::Ui) {
 
 fn help(app: &mut JamesApp, ui: &mut egui::Ui) {
     ui.label(RichText::new("Help, updates and about").size(18.0).strong());
-    let shortcut = if cfg!(target_os = "macos") {
-        "Cmd+Shift+Space"
-    } else {
-        "Ctrl+Shift+Space"
-    };
+    let shortcut = app.prefs.shortcut_chords.summon.label();
+    let previous = app.prefs.clone();
     if ui
         .checkbox(
             &mut app.prefs.summon_shortcut,
@@ -1191,33 +1224,48 @@ fn help(app: &mut JamesApp, ui: &mut egui::Ui) {
         .changed()
     {
         app.summon_error = None;
-        app.save_session();
+        app.save_shortcut_preferences(previous);
     }
     ui.small("Summoning opens the compact companion. The shortcut does not capture your screen or start the microphone.");
-    let modifier = if cfg!(target_os = "macos") {
-        "Cmd"
-    } else {
-        "Ctrl"
-    };
+    let shortcut = app.prefs.shortcut_chords.talk.label();
+    let previous = app.prefs.clone();
     if ui
         .checkbox(
             &mut app.prefs.talk_shortcut,
-            format!("Start Talk with {modifier}+Shift+V"),
+            format!("Start Talk with {shortcut}"),
         )
         .changed()
     {
         app.talk_shortcut_error = None;
-        app.save_session();
+        app.save_shortcut_preferences(previous);
     }
+    let shortcut = app.prefs.shortcut_chords.dictate.label();
+    let previous = app.prefs.clone();
     if ui
         .checkbox(
             &mut app.prefs.dictation_shortcut,
-            format!("Dictate into James with {modifier}+Shift+D"),
+            format!("Start Dictate with {shortcut}"),
         )
         .changed()
     {
         app.dictation_shortcut_error = None;
-        app.save_session();
+        app.save_shortcut_preferences(previous);
+    }
+    egui::CollapsingHeader::new("Customize global shortcuts").show(ui, |ui| {
+        ui.small("Use Ctrl, Alt, Shift or Meta (Cmd on macOS) with a letter, digit or Space. Include Ctrl, Alt or Meta. Letter keys refer to physical key positions. Disable a shortcut before exchanging its chord with another action.");
+        for (index, label) in ["Summon shortcut", "Talk shortcut", "Dictation shortcut"].into_iter().enumerate() {
+            ui.push_id(index, |ui| {
+                ui.horizontal(|ui| {
+                    let response = ui.label(label);
+                    ui.add(egui::TextEdit::singleline(&mut app.shortcut_drafts[index]).desired_width(190.0).char_limit(80)).labelled_by(response.id);
+                    if ui.button(format!("Apply {label}")).clicked() { app.apply_shortcut_draft(index); }
+                });
+            });
+        }
+        ui.small("If another app owns a new chord, James keeps the previously registered chord and reports the error.");
+    });
+    if let Some(error) = &app.shortcut_config_error {
+        ui.colored_label(ui.visuals().error_fg_color, error);
     }
     ui.small("These shortcuts start the microphone. Dictation ends when you pause; Talk keeps listening after each reply until stopped.");
     if cfg!(windows)

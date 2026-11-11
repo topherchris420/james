@@ -1348,6 +1348,107 @@ fn floating_companion_is_suppressed_while_screen_capture_runs() {
 }
 
 #[test]
+fn reminders_save_only_after_opt_in_and_can_be_removed_from_disk() {
+    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().floating.visible = true;
+    h.run();
+    h.get_by_label("Reminder text").click();
+    h.get_by_label("Reminder text").type_text("Local reminder");
+    h.run();
+    h.get_by_label("Add reminder").click();
+    h.run_steps(2);
+    assert!(session::load(&h.state().session).reminders.is_empty());
+    h.get_by_label("Save reminders on this computer").click();
+    h.run_steps(2);
+    let saved = session::load(&h.state().session);
+    assert!(saved.remember_reminders);
+    assert_eq!(saved.reminders[0].text, "Local reminder");
+    let restored = JamesApp::new(h.state().session.clone());
+    assert_eq!(restored.floating.saved_reminders().1, saved.reminders);
+    h.get_by_label("Save reminders on this computer").click();
+    h.run_steps(2);
+    assert!(session::load(&h.state().session).reminders.is_empty());
+    assert!(
+        !std::fs::read_to_string(&h.state().session)
+            .unwrap()
+            .contains("Local reminder")
+    );
+    assert!(h.query_by_label_contains("Local reminder").is_some());
+    h.state_mut().delete_all_data();
+    assert!(h.state().floating.saved_reminders().1.is_empty());
+    assert!(!h.state().floating.visible);
+}
+
+#[test]
+fn shortcut_changes_validate_active_conflicts_and_persist() {
+    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
+    let mut app = james_on(port, Some("gemma3:4b"), SetupStep::Done);
+    app.prefs.summon_shortcut = true;
+    app.prefs.talk_shortcut = true;
+    let original = app.prefs.shortcut_chords;
+    app.shortcut_drafts[1] = original.summon.label();
+    app.apply_shortcut_draft(1);
+    assert!(app.shortcut_config_error.is_some());
+    assert_eq!(app.prefs.shortcut_chords, original);
+    app.shortcut_drafts[1] = "Ctrl+Alt+9".into();
+    app.apply_shortcut_draft(1);
+    assert!(app.shortcut_config_error.is_none());
+    assert_eq!(
+        session::load(&app.session)
+            .preferences
+            .shortcut_chords
+            .talk
+            .label(),
+        "Ctrl+Alt+9"
+    );
+    app.shortcut_drafts[2] = "D".into();
+    app.apply_shortcut_draft(2);
+    assert!(app.shortcut_config_error.is_some());
+    assert_eq!(app.prefs.shortcut_chords.dictate, original.dictate);
+}
+
+#[test]
+fn settings_model_proposal_is_isolated_and_only_prepares_a_review() {
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(
+            &[r#"{"page":"sound","reason":"Choose an output device."}"#],
+            Duration::ZERO,
+        )
+    });
+    let mut app = james_on(port, Some("gemma3:4b"), SetupStep::Done);
+    app.draft = "Private unsent draft".into();
+    app.messages
+        .push(ChatMessage::new("user", "Private conversation"));
+    app.settings_instruction = "Find output device settings".into();
+    let mut h = harness(app);
+    h.state_mut().propose_settings_page();
+    wait_until(&mut h, "settings review", |app| app.worker.is_none());
+    assert_eq!(
+        h.state().settings_proposal.as_ref().unwrap().page(),
+        crate::settings_page::SettingsPage::Sound
+    );
+    let request = seen.lock().unwrap().clone();
+    assert!(request.contains("Find output device settings"));
+    assert!(!request.contains("Private unsent draft"));
+    assert!(!request.contains("Private conversation"));
+    assert_eq!(h.state().draft, "Private unsent draft");
+    if cfg!(windows) {
+        h.state_mut().page = Page::Actions;
+        h.run();
+        h.get_by_label("Open a Windows settings page").click();
+        h.run_steps(2);
+        assert!(h.query_by_label("Open reviewed Sound settings").is_some());
+        assert!(h.query_by_label("ms-settings:sound").is_some());
+    }
+    h.state_mut().model_changed();
+    assert!(h.state().settings_proposal.is_none());
+}
+
+#[test]
 fn desktop_guidance_refuses_an_embedded_or_unsupported_viewport() {
     let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
     let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
@@ -1466,6 +1567,60 @@ fn external_dictation_shows_destination_and_text_before_delivery() {
     h.run();
     assert!(h.state().external_dictation.is_none());
     assert_eq!(h.state().draft, "Keep this draft");
+}
+
+#[test]
+fn revised_copy_uses_reviewed_source_and_keeps_external_edits() {
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        body.lock().unwrap().push(request.to_owned());
+        ndjson(&[r#"{"content":"Revised fixture text"}"#], Duration::ZERO)
+    });
+    let root = std::env::temp_dir().join(format!("james-revision-gui-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let original = root.join("original.txt");
+    let copy = root.join("copy.txt");
+    std::fs::write(&original, "Reviewed original text").unwrap();
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().file_directory = root.display().to_string();
+    h.state_mut().file_source_name = "original.txt".into();
+    h.state_mut().file_name = "copy.txt".into();
+    h.state_mut().file_instruction = "Shorten this text".into();
+    h.state_mut().page = Page::Actions;
+    h.state_mut().preview_file_source();
+    wait_until(&mut h, "source review", |app| app.worker.is_none());
+    assert!(seen.lock().unwrap().is_empty());
+    h.get_by_label("Create a new text file with the model")
+        .click();
+    h.run_steps(2);
+    assert!(h.query_by_label("Reviewed original text").is_some());
+    std::fs::write(&original, "New text from another app").unwrap();
+    h.get_by_label("Prepare file for review").click();
+    wait_until(&mut h, "revised copy review", |app| app.worker.is_none());
+    assert!(!copy.exists());
+    let request = seen.lock().unwrap()[0].clone();
+    assert!(request.contains("Reviewed original text"));
+    assert!(!request.contains("New text from another app"));
+    assert!(h.query_by_label("Revised fixture text").is_some());
+    h.get_by_label("Create reviewed file").click();
+    wait_until(&mut h, "new copy", |app| app.worker.is_none());
+    assert_eq!(
+        std::fs::read_to_string(&copy).unwrap(),
+        "Revised fixture text"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&original).unwrap(),
+        "New text from another app"
+    );
+    assert!(
+        !std::fs::read_to_string(&h.state().session)
+            .unwrap()
+            .contains("Reviewed original text")
+    );
+    std::fs::remove_file(copy).unwrap();
+    std::fs::remove_file(original).unwrap();
+    std::fs::remove_dir(root).unwrap();
 }
 
 #[test]

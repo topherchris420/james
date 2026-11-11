@@ -48,6 +48,7 @@ pub struct Preferences {
     pub talk_shortcut: bool,
     pub dictation_shortcut: bool,
     pub dictation_other_app: bool,
+    pub shortcut_chords: crate::shortcuts::ShortcutConfig,
     /// Guide me numbers its steps on the screenshot. Off by default: the
     /// model places the numbers, and small models often misplace them.
     pub guide_marks: bool,
@@ -68,6 +69,7 @@ impl Default for Preferences {
             talk_shortcut: false,
             dictation_shortcut: false,
             dictation_other_app: false,
+            shortcut_chords: crate::shortcuts::ShortcutConfig::default(),
             guide_marks: false,
             review_actions: true,
         }
@@ -148,6 +150,26 @@ pub struct SavedSession {
     /// The James version that last saved this session; empty in sessions
     /// saved before James recorded it.
     pub last_version: String,
+    pub remember_reminders: bool,
+    pub reminders: Vec<SavedReminder>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedReminder {
+    pub text: String,
+    pub due_unix_seconds: u64,
+}
+
+pub fn bounded_reminders(reminders: Vec<SavedReminder>) -> Vec<SavedReminder> {
+    reminders
+        .into_iter()
+        .filter(|r| {
+            !r.text.trim().is_empty()
+                && r.text.chars().count() <= 100
+                && !r.text.chars().any(char::is_control)
+        })
+        .take(10)
+        .collect()
 }
 
 impl Default for SavedSession {
@@ -166,6 +188,8 @@ impl Default for SavedSession {
             preferences: Preferences::default(),
             setup: None,
             last_version: String::new(),
+            remember_reminders: false,
+            reminders: Vec::new(),
         }
     }
 }
@@ -279,6 +303,11 @@ pub fn save(path: &Path, session: &SavedSession) -> std::io::Result<()> {
 /// Applies the same privacy and whole-library retention boundary on both read
 /// and write, including files produced by older versions or other callers.
 fn enforce_history(saved: &mut SavedSession) {
+    saved.reminders = if saved.remember_reminders {
+        bounded_reminders(std::mem::take(&mut saved.reminders))
+    } else {
+        Vec::new()
+    };
     if !saved.keep_history {
         saved.messages.clear();
         saved.archives.clear();
@@ -416,6 +445,37 @@ pub(crate) fn scratch_dir(name: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reminder_retention_is_explicit_bounded_and_independent_of_chat_history() {
+        let mut saved = SavedSession {
+            keep_history: false,
+            reminders: vec![SavedReminder {
+                text: "Remember this".into(),
+                due_unix_seconds: 100,
+            }],
+            ..SavedSession::default()
+        };
+        enforce_history(&mut saved);
+        assert!(saved.reminders.is_empty());
+        saved.remember_reminders = true;
+        saved.reminders = (0..20)
+            .map(|n| SavedReminder {
+                text: format!("Reminder {n}"),
+                due_unix_seconds: 100,
+            })
+            .collect();
+        saved.reminders.insert(
+            0,
+            SavedReminder {
+                text: "Hidden\ntext".into(),
+                due_unix_seconds: 100,
+            },
+        );
+        enforce_history(&mut saved);
+        assert_eq!(saved.reminders.len(), 10);
+        assert_eq!(saved.reminders[0].text, "Reminder 0");
+        assert!(!saved.keep_history);
+    }
 
     #[test]
     fn old_sessions_load_with_safe_defaults() {
@@ -492,6 +552,7 @@ mod tests {
                 talk_shortcut: false,
                 dictation_shortcut: false,
                 dictation_other_app: false,
+                shortcut_chords: crate::shortcuts::ShortcutConfig::default(),
                 guide_marks: true,
                 review_actions: false,
             },

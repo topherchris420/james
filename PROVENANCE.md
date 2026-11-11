@@ -24,6 +24,10 @@ a newly created name and does not reproduce Korso's broader editing tools.
 Read-only workspace snapshots and the media widget are original implementations;
 the Windows media helper uses the system's Global System Media Transport Controls
 API and introduces no new direct Rust dependency.
+Configurable chords, opt-in reminder retention, frozen revision sources, and
+the fixed Windows Settings-page opener are original extensions with no new
+direct dependencies. Settings destinations use Microsoft's documented
+`ms-settings` identifiers; models never provide launch URIs or commands.
 
 James's Rust source, tests, demonstration, architecture, and project documents were authored independently for this project on 2026-10-11. Functional requirements were informed by public Korso documentation and bounded REA inspection of its publicly downloadable Windows package.
 

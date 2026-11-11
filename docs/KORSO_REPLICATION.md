@@ -385,7 +385,7 @@ added in this pass; integration and verification are recorded separately.
 | Guided checklist tied to live controls | Planned | Baseline Guide me is a bounded textual/screenshot answer |
 | Compact assistant surface | New compact conversation view and movable floating companion, with Windows primary-display edge docking | No multi-monitor docking or full widget engine; native docking remains unverified |
 | Global summon | New opt-in registration | Platform scope and binding differ from Korso |
-| Configurable hold/tap/dictation locks | Partial: opt-in Talk/Dictate chords | Fixed chords start existing voice flows on press; no hold-to-record or dictation locks |
+| Configurable hold/tap/dictation locks | Partial: configurable opt-in summon/Talk/Dictate chords | Chords start existing voice flows on press; no hold-to-record or dictation locks; native rebindings remain unverified |
 | Local Talk, Dictate and read-aloud | Baseline | No recorded microphone parity experiment |
 | Preserve draft during Talk | New | Does not add voice authorization |
 | Dictation into another app/clipboard restoration | Partial: reviewed Windows Unicode input after window/control checks | Clipboard untouched; custom controls and focus races remain; physical delivery unverified |
@@ -394,11 +394,11 @@ added in this pass; integration and verification are recorded separately.
 | Exact single-input review and recovery | Baseline James design | Korso's broader tool effects were not reproduced |
 | Advisory second action review | Baseline James design | Cannot approve an action |
 | Always/Auto/Never tool modes | Planned parity investigation only | James keeps explicit review per input |
-| Scripts/files/app launching/settings tools | Partial: reviewed creation of a new text file and selected read-only workspace context | No overwriting, edits, scripts, app launching or general tool system |
+| Scripts/files/app launching/settings tools | Partial: reviewed file creation/revised copies, selected read-only context and six fixed Windows settings pages | No in-place edits, scripts, general app launching or general tool system; native settings dispatch remains unverified |
 | Connected apps/email action editing | Planned | Service/backends and external effects unknown |
 | Text edit ledger and guarded undo | Planned | Universal rollback is unestablished |
 | File backups/script rollback/crash guarantees | Unknown | No verified general transaction/recovery contract recovered |
-| Edge-tab media/weather/pets/timers/reminders | Partial: timer, reminders and explicit Windows media controls | No weather, pets or system notifications; native media and docking remain unverified |
+| Edge-tab media/weather/pets/timers/reminders | Partial: timer, optionally saved reminders and explicit Windows media controls | No weather, pets or system notifications; native media and docking remain unverified |
 | Account/billing/usage/backend ratings | Outside this local replication pass | Service implementation unknown |
 | Installer/update/signing parity | Outside this pass | Existing James release readiness limits apply |
 
@@ -464,8 +464,8 @@ native transparency, pass-through, capture exclusion, and mixed-DPI behavior
 still need physical verification. Optional Talk and Dictate chords start existing
 voice flows on press; they are not release-to-stop. External-app dictation was
 added separately as described below.
-The floating companion also supports bounded in-process reminders, without
-restart persistence or system notifications.
+The floating companion also supports bounded reminders. Optional restart
+persistence was added subsequently; system notifications remain unimplemented.
 
 The expanded workspace test run passed 255 tests, with four opt-in tests
 ignored; strict workspace Clippy passed. A separate file-edit prototype was
@@ -502,3 +502,38 @@ unverified. The model and media features do not establish Korso parity.
 The subsequent full workspace test run passed 276 tests, with four opt-in tests
 ignored. Strict workspace Clippy and PowerShell helper checks also passed. These
 automated checks do not replace the native-device verification described above.
+
+The next implementation adds configurable, opt-in summon/Talk/Dictate chords.
+Parsing limits the key and modifiers, active choices must be distinct, and a
+replacement is registered before releasing the previous registration. Fixture
+tests cover failed replacement lifetime and settings retention; native OS chord
+registration has not been exercised. These remain press-to-start voice flows.
+In particular, Windows' current synchronous speech-recognition backend cannot
+provide an exact release-to-stop boundary, so hold-to-record is still unresolved.
+
+Reminders can now be explicitly saved in the private session file, independently
+of chat history. Due reminders reopen the companion once while James is running,
+including overdue reminders restored after restart. Disabling reminder retention
+removes the saved reminder text on the next successful save; deleting James data
+clears them. There is no background notification while James is closed. Reminder
+deadlines use the system clock and can move when that clock changes.
+
+The reviewed-copy workflow freezes one explicitly previewed text source (up to
+4 KiB) and sends it as untrusted data with the user's instructions. A separate
+new filename receives the reviewed result through the existing create-only
+operation. Source changes after preview are not silently substituted, and source
+contents are not retained in history. Reading can update filesystem access time;
+the workflow does not write to the source or implement in-place edits/undo.
+
+An additional reviewed workflow opens six fixed Windows Settings destinations,
+chosen manually or proposed by an isolated model request. Neither the model nor
+the user can supply a URI or command through this operation. Opening a page
+does not change a setting. Microsoft documents the fixed page identities in
+[Launch Windows Settings](https://learn.microsoft.com/windows/uwp/launch-resume/launch-settings-app).
+Pure tests cover review consumption, cancellation before dispatch and rejected
+destinations. No Settings page was opened during validation; dispatch success
+does not establish that the expected page became visible.
+
+This batch passed 294 workspace tests locally, with four opt-in tests ignored;
+strict workspace Clippy and all PowerShell helper checks passed. The preceding
+commit also passed the full Windows/macOS/Linux CI and package builds.
