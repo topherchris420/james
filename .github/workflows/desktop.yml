@@ -3,10 +3,12 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  create:
 permissions:
   contents: read
 jobs:
   desktop:
+    if: github.event_name != 'create' || github.ref == 'refs/heads/release/v0.4.0-preview.4'
     strategy:
       fail-fast: false
       matrix:
@@ -134,6 +136,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   linux-package:
+    if: github.event_name != 'create' || github.ref == 'refs/heads/release/v0.4.0-preview.4'
     # Built on Ubuntu 22.04: a binary built on a newer system requires that
     # system's glibc and would not start on Ubuntu 22.04, Mint 21 or Debian 12.
     # Run directly on Jammy to use the runner's network for package downloads.
@@ -211,7 +214,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   release:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    # Preview.4 has a single explicit branch trigger for tag creation via CI.
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'create' && github.ref == 'refs/heads/release/v0.4.0-preview.4')
     needs: [desktop, linux-package]
     runs-on: ubuntu-latest
     permissions:
@@ -223,6 +229,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # pinned
         with:
           persist-credentials: false
+      - name: Verify release version and commit
+        id: release-target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="${GITHUB_REF_NAME#release/}"
+          version="$(cargo metadata --no-deps --locked --offline --format-version 1 | jq -r '.packages[] | select(.name == "james-desktop") | .version')"
+          if [[ "$tag" != "v$version" ]]; then
+            echo "Release ref $tag does not match desktop version $version." >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == create ]]; then
+            status="$(gh api "repos/$GH_REPO/compare/$GITHUB_SHA...main" --jq .status)"
+            if [[ "$status" != ahead && "$status" != identical ]]; then
+              echo 'The release commit must be on main.' >&2
+              exit 1
+            fi
+          fi
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           pattern: James-*
@@ -238,7 +264,7 @@ jobs:
       - name: Record how this release was built
         working-directory: artifacts
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ steps.release-target.outputs.tag }}
           WINDOWS_SIGNED: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 != '' || secrets.ARTIFACT_SIGNING_ACCOUNT != '' }}
           MACOS_SIGNED: ${{ secrets.MACOS_SIGNING_IDENTITY != '' }}
           # The same conditions package-macos.sh uses; a configured step that
@@ -266,10 +292,27 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ steps.release-target.outputs.tag }}
         run: |
           version="${RELEASE_TAG#v}"
-          sed "s/@VERSION@/${version}/g" .github/release-notes.md > "$RUNNER_TEMP/notes.md"
+          summary="$(awk -v version="$version" '$1 == "##" && $2 == version { show = 1; next } show && /^#/ { exit } show { print }' CHANGELOG.md)"
+          {
+            if [[ -n "$summary" ]]; then
+              printf '## What changed\n%s\n\n' "$summary"
+            fi
+            sed "s/@VERSION@/${version}/g" .github/release-notes.md
+          } > "$RUNNER_TEMP/notes.md"
           flags=()
           if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
+          if [[ "$GITHUB_EVENT_NAME" == create ]]; then
+            ref_url="repos/$GH_REPO/git/ref/tags/$RELEASE_TAG"
+            if target="$(gh api "$ref_url" --jq .object.sha 2>/dev/null)"; then
+              if [[ "$target" != "$GITHUB_SHA" ]]; then
+                echo "Tag $RELEASE_TAG already points to a different object." >&2
+                exit 1
+              fi
+            else
+              gh api "repos/$GH_REPO/git/refs" --method POST -f ref="refs/tags/$RELEASE_TAG" -f sha="$GITHUB_SHA" >/dev/null
+            fi
+          fi
           gh release create "$RELEASE_TAG" artifacts/* --verify-tag --notes-file "$RUNNER_TEMP/notes.md" --generate-notes --title "James $RELEASE_TAG" "${flags[@]}"

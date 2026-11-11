@@ -1,6 +1,6 @@
-# Shepherd coordination in James (developer branch)
+# Shepherd coordination in James
 
-James includes an **optional, read-only** native Shepherd panel at **Shepherd**
+James v0.4.0-preview.4 includes an **optional, read-only** native Shepherd panel at **Shepherd**
 (shortcut `Ctrl+6`, or `Command+6` on macOS). It connects to a locally
 self-hosted [Shepherd](https://github.com/Korso-AI/Shepherd) hub and displays
 agent presence, work claims and announcements.

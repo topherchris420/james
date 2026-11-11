@@ -37,7 +37,7 @@ James is an open-source Rust desktop application developed at [Vers3Dynamics](ht
 No James account is required. James contains no analytics or automatic-update telemetry. Its own model, Lab and optional Shepherd transport is restricted to loopback addresses; the model server itself may use remote services. [The network and privacy boundary is documented here](SECURITY.md).
 
 > [!IMPORTANT]
-> **Developer preview, not a production-ready assistant.** The latest published release is [`v0.4.0-preview.3`](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.3). The current `main` branch contains **unreleased** capabilities, including conversation history, attachments, companion controls, desktop guidance, and reviewed Windows file operations. They are not necessarily in release downloads. Check the [unreleased changelog](CHANGELOG.md#unreleased) and [platform evidence matrix](docs/PLATFORM_SUPPORT.md). Windows and macOS packages are unsigned; physical-device, accessibility, and independent security validation remain incomplete.
+> **Developer preview, not a production-ready assistant.** [`v0.4.0-preview.4`](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.4) includes document evidence, the updated chat and Companion, searchable history, and the optional local Shepherd panel. Check the [release changelog](CHANGELOG.md#040-preview4--2026-11-11) and [platform evidence matrix](docs/PLATFORM_SUPPORT.md). Windows and macOS packages are unsigned; physical-device, accessibility, and independent security validation remain incomplete.
 
 ### Pick an experiment
 
@@ -47,16 +47,16 @@ James is most useful when you can inspect both the result **and its boundary**.
 | --- | --- | --- |
 | **Talk with a chosen model** | Connect Ollama, LM Studio or llama.cpp; send a test question. | James identifies the selected model and reports connection failures instead of fabricating a reply. |
 | **Ask about what is on-screen** | Capture, inspect the preview, then send a question to a vision-capable model. | Nothing is sent merely by capturing; guidance can be inaccurate. |
-| **Work with a document** | On `main`, attach a text, extractable PDF or supported image; or select a workspace text-file preview. | The preview matches what you meant to share; scanned PDFs are not automatically read. |
+| **Work with a document** | Attach a text, extractable PDF or supported image; or select a workspace text-file preview. | The preview matches what you meant to share; scanned PDFs are not automatically read. |
 | **Review a proposed desktop action** | On Windows, capture a fresh screen and use **Suggest one action**. | You can refuse; approval allows at most one checked input, not an unattended task. |
 | **Inspect research context** | Connect a local R.A.I.N. Lab and open its read-only view. | Observations, simulations and hypotheses carry distinct labels. |
-| **Watch coding agents** | On the development branch, open Shepherd and connect a self-hosted local hub with its token. | Agent claims and messages are read-only assertions, not verified changes or approvals. |
+| **Watch coding agents** | Open Shepherd and connect a self-hosted local hub with its token. | Agent claims and messages are read-only assertions, not verified changes or approvals. |
 
 For a guided first run, follow [Getting started](docs/GETTING_STARTED.md). For exact platform support and test status, use [the capability matrix](docs/PLATFORM_SUPPORT.md), not a screenshot or a badge.
 
 ### Inspect the answer, not just the conversation
 
-On the development branch, attach a document and ask a question. James supplies
+Attach a document and ask a question. James supplies
 line-numbered source text and asks the model to cite it. **Check the sources**
 expands references into the actual supplied lines and flags missing or invalid
 references. These checks establish a location, **not whether the claim is true**.
@@ -77,16 +77,16 @@ locally. [Workflow, privacy and validation limits](docs/REQUEST_EVIDENCE.md).
 | **Voice** | Dictation, read-aloud, and Talk using local platform facilities | Voice cannot authorize computer input |
 | **Reviewed input** | On Windows, one click, key press, or text entry after explicit review | No unattended sequence, shell, self-approval, or automatic retry |
 | **R.A.I.N. Lab** | Read-only status, simulator findings, replay state and labelled hypotheses | Cannot command or approve experiments |
-| **Shepherd (unreleased)** | Optional native read-only workspace feed of agent presence, claims and announcements | Self-hosted loopback hub only; does not run agents, send messages or expose MCP tools |
+| **Shepherd** | Optional native read-only workspace feed of agent presence, claims and announcements | Self-hosted loopback hub only; does not run agents, send messages or expose MCP tools |
 | **Personal controls** | History retention, conversation management, visual accessibility preferences | Files are local but not encrypted against other processes using the account |
 
 A feature implemented on `main` is not necessarily present in the latest downloadable release. The [platform matrix](docs/PLATFORM_SUPPORT.md) distinguishes implemented functions, automated tests, and exercised real-software sessions.
 
-### Beyond the published preview: current `main`
+### What preview.4 adds
 
-These features are implemented on the development branch, **not a promise about the downloadable preview**. Some still lack real-device validation.
+The preview includes these features. See the platform matrix for which have been exercised on real devices.
 
-| Area | Current development-branch behavior | Important boundary |
+| Area | Preview behavior | Important boundary |
 | --- | --- | --- |
 | **Conversation** | New and resumed conversations, Copy conversation, Markdown replies and local history controls | Archive retention is bounded; disabling retention does not encrypt other stored data |
 | **Screen** | Select a monitor, crop a screenshot for a chat question, add point/freehand marks, and receive up to three guidance steps | Guide me and action suggestions use full-screen context; model-positioned markers can be wrong |
@@ -96,7 +96,7 @@ These features are implemented on the development branch, **not a promise about 
 | **Reviewed Windows utilities** | Prepare a new text file, revise into a **new copy**, or review opening a common settings page | No overwrite of existing files, automatic editing, settings changes or agent-controlled shell |
 | **Agent coordination** | Native Shepherd tab, manual connect and authenticated local wallboard polling | Token stays in memory; remote hubs, write operations and agent launching are not supported |
 
-The [Korso replication report](docs/KORSO_REPLICATION.md) explains which interaction requirements were reconstructed from static evidence and how James implements its **own Rust behavior**. It does not claim product parity or validate Korso at runtime. Consult the [unreleased changelog](CHANGELOG.md#unreleased) for feature-level limitations.
+The [Korso replication report](docs/KORSO_REPLICATION.md) explains which interaction requirements were reconstructed from static evidence and how James implements its **own Rust behavior**. It does not claim product parity or validate Korso at runtime. Consult the [release changelog](CHANGELOG.md#040-preview4--2026-11-11) for feature-level limitations.
 
 ## 02. Principle of operation
 
@@ -196,7 +196,7 @@ Then conduct three observations yourself:
 2. If you selected a vision-capable model, capture a screen, inspect its preview, and decide whether to attach it to a question. **Guide me** suggests steps but does not execute them.
 3. Open **Settings** and inspect history retention, voice configuration, and the action-review controls before enabling anything.
 
-Development-branch features are itemized in [the apparatus](#beyond-the-published-preview-current-main) and the [changelog](CHANGELOG.md#unreleased). The optional second-pass review of a model-proposed action is **advisory only**; it does not expand the model's authority or substitute for human approval.
+Preview features are itemized in [the apparatus](#what-preview4-adds) and the [changelog](CHANGELOG.md#040-preview4--2026-11-11). The optional second-pass review of a model-proposed action is **advisory only**; it does not expand the model's authority or substitute for human approval.
 
 ## 04. Human control of computer input
 

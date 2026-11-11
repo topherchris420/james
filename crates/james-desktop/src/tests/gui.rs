@@ -1494,10 +1494,11 @@ fn model_file_creation_requires_review_and_never_overwrites() {
     h.state_mut().file_name = "hello.txt".into();
     h.state_mut().file_instruction = "Write a greeting".into();
     h.state_mut().page = Page::Actions;
-    h.run();
+    // The model capability probe can keep requesting repaints during navigation.
+    frames(&mut h, 2);
     h.get_by_label("Create a new text file with the model")
         .click();
-    h.run();
+    frames(&mut h, 2);
     h.get_by_label("Prepare file for review").click();
     wait_until(&mut h, "the file proposal", |app| app.worker.is_none());
     assert!(!path.exists(), "model generation must not create the file");

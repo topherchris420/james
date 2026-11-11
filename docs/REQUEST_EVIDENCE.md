@@ -1,6 +1,6 @@
 # Request evidence and source references
 
-Available on the development branch; not in the published preview download.
+Available in James v0.4.0-preview.4.
 
 Open **Add context** beside **Send** to attach a text file, an extractable PDF,
 or selected workspace files. The composer shows what goes with the question
