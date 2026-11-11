@@ -1307,6 +1307,30 @@ fn floating_companion_starts_and_cancels_a_timer() {
 }
 
 #[test]
+fn floating_companion_is_suppressed_while_screen_capture_runs() {
+    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    h.state_mut().floating.visible = true;
+    h.run();
+    assert!(h.query_by_label("Start timer").is_some());
+    let (tx, rx) = std::sync::mpsc::channel();
+    h.state_mut().worker = Some(Worker {
+        rx,
+        cancel: Cancellation::default(),
+        abort: AbortSlot::default(),
+        label: "Capturing the screen after a 3-second delay...",
+        join: None,
+        wait_on_close: false,
+    });
+    h.run_steps(2);
+    assert!(h.query_by_label("Start timer").is_none());
+    h.state_mut().worker = None;
+    drop(tx);
+    h.run();
+    assert!(h.query_by_label("Start timer").is_some());
+}
+
+#[test]
 fn an_attached_question_transports_only_the_marked_crop_pixels() {
     let seen = Arc::new(Mutex::new(String::new()));
     let body = Arc::clone(&seen);
