@@ -32,7 +32,7 @@
 >
 > **James is designed to keep that distinction visible.**
 
-James is an open-source Rust desktop application developed at [Vers3Dynamics](https://vers3dynamics.com/). It connects to a separately running local model service, provides conversation and optional screen and voice context, and places a human review step between any proposed computer input and its execution. A read-only connection to R.A.I.N. Lab can display research records alongside ordinary conversation. An optional [local Shepherd integration](docs/SHEPHERD.md) shows coding-agent activity without giving agents control over James.
+James is an open-source Rust desktop application developed at [Vers3Dynamics](https://vers3dynamics.com/). It connects to a separately running local model service, provides conversation and optional screen and voice context, and places a human review step between any proposed computer input and its execution. A read-only connection to R.A.I.N. Lab (Recursive Architecture of Intelligent Nexus) can display research records alongside ordinary conversation. An optional [local Shepherd integration](docs/SHEPHERD.md) shows coding-agent activity without giving agents control over James.
 
 No James account is required. James contains no analytics or automatic-update telemetry. Its own model, Lab and optional Shepherd transport is restricted to loopback addresses; the model server itself may use remote services. [The network and privacy boundary is documented here](SECURITY.md).
 
