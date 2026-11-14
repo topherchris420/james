@@ -1365,7 +1365,10 @@ fn reminders_save_only_after_opt_in_and_can_be_removed_from_disk() {
     h.run();
     h.get_by_label("Reminder text").click();
     h.get_by_label("Reminder text").type_text("Local reminder");
-    h.run();
+    // Editing the focused field can request continuing text-selection repaints,
+    // particularly on macOS. Advance enough frames for the Add action rather
+    // than asking the harness to settle an actively repainting UI.
+    h.run_steps(2);
     h.get_by_label("Add reminder").click();
     h.run_steps(2);
     assert!(session::load(&h.state().session).reminders.is_empty());
