@@ -1528,9 +1528,11 @@ fn desktop_guidance_refuses_an_embedded_or_unsupported_viewport() {
         color: screen_context::BrushColor::Accent,
         width: 6.0,
     });
-    h.run();
+    // A focused text field can request ongoing caret/selection repaints on
+    // Windows. Advance bounded frames while retaining the refusal assertions.
+    h.run_steps(2);
     h.get_by_label("Show marks on desktop").click();
-    h.run();
+    h.run_steps(2);
     assert!(!h.state().overlay.is_open());
     assert!(
         h.state().status.contains("native window") || h.state().status.contains("Windows only")
