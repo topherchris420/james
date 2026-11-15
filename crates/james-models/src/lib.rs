@@ -30,6 +30,11 @@ const MAX_FRAME_BYTES: usize = 262_144;
 const MAX_MESSAGES: usize = 80;
 const MAX_MESSAGE_BYTES: usize = 32_768;
 const MAX_TOTAL_BYTES: usize = 262_144;
+/// One screenshot and up to eight explicitly selected image attachments.
+const MAX_IMAGES: usize = 9;
+const MAX_IMAGE_BYTES: usize = 16 * 1024 * 1024;
+/// Prepared PNG bytes before base64 encoding, shared by all images in a turn.
+const MAX_TOTAL_IMAGE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_ERROR_BYTES: usize = 4_096;
 const MAX_ERROR_DETAIL_CHARS: usize = 300;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
@@ -378,6 +383,29 @@ impl LocalClient {
         self.chat_stream(model, messages, png, |_| {})
     }
 
+    /// Streams one reply with several explicitly selected PNGs on the final
+    /// user turn only. Not every vision model accepts more than one image;
+    /// the server decides and any error it returns is reported as-is.
+    /// At most nine PNGs are accepted, each at most 16 MiB and together at
+    /// most 32 MiB before base64 encoding. Callers prepare and decode images;
+    /// this adapter checks their PNG signatures and serialized payload bounds.
+    pub fn chat_stream_many(
+        &self,
+        model: &str,
+        messages: &[ChatMessage],
+        images: &[&[u8]],
+        on_event: impl FnMut(StreamEvent),
+    ) -> Result<String, ApiError> {
+        let started = Instant::now();
+        let ollama = self.provider == LocalProvider::Ollama;
+        let request = if ollama {
+            build_ollama_request_many(model, messages, images)?
+        } else {
+            build_request_many(model, messages, images)?
+        };
+        self.stream_request(request, ollama, started, on_event)
+    }
+
     /// Streams one reply. `on_event` sees [`StreamEvent::Connected`] once,
     /// then every [`StreamEvent::Delta`] in order; the returned string is their
     /// concatenation. On an error the deltas already delivered are all the
@@ -390,15 +418,20 @@ impl LocalClient {
         model: &str,
         messages: &[ChatMessage],
         png: Option<&[u8]>,
+        on_event: impl FnMut(StreamEvent),
+    ) -> Result<String, ApiError> {
+        let images: Vec<&[u8]> = png.into_iter().collect();
+        self.chat_stream_many(model, messages, &images, on_event)
+    }
+
+    /// Shared streaming loop for a prepared request body.
+    fn stream_request(
+        &self,
+        request: String,
+        ollama: bool,
+        started: Instant,
         mut on_event: impl FnMut(StreamEvent),
     ) -> Result<String, ApiError> {
-        let started = Instant::now();
-        let ollama = self.provider == LocalProvider::Ollama;
-        let request = if ollama {
-            build_ollama_request(model, messages, png)?
-        } else {
-            build_request(model, messages, png)?
-        };
         let path = if ollama {
             "/api/chat"
         } else {
@@ -627,57 +660,111 @@ fn one_system_message(messages: &[ChatMessage]) -> Vec<ChatMessage> {
         .collect()
 }
 
+fn validate_images(images: &[&[u8]]) -> Result<(), ApiError> {
+    if images.len() > MAX_IMAGES {
+        return Err(ApiError::InvalidConfig(
+            "A request supports at most nine images, including its screenshot".into(),
+        ));
+    }
+    let mut total = 0_usize;
+    for bytes in images {
+        if bytes.len() > MAX_IMAGE_BYTES || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+            return Err(ApiError::InvalidConfig(
+                "Screenshots and attached images must be PNGs of at most 16 MiB".into(),
+            ));
+        }
+        total = total.saturating_add(bytes.len());
+        if total > MAX_TOTAL_IMAGE_BYTES {
+            return Err(ApiError::InvalidConfig(
+                "Images together must be at most 32 MiB before base64 encoding".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Checks the images and returns the index of the final user turn that must
+/// carry them. Image bytes never enter ChatMessage or persistence.
+fn final_user_turn(messages: &[ChatMessage], images: &[&[u8]]) -> Result<usize, ApiError> {
+    validate_images(images)?;
+    if images.is_empty() {
+        return Ok(messages.len().saturating_sub(1));
+    }
+    let Some(last) = messages.len().checked_sub(1) else {
+        return Err(ApiError::InvalidConfig(
+            "An image requires a final user question".into(),
+        ));
+    };
+    if messages[last].role != "user" {
+        return Err(ApiError::InvalidConfig(
+            "An image requires a final user question".into(),
+        ));
+    }
+    Ok(last)
+}
+
+#[cfg(test)]
 fn build_request(
     model: &str,
     messages: &[ChatMessage],
     png: Option<&[u8]>,
 ) -> Result<String, ApiError> {
-    validate_request(model, messages)?;
-    let messages = &one_system_message(messages);
-    let mut wire =
-        serde_json::to_value(messages).map_err(|err| ApiError::Protocol(err.to_string()))?;
-    if let Some(bytes) = png {
-        if bytes.len() > 16 * 1024 * 1024 || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-            return Err(ApiError::InvalidConfig(
-                "Screenshot must be a PNG of at most 16 MiB".into(),
-            ));
-        }
-        let last = messages.last().expect("validated nonempty conversation");
-        if last.role != "user" {
-            return Err(ApiError::InvalidConfig(
-                "A screenshot requires a final user question".into(),
-            ));
-        }
-        wire[messages.len() - 1]["content"] = serde_json::json!([
-            {"type":"text", "text":last.content},
-            {"type":"image_url", "image_url":{"url":format!("data:image/png;base64,{}", STANDARD.encode(bytes))}}
-        ]);
-    }
-    serde_json::to_string(&serde_json::json!({"model":model,"messages":wire,"stream":true}))
-        .map_err(|err| ApiError::Protocol(format!("Cannot serialize request: {err}")))
+    let images: Vec<&[u8]> = png.into_iter().collect();
+    build_request_many(model, messages, &images)
 }
 
-fn build_ollama_request(
+fn build_request_many(
     model: &str,
     messages: &[ChatMessage],
-    png: Option<&[u8]>,
+    images: &[&[u8]],
 ) -> Result<String, ApiError> {
     validate_request(model, messages)?;
     let messages = &one_system_message(messages);
     let mut wire =
         serde_json::to_value(messages).map_err(|err| ApiError::Protocol(err.to_string()))?;
-    if let Some(bytes) = png {
-        if bytes.len() > 16 * 1024 * 1024 || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-            return Err(ApiError::InvalidConfig(
-                "Screenshot must be a PNG of at most 16 MiB".into(),
-            ));
-        }
-        if messages.last().is_none_or(|last| last.role != "user") {
-            return Err(ApiError::InvalidConfig(
-                "A screenshot requires a final user question".into(),
-            ));
-        }
-        wire[messages.len() - 1]["images"] = serde_json::json!([STANDARD.encode(bytes)]);
+    let last = final_user_turn(messages, images)?;
+    if !images.is_empty() {
+        let text = &messages[last].content;
+        let mut parts = vec![serde_json::json!({"type":"text", "text":text})];
+        parts.extend(images.iter().map(|bytes| {
+            serde_json::json!({
+                "type":"image_url",
+                "image_url":{"url":format!("data:image/png;base64,{}", STANDARD.encode(bytes))}
+            })
+        }));
+        wire[last]["content"] = Value::Array(parts);
+    }
+    serde_json::to_string(&serde_json::json!({"model":model,"messages":wire,"stream":true}))
+        .map_err(|err| ApiError::Protocol(format!("Cannot serialize request: {err}")))
+}
+
+#[cfg(test)]
+fn build_ollama_request(
+    model: &str,
+    messages: &[ChatMessage],
+    png: Option<&[u8]>,
+) -> Result<String, ApiError> {
+    let images: Vec<&[u8]> = png.into_iter().collect();
+    build_ollama_request_many(model, messages, &images)
+}
+
+fn build_ollama_request_many(
+    model: &str,
+    messages: &[ChatMessage],
+    images: &[&[u8]],
+) -> Result<String, ApiError> {
+    validate_request(model, messages)?;
+    let messages = &one_system_message(messages);
+    let mut wire =
+        serde_json::to_value(messages).map_err(|err| ApiError::Protocol(err.to_string()))?;
+    let last = final_user_turn(messages, images)?;
+    if !images.is_empty() {
+        wire[last]["images"] = serde_json::json!(
+            images
+                .iter()
+                .map(|bytes| STANDARD.encode(bytes))
+                .collect::<Vec<_>>()
+        );
     }
     serde_json::to_string(&serde_json::json!({
         "model": model, "messages": wire, "stream": true
@@ -1771,5 +1858,204 @@ mod tests {
         assert_eq!(result.unwrap(), "Answer.");
         assert_eq!(events, ["connected", "thinking", "Answer."]);
         worker.join().unwrap();
+    }
+
+    fn two_pngs() -> (Vec<u8>, Vec<u8>) {
+        // As in the existing single-image adapter fixtures, the transport only
+        // needs a PNG signature. Image decoding belongs to the desktop tests.
+        (
+            b"\x89PNG\r\n\x1a\nfirst".to_vec(),
+            b"\x89PNG\r\n\x1a\nsecond".to_vec(),
+        )
+    }
+
+    #[test]
+    fn ollama_two_images_land_only_on_the_final_user_turn_in_order() {
+        let (first, second) = two_pngs();
+        let messages = [
+            ChatMessage::new("system", "Be brief."),
+            ChatMessage::new("user", "Earlier question"),
+            ChatMessage::new("assistant", "Earlier answer"),
+            ChatMessage::new("user", "Describe both"),
+        ];
+        let body = build_ollama_request_many("gemma3", &messages, &[&first, &second]).unwrap();
+        let request: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let wire = request["messages"].as_array().unwrap();
+        assert_eq!(wire.len(), messages.len());
+        for (index, message) in wire.iter().enumerate() {
+            let images = message["images"].as_array();
+            assert_eq!(
+                images.is_some(),
+                index == wire.len() - 1,
+                "only the final user turn carries images"
+            );
+            if let Some(images) = images {
+                let decoded: Vec<Vec<u8>> = images
+                    .iter()
+                    .map(|value| STANDARD.decode(value.as_str().unwrap()).unwrap())
+                    .collect();
+                assert_eq!(
+                    decoded.iter().map(Vec::as_slice).collect::<Vec<_>>(),
+                    [first.as_slice(), second.as_slice()],
+                    "order is preserved"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn openai_two_images_land_only_on_the_final_user_turn_in_order() {
+        let (first, second) = two_pngs();
+        let messages = [
+            ChatMessage::new("system", "Be brief."),
+            ChatMessage::new("user", "Earlier question"),
+            ChatMessage::new("assistant", "Earlier answer"),
+            ChatMessage::new("user", "Describe both"),
+        ];
+        let body = build_request_many("qwen", &messages, &[&first, &second]).unwrap();
+        let request: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let wire = request["messages"].as_array().unwrap();
+        for (index, message) in wire.iter().enumerate() {
+            if index == wire.len() - 1 {
+                let parts = message["content"].as_array().unwrap();
+                assert_eq!(parts.len(), 3, "question text plus two images");
+                assert_eq!(parts[0]["type"], "text");
+                assert_eq!(parts[0]["text"], "Describe both");
+                let urls: Vec<&str> = parts[1..]
+                    .iter()
+                    .map(|part| part["image_url"]["url"].as_str().unwrap())
+                    .collect();
+                assert_eq!(
+                    urls,
+                    [
+                        format!("data:image/png;base64,{}", STANDARD.encode(&first)),
+                        format!("data:image/png;base64,{}", STANDARD.encode(&second)),
+                    ],
+                    "order is preserved"
+                );
+            } else {
+                assert!(
+                    message["content"].is_string(),
+                    "earlier turns stay plain text"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn one_image_apis_still_carry_a_single_image() {
+        let (png, _) = two_pngs();
+        let messages = [ChatMessage::new("user", "Look")];
+        let ollama = build_ollama_request("gemma3", &messages, Some(&png)).unwrap();
+        let request: serde_json::Value = serde_json::from_str(&ollama).unwrap();
+        let images = request["messages"][0]["images"].as_array().unwrap();
+        assert_eq!(images.len(), 1);
+        let openai = build_request("qwen", &messages, Some(&png)).unwrap();
+        let request: serde_json::Value = serde_json::from_str(&openai).unwrap();
+        let parts = request["messages"][0]["content"].as_array().unwrap();
+        assert_eq!(parts.len(), 2);
+    }
+
+    #[test]
+    fn images_without_a_final_user_question_are_refused() {
+        let (png, _) = two_pngs();
+        let messages = [
+            ChatMessage::new("user", "Question"),
+            ChatMessage::new("assistant", "Answer"),
+        ];
+        assert!(build_request_many("qwen", &messages, &[&png]).is_err());
+        assert!(build_ollama_request_many("gemma3", &messages, &[&png]).is_err());
+    }
+
+    #[test]
+    fn image_count_and_prepared_byte_limits_are_inclusive() {
+        let signature = b"\x89PNG\r\n\x1a\n";
+        let batch: Vec<&[u8]> = vec![signature; MAX_IMAGES];
+        assert!(validate_images(&batch).is_ok());
+        let too_many: Vec<&[u8]> = vec![signature; MAX_IMAGES + 1];
+        assert!(validate_images(&too_many).is_err());
+
+        let mut largest = vec![0; MAX_IMAGE_BYTES];
+        largest[..signature.len()].copy_from_slice(signature);
+        assert!(validate_images(&[&largest, &largest]).is_ok());
+        assert!(validate_images(&[&largest, &largest, signature]).is_err());
+        largest.push(0);
+        assert!(validate_images(&[&largest]).is_err());
+        assert!(validate_images(&[b"not png"]).is_err());
+        assert!(validate_images(&[b""]).is_err());
+    }
+
+    #[test]
+    fn both_serializers_reject_invalid_image_batches_and_missing_questions() {
+        let signature = b"\x89PNG\r\n\x1a\n";
+        let messages = [ChatMessage::new("user", "Look")];
+        for build in [build_request_many, build_ollama_request_many] {
+            let too_many: Vec<&[u8]> = vec![signature; MAX_IMAGES + 1];
+            assert!(build("vision", &messages, &too_many).is_err());
+            assert!(build("vision", &messages, &[signature, b"bad"]).is_err());
+            assert!(build("vision", &[], &[signature]).is_err());
+            assert!(
+                build(
+                    "vision",
+                    &[ChatMessage::new("system", "Only rules")],
+                    &[signature]
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn multiple_images_follow_the_final_question_after_merging_system_messages() {
+        let (first, second) = two_pngs();
+        let messages = [
+            ChatMessage::new("system", "First rule"),
+            ChatMessage::new("user", "Earlier question"),
+            ChatMessage::new("system", "Second rule"),
+            ChatMessage::new("assistant", "Earlier answer"),
+            ChatMessage::new("user", "Compare"),
+        ];
+        let original = messages.clone();
+        for build in [build_request_many, build_ollama_request_many] {
+            let body = build("vision", &messages, &[&first, &second]).unwrap();
+            let request: Value = serde_json::from_str(&body).unwrap();
+            let wire = request["messages"].as_array().unwrap();
+            assert_eq!(wire.len(), 4);
+            assert_eq!(wire[0]["content"], "First rule\n\nSecond rule");
+            assert_eq!(wire[1]["content"], "Earlier question");
+            assert_eq!(wire[2]["content"], "Earlier answer");
+            assert_eq!(wire[3]["role"], "user");
+            assert!(
+                wire[..3]
+                    .iter()
+                    .all(|message| message.get("images").is_none())
+            );
+        }
+        assert_eq!(
+            messages, original,
+            "serialization never changes stored messages"
+        );
+    }
+
+    #[test]
+    fn empty_and_single_image_batches_preserve_the_existing_wire_formats() {
+        let (png, _) = two_pngs();
+        let messages = [ChatMessage::new("user", "Look")];
+        assert_eq!(
+            build_request("vision", &messages, None).unwrap(),
+            build_request_many("vision", &messages, &[]).unwrap()
+        );
+        assert_eq!(
+            build_request("vision", &messages, Some(&png)).unwrap(),
+            build_request_many("vision", &messages, &[&png]).unwrap()
+        );
+        assert_eq!(
+            build_ollama_request("vision", &messages, None).unwrap(),
+            build_ollama_request_many("vision", &messages, &[]).unwrap()
+        );
+        assert_eq!(
+            build_ollama_request("vision", &messages, Some(&png)).unwrap(),
+            build_ollama_request_many("vision", &messages, &[&png]).unwrap()
+        );
     }
 }

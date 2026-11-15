@@ -107,6 +107,7 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     let mut discard = false;
     let prior_annotations = app.annotations.clone();
     let mut overlay_error = None;
+    let mut guide_visibility_changed = false;
     // None leaves the selection as it is; Some(x) sets it after the read-only
     // borrow of the screenshot ends.
     let mut set_selection: Option<Option<PixelRect>> = None;
@@ -334,15 +335,21 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
         if let Some(p) = &app.pending {
             mark_click(ui, response.rect, &p.proposal.action, p.width, p.height);
         }
-        let guide_marks = app.guide_marks.as_ref();
+        let guide_marks = app.guide_marks.as_mut();
         if let Some(shown) = guide_marks.filter(|g| g.screenshot == screen.at) {
             mark_steps(
                 ui,
                 response.rect,
-                &shown.marks,
+                &shown.visible_marks(),
                 (screen.capture.width, screen.capture.height),
             );
-            ui.small("The numbers mark the steps in James's last Guide me answer. Your model placed them, and they may be off.");
+            if !shown.marks.is_empty() {
+                ui.small("The numbers mark the steps in James's last Guide me answer. Your model placed them, and they may be off.");
+            }
+            let choices = guide::checklist_ui(shown, ui);
+            if guide::apply_choices(shown, choices, true) {
+                guide_visibility_changed = true;
+            }
         }
         if app.overlay.is_open() {
             if ui.button("Hide desktop guidance").clicked() {
@@ -360,13 +367,13 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
                 .as_ref()
                 .filter(|g| g.screenshot == screen.at)
                 .map(|g| {
-                    g.marks
-                        .iter()
-                        .map(|m| crate::overlay::GuideMark {
+                    g.desktop_marks()
+                        .into_iter()
+                        .map(|(m, label)| crate::overlay::GuideMark {
                             step: m.step,
                             x: f64::from(m.x),
                             y: f64::from(m.y),
-                            label: String::new(),
+                            label,
                         })
                         .collect::<Vec<_>>()
                 })
@@ -435,6 +442,7 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     }
     if discard {
         app.screen = None;
+        app.guide_marks = None;
         app.overlay.close();
         app.annotations.clear();
         app.drawing = false;
@@ -444,6 +452,9 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     }
     if app.annotations != prior_annotations {
         app.overlay.close();
+    }
+    if guide_visibility_changed {
+        app.sync_guide_visibility();
     }
     if let Some(error) = overlay_error {
         app.fail(error);

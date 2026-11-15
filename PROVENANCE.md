@@ -2,6 +2,35 @@
 
 ## November 2026 Korso replication
 
+The 14 November frontend/backend pass independently adds elapsed history groups,
+current-chat navigation, reversible guidance-number visibility, strict
+coordinate parsing, and a user-confirmed GuidePlan checklist in the existing
+Rust implementation. The checklist keeps completed/current/upcoming instructions,
+pause/resume/end state and bounded current-step overlay labels. It is local,
+memory-only state and does not reproduce Korso's automatic control checkpoints
+or hosted guide services. No reference source,
+prompts, names, images or other assets were incorporated. No dependencies were
+added. [Its evidence report](docs/KORSO_FRONTEND_BACKEND.md) separates inspected
+artifact facts from runtime observations and implementation choices.
+
+Codex authored the initial changes in this pass. The Abliteration Flash model
+and subsequently the user-selected Large V2 model performed actual follow-on
+implementation through a scoped MCP bridge with real REA operations and
+allowlisted public James source read/search/edit access. The provider received
+that public source, structural REA results and sanitized behavior notes, not
+private user files or raw Korso source. API credentials and the private usage
+ledger remain outside the repository. The cumulative task cap is $10; the
+private ledger and final handoff hold the accounted total rather than a frozen
+interim figure in this provenance record.
+
+The current guide analysis reference is
+`ev_7aa66e67bf7be0f2375aa1ced3ab6c454efcfea0e8b40065e98268da6e5d5cd3`.
+Its static findings and the inventory evidence are linked in the frontend/backend
+report. The only Korso runtime observation in this pass was startup/onboarding
+and an unavailable sign-in surface. Authenticated guidance, history and backend
+behavior were not exercised. Multiple pending file attachments remain a James
+gap at this point. No complete replica or product-superiority claim is made.
+
 The conversation archive, compact companion, global summon, screenshot annotations,
 and draft-preserving voice submission were independently implemented in Rust.
 The [reconstruction report](docs/KORSO_REPLICATION.md) records the exact Korso 0.7.8
@@ -31,7 +60,7 @@ direct dependencies. Settings destinations use Microsoft's documented
 
 James's Rust source, tests, demonstration, architecture, and project documents were authored independently for this project on 2026-10-11. Functional requirements were informed by public Korso documentation and bounded REA inspection of its publicly downloadable Windows package.
 
-Research and implementation occurred in the same investigation. This is an independent implementation, not a claim of a formally segregated clean-room process. No reference code, source maps, prompts, UI layout, logos, fonts, images, sounds, or pet assets were copied into James. No Korso backend or private repository was accessed, and no Korso executable was launched. Public website JavaScript did run in an isolated browser during declared REA page captures.
+Research and implementation occurred in the same investigation. This is an independent implementation, not a claim of a formally segregated clean-room process. No reference code, source maps, prompts, UI layout, logos, fonts, images, sounds, or pet assets were copied into James. No Korso backend or private repository was accessed. The initial artifact investigation did not launch a Korso executable; the later 14 November runtime check observed the installed app's startup and unavailable sign-in surface, as recorded above. Public website JavaScript did run in an isolated browser during declared REA page captures.
 
 The reference installer, extracted files, and complete REA evidence remain outside the James repository. Their identifiers and hashes are recorded in [RESEARCH.md](docs/RESEARCH.md); James's MIT license does not license those artifacts. Public research documentation contains concise findings and provenance, not recovered reference source.
 

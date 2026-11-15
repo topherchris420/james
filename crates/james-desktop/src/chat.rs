@@ -1,5 +1,5 @@
 //! The conversation: who James is talking to, the messages, and the composer.
-use crate::{Ask, JamesApp, Page, Tone, guide, markdown, pages, theme, voice};
+use crate::{Ask, JamesApp, Page, Tone, attachments, guide, markdown, pages, theme, voice};
 use eframe::egui::{self, RichText};
 use james_models::{ChatMessage, Support};
 
@@ -123,34 +123,49 @@ pub fn model_facts(app: &JamesApp, ui: &mut egui::Ui) {
     }
 }
 
-/// The screenshot a Guide me answer is about, with its steps marked, while
-/// that answer and that screenshot are both current.
-fn guide_screenshot(app: &JamesApp, ui: &mut egui::Ui, answer: &str) {
-    let (Some(shown), Some(screen)) = (&app.guide_marks, &app.screen) else {
-        return;
+/// The checklist for a Guide me answer, beside its screenshot with the steps
+/// marked while that answer and that screenshot are both current. The list
+/// itself shows even when the model gave no numbers to point with.
+fn guide_screenshot(
+    shown: Option<&mut guide::GuidePlan>,
+    screen: Option<&crate::Screen>,
+    ui: &mut egui::Ui,
+    answer: &str,
+) -> bool {
+    let (Some(shown), Some(screen)) = (shown, screen) else {
+        return false;
     };
     if shown.answer != answer || shown.screenshot != screen.at {
-        return;
+        return false;
     }
     ui.add_space(4.0);
-    let response = ui.add(
-        egui::Image::new(&screen.texture)
-            .max_size(egui::vec2(ui.available_width(), 260.0))
-            .maintain_aspect_ratio(true),
-    );
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(
-            egui::WidgetType::Image,
-            true,
-            "Your screenshot with the steps marked",
-        )
-    });
-    let size = (screen.capture.width, screen.capture.height);
-    pages::mark_steps(ui, response.rect, &shown.marks, size);
-    ui.small("Your model placed these numbers, and they may be off: find the label each step names before you click.");
+    if shown.marks.is_empty() {
+        ui.small(
+            "No numbers for this Guide me answer; the steps below are all there is to follow.",
+        );
+    } else {
+        let response = ui.add(
+            egui::Image::new(&screen.texture)
+                .max_size(egui::vec2(ui.available_width(), 260.0))
+                .maintain_aspect_ratio(true),
+        );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Image,
+                true,
+                "Your screenshot with the steps marked",
+            )
+        });
+        let size = (screen.capture.width, screen.capture.height);
+        pages::mark_steps(ui, response.rect, &shown.visible_marks(), size);
+        ui.small("Your model placed these numbers, and they may be off: find the label each step names before you click.");
+    }
+    let choices = guide::checklist_ui(shown, ui);
+    guide::apply_choices(shown, choices, true)
 }
 
 fn message_ui(app: &mut JamesApp, ui: &mut egui::Ui, index: usize, last_answer: bool) {
+    let busy = app.busy();
     let message = &app.messages[index];
     let user = message.role == "user";
     let accent = theme::accent(ui);
@@ -165,6 +180,7 @@ fn message_ui(app: &mut JamesApp, ui: &mut egui::Ui, index: usize, last_answer: 
     let mut copy = false;
     let mut again = false;
     let mut read = false;
+    let mut visibility_changed = false;
     frame.show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(
@@ -179,13 +195,13 @@ fn message_ui(app: &mut JamesApp, ui: &mut egui::Ui, index: usize, last_answer: 
                     .clicked();
                 if !user && last_answer {
                     again = ui
-                        .add_enabled(!app.busy(), egui::Button::new("Ask again").small())
+                        .add_enabled(!busy, egui::Button::new("Ask again").small())
                         .on_hover_text("Send your last question again and replace this answer. Documents, Lab context and screenshots from the earlier request are not restored; reattach documents for a source-based follow-up.")
                         .clicked();
                 }
                 if !user {
                     read = ui
-                        .add_enabled(!app.busy(), egui::Button::new("Read aloud").small())
+                        .add_enabled(!busy, egui::Button::new("Read aloud").small())
                         .clicked();
                 }
             });
@@ -195,10 +211,15 @@ fn message_ui(app: &mut JamesApp, ui: &mut egui::Ui, index: usize, last_answer: 
         } else {
             markdown::show(ui, &message.content, ("message", index));
             if last_answer {
-                guide_screenshot(app, ui, &message.content);
+                visibility_changed = guide_screenshot(
+                    app.guide_marks.as_mut(), app.screen.as_ref(), ui, &message.content,
+                );
             }
         }
     });
+    if visibility_changed {
+        app.sync_guide_visibility();
+    }
     if copy {
         ui.ctx().copy_text(app.messages[index].content.clone());
         app.info("Copied.");
@@ -340,7 +361,7 @@ pub fn history(app: &mut JamesApp, ctx: &egui::Context) {
             ui.horizontal_wrapped(|ui| {
                 let search = ui.add(egui::TextEdit::singleline(&mut app.history_query)
                     .id(egui::Id::new(HISTORY_SEARCH))
-                    .hint_text("Search titles and messages…")
+                    .hint_text("Search saved titles and messages…")
                     .desired_width(260.0));
                 search.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Search conversation history"));
                 if !ui.is_sizing_pass() && ui.data_mut(|data| data.remove_temp::<bool>(egui::Id::new(HISTORY_SEARCH).with("focus"))).unwrap_or_default() {
@@ -351,15 +372,17 @@ pub fn history(app: &mut JamesApp, ctx: &egui::Context) {
                     search.request_focus();
                 }
             });
-            let rows: Vec<_> = app.archives.iter()
-                .filter(|conversation| crate::conversations::matches(conversation, &app.history_query))
-                .map(|conversation| (conversation.id.clone(), conversation.title.clone(), conversation.messages.len()))
-                .collect();
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default().as_millis().try_into().unwrap_or(u64::MAX);
+            let rows = crate::conversations::history_rows(&app.archives, &app.history_query, now);
             if !app.archives.is_empty() && rows.is_empty() {
-                ui.label("No conversations match. Try a different word.");
+                ui.label("No saved conversations match. Try a different word.");
             }
             if let Some(id) = app.history_delete.clone() {
                 egui::Frame::group(ui.style()).show(ui, |ui| {
+                    if let Some(conversation) = app.archives.iter().find(|conversation| conversation.id == id) {
+                        ui.label(format!("Saved conversation: {}", conversation.title));
+                    }
                     ui.label("Delete this saved conversation? This cannot be undone.");
                     ui.horizontal(|ui| {
                         if ui.add_enabled(!app.busy(), theme::danger(ui, "Delete saved conversation")).clicked() {
@@ -376,21 +399,40 @@ pub fn history(app: &mut JamesApp, ctx: &egui::Context) {
                 ui.label("No previous conversations yet. Start a New conversation to keep this one here.");
             }
             egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
-                for (id, title, count) in &rows {
-                    ui.push_id(id, |ui| {
+                if app.has_conversation_context() {
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.label(RichText::new("Current conversation").strong());
+                        ui.label(crate::conversations::current_title(&app.messages));
+                        ui.small(format!("{} messages · your draft stays here", app.messages.len()));
+                        if ui.button("Return to current conversation").clicked() {
+                            app.show_history = false;
+                            app.page = Page::Chat;
+                            app.focus_composer = true;
+                        }
+                    });
+                }
+                // Rows arrive sorted by group, so each nonempty group is one
+                // heading and nothing is grouped or sorted a second time.
+                for group in crate::conversations::HistoryGroup::ORDER {
+                    let mut grouped = rows.iter().filter(|row| row.group == group).peekable();
+                    if grouped.peek().is_none() { continue; }
+                    ui.label(RichText::new(group.label()).strong());
+                    for row in grouped {
+                    ui.push_id(&row.id, |ui| {
                         egui::Frame::group(ui.style()).show(ui, |ui| {
-                            ui.label(RichText::new(title).strong());
-                            ui.small(format!("{count} messages"));
+                            ui.label(RichText::new(&row.title).strong());
+                            ui.small(format!("{} messages · {}", row.message_count, crate::conversations::age_label(row.updated_at, now)));
                             ui.horizontal(|ui| {
                                 if ui.add_enabled(!app.busy(), egui::Button::new("Open conversation")).clicked() {
-                                    resume = Some(id.clone());
+                                    resume = Some(row.id.clone());
                                 }
                                 if ui.add_enabled(!app.busy(), egui::Button::new("Delete")).clicked() {
-                                    app.history_delete = Some(id.clone());
+                                    app.history_delete = Some(row.id.clone());
                                 }
                             });
                         });
                     });
+                    }
                 }
             });
         });
@@ -538,19 +580,28 @@ fn attached_context(app: &mut JamesApp, ui: &mut egui::Ui) {
 }
 
 fn context_items(app: &mut JamesApp, ui: &mut egui::Ui) {
-    if let Some(file) = &app.attachment {
-        let short: String = file.name.chars().take(28).collect();
-        let title = if short.len() < file.name.len() {
-            format!("{short}…")
-        } else {
-            short
-        };
-        if ui.small_button(title).on_hover_text(&file.name).clicked() {
-            app.show_attachment = true;
-            ui.close_menu();
+    if !app.attachment.is_empty() {
+        // One button per selected file, like Korso's pending-file rows: each
+        // opens the shared preview, and they are removed one at a time.
+        let files: Vec<String> = app
+            .attachment
+            .iter()
+            .map(|file| file.name.clone())
+            .collect();
+        for name in files {
+            let short: String = name.chars().take(28).collect();
+            let title = if short.len() < name.len() {
+                format!("{short}…")
+            } else {
+                short
+            };
+            if ui.small_button(title).on_hover_text(&name).clicked() {
+                app.show_attachment = true;
+                ui.close_menu();
+            }
         }
-        if ui.small_button("Remove file").clicked() {
-            app.attachment = None;
+        if ui.small_button("Remove files").clicked() {
+            app.attachment = attachments::Selection::default();
             app.attachment_path.clear();
         }
     }
@@ -664,7 +715,7 @@ pub fn composer(app: &mut JamesApp, ctx: &egui::Context) {
         ui.add_space(6.0);
         let send_keys = if cfg!(target_os = "macos") { "⌘ Return" } else { "Ctrl+Enter" };
         let narrow = app.uses_compact_menus(ctx);
-        let context_count = [app.attachment.is_some(), app.workspace_context.is_some(), app.attach_screen, app.lab.include]
+        let context_count = [!app.attachment.is_empty(), app.workspace_context.is_some(), app.attach_screen, app.lab.include]
             .into_iter().filter(|included| *included).count();
         if !narrow && context_count > 0 {
             attached_context(app, ui);
@@ -772,24 +823,43 @@ pub fn composer(app: &mut JamesApp, ctx: &egui::Context) {
                     .add_enabled(can_attach, egui::Button::new("Attach"))
                     .clicked()
                     || (can_attach && enter);
-                ui.small("PDF text, UTF-8 text, PNG, JPEG or WebP");
-                if let Some(attachment) = &app.attachment {
+                ui.small("PDF text, UTF-8 text, PNG, JPEG or WebP; up to eight files");
+                if !app.attachment.is_empty() {
                     ui.separator();
-                    ui.label(RichText::new(&attachment.name).strong());
-                    ui.small("Included with your next chat question.");
-                    if let crate::attachments::Content::Text(text) = &attachment.content {
-                        egui::ScrollArea::vertical()
-                            .max_height(180.0)
-                            .show(ui, |ui| {
-                                ui.add(egui::Label::new(RichText::new(text).monospace()).wrap());
-                            });
+                    ui.label(
+                        RichText::new(format!(
+                            "Files ({}) — included with your next chat question.",
+                            app.attachment.len()
+                        ))
+                        .strong(),
+                    );
+                    let mut remove = None;
+                    for attachment in app.attachment.iter() {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(&attachment.name).strong());
+                            if ui
+                                .small_button("Remove")
+                                .on_hover_text("Remove this one file")
+                                .clicked()
+                            {
+                                remove = Some(attachment.id);
+                            }
+                        });
+                        if let crate::attachments::Content::Text(text) = &attachment.content {
+                            egui::ScrollArea::vertical()
+                                .max_height(180.0)
+                                .show(ui, |ui| {
+                                    ui.add(
+                                        egui::Label::new(RichText::new(text).monospace()).wrap(),
+                                    );
+                                });
+                        }
                     }
-                    if ui
-                        .add_enabled(!app.busy(), egui::Button::new("Remove attachment"))
-                        .clicked()
-                    {
-                        app.attachment = None;
-                        app.attachment_path.clear();
+                    if let Some(id) = remove {
+                        app.attachment.remove(id);
+                        if app.attachment.is_empty() {
+                            app.attachment_path.clear();
+                        }
                     }
                 }
             });

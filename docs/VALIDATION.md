@@ -5,6 +5,49 @@ newest first. [END_USER_READINESS.md](END_USER_READINESS.md) turns it into a
 score and release classification; [ACCEPTANCE_TESTS.md](ACCEPTANCE_TESTS.md)
 lists the scenarios still to run.
 
+## Korso-informed native frontend/backend checks (2026-11-14)
+
+The working branch is based on `1f85e66`. Checks run on Windows ARM64 using
+Rust 1.99.0 and the x64 GNU target through emulation, with the existing local
+Cargo dependency cache (`--offline --locked`). The first complete guide/history
+pass passed 341 workspace tests, including 205 desktop tests, with four opt-in
+platform tests ignored. Earlier parser, fixture and accessibility-query failures
+were reproduced and corrected before that passing run. Final attachment and
+strict-lint results are recorded below after the implementation settles.
+
+The new GUI tests drive the actual egui frontend through AccessKit with scripted
+loopback model servers. They cover history return without losing draft context;
+literal saved-history search and timestamp grouping; Guide me with marks disabled;
+local progress, Pause/Resume/End; marks-only replies; shared visibility controls;
+new-answer lifecycle; and preserving user drawings. These are native GUI tests,
+not a browser demonstration or a live compatibility test of every model server.
+
+Not exercised here: authenticated Korso history/guidance, hosted service behavior,
+physical overlay click-through/transparency, mixed-monitor DPI, macOS/Linux native
+windows, real microphone/input helpers, or release installers. The four ignored
+tests require explicit desktop capture, Windows input or speech-helper execution.
+Minimum supported Rust toolchains and other operating systems were not rechecked
+in this session. The readiness classification remains developer preview. See the
+[feature/evidence report](KORSO_FRONTEND_BACKEND.md) for static-analysis coverage
+and the separation between observations and design choices.
+
+### Completion run (2026-11-14, later session)
+
+After the multi-file attachment migration was finished (see the completion pass
+in the feature report), the full suite was re-run on Windows ARM64 building the
+x86_64-pc-windows-msvc target under Visual Studio 2026 Build Tools, Rust 1.99.0,
+`--locked` with the local Cargo cache:
+
+- `cargo test --workspace --all-targets -- --test-threads=1`: **361 passed,
+  0 failed, 4 ignored** (211 desktop tests). Single-threaded execution avoids a
+  known repaint flake in the companion timer/reminder fixtures on this host
+  that also reproduces on the unmodified `main` branch under parallel load.
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- `cargo fmt --check`: clean.
+
+The workspace was not re-verified on macOS, Linux or the minimum supported
+Rust toolchain in this session.
+
 ## Conversation reliability checks (2026-10-21)
 
 Automated checks on Windows using Rust 1.99.0 with the x64 GNU target:

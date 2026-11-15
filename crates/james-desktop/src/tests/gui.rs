@@ -994,6 +994,7 @@ fn every_character_the_interface_uses_can_be_drawn() {
     let sources = [
         include_str!("../main.rs"),
         include_str!("../chat.rs"),
+        include_str!("../guide.rs"),
         include_str!("../setup.rs"),
         include_str!("../pages.rs"),
         include_str!("../lab_view.rs"),
@@ -1212,17 +1213,19 @@ fn attached_text_reaches_only_the_intended_chat_request() {
         ndjson(&["Read it."], Duration::ZERO)
     });
     let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
-    h.state_mut().attachment = Some(attachments::Attachment {
+    h.state_mut().attachment = attachments::Selection::from_parts(vec![attachments::Attachment {
+        id: 0,
         name: "notes.txt".into(),
         content: attachments::Content::Text("Private fixture content".into()),
-    });
+    }])
+    .unwrap();
     type_message(&mut h, "Summarize the attachment");
     h.get_by_label("Send").click();
     wait_until(&mut h, "the attachment answer", |app| app.worker.is_none());
     let request: serde_json::Value = serde_json::from_str(&seen.lock().unwrap()).unwrap();
     assert!(request.to_string().contains("Private fixture content"));
     assert!(request.to_string().contains("notes.txt"));
-    assert!(h.state().attachment.is_none());
+    assert!(h.state().attachment.is_empty());
     assert!(
         !std::fs::read_to_string(&h.state().session)
             .unwrap()
@@ -1240,17 +1243,19 @@ fn spoken_question_leaves_a_file_attachment_for_the_typed_draft() {
     });
     let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
     h.state_mut().draft = "A typed draft".into();
-    h.state_mut().attachment = Some(attachments::Attachment {
+    h.state_mut().attachment = attachments::Selection::from_parts(vec![attachments::Attachment {
+        id: 0,
         name: "private.txt".into(),
         content: attachments::Content::Text("Attachment stays here".into()),
-    });
+    }])
+    .unwrap();
     assert!(
         h.state_mut()
             .send_voice_question("A spoken question".into())
     );
     wait_until(&mut h, "the spoken answer", |app| app.worker.is_none());
     assert_eq!(h.state().draft, "A typed draft");
-    assert!(h.state().attachment.is_some());
+    assert!(!h.state().attachment.is_empty());
     assert!(!seen.lock().unwrap().contains("Attachment stays here"));
 }
 
@@ -1271,15 +1276,17 @@ fn image_attachment_is_sent_as_an_image_and_conflicts_with_screenshot() {
     ))
     .write_to(&mut png, image::ImageFormat::Png)
     .unwrap();
-    h.state_mut().attachment = Some(attachments::Attachment {
+    h.state_mut().attachment = attachments::Selection::from_parts(vec![attachments::Attachment {
+        id: 0,
         name: "picture.png".into(),
         content: attachments::Content::Image(png.into_inner()),
-    });
+    }])
+    .unwrap();
     with_screen(&mut h);
     h.state_mut().attach_screen = true;
     h.state_mut().draft = "Describe this".into();
     assert!(!h.state_mut().send(Ask::Chat));
-    assert!(h.state().attachment.is_some());
+    assert!(!h.state().attachment.is_empty());
     assert!(h.state().status.contains("either the screenshot"));
     h.state_mut().attach_screen = false;
     assert!(h.state_mut().send(Ask::Chat));
@@ -1321,15 +1328,19 @@ fn floating_companion_adds_and_removes_a_reminder() {
     let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
     let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
     h.state_mut().floating.visible = true;
-    h.run();
+    // The companion's text field can request selection repaints, so advance a
+    // fixed number of frames instead of waiting for the UI to settle.
+    h.run_steps(2);
     h.get_by_label("Reminder text").click();
     h.get_by_label("Reminder text").type_text("Check the oven");
-    h.run();
+    // A focused text field can keep requesting selection/caret repaints.
+    // Exercise the reminder action without requiring the UI to become idle.
+    h.run_steps(2);
     h.get_by_label("Add reminder").click();
     h.run_steps(2);
     assert!(h.query_by_label_contains("Check the oven").is_some());
     h.get_by_label("Remove").click();
-    h.run();
+    h.run_steps(2);
     assert!(h.query_by_label_contains("Check the oven").is_none());
 }
 
@@ -1962,6 +1973,126 @@ fn guide_me_marks_its_steps_on_the_screenshot() {
 }
 
 #[test]
+fn guide_checklist_survives_with_marks_switched_off() {
+    // A real Guide me send with the coordinate prompt disabled: the answer's
+    // checklist still works, the dimensions are still recorded, and no marks
+    // instruction is sent to the model.
+    let seen = Arc::new(Mutex::new(String::new()));
+    let body = Arc::clone(&seen);
+    let port = ollama(move |request| {
+        *body.lock().unwrap() = request.to_owned();
+        ndjson(&["1. Open the menu.\n2. Choose **Save**."], Duration::ZERO)
+    });
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::RgbaImage::from_pixel(8, 8, image::Rgba([255, 255, 255, 255]))
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+    let texture = h.ctx.load_texture(
+        "test-screen",
+        egui::ColorImage::new([8, 8], egui::Color32::WHITE),
+        egui::TextureOptions::LINEAR,
+    );
+    h.state_mut().screen = Some(Screen {
+        capture: Screenshot {
+            png: png.into_inner(),
+            width: 8,
+            height: 8,
+            target: None,
+            james_hidden: Some(true),
+        },
+        texture,
+        at: Instant::now(),
+        selection: None,
+        from_primary: true,
+    });
+    // The coordinate prompt is switched off, but the checklist still applies.
+    h.state_mut().prefs.guide_marks = false;
+    h.state_mut().draft = "How do I save?".into();
+    assert!(h.state_mut().send(Ask::Guide));
+    wait_until(&mut h, "the guidance", |app| app.worker.is_none());
+    frames(&mut h, 2);
+    let request = seen.lock().unwrap().clone();
+    assert!(
+        !request.contains("Marks: 1 (x, y)"),
+        "no marks instruction was sent: {request}"
+    );
+    // The dimensions of the sent screenshot are still recorded for mapping.
+    assert_eq!(h.state().sent_image, Some((8, 8)));
+    let plan = h.state().guide_marks.clone().expect("a checklist exists");
+    assert_eq!(plan.steps.len(), 2);
+    assert!(plan.marks.is_empty(), "the model was not asked for marks");
+    assert_eq!(plan.current(), Some(1));
+    // The checklist advances by the user's clicks alone, with no requests.
+    h.get_by_label("Complete current step").click();
+    frames(&mut h, 2);
+    assert_eq!(h.state().guide_marks.as_ref().unwrap().current(), Some(2));
+    assert!(h.state().worker.is_none(), "ticking contacts no model");
+    assert!(h.state().pending.is_none(), "ticking proposes no action");
+}
+
+#[test]
+fn a_later_chat_answer_retires_the_previous_guide_but_keeps_your_strokes() {
+    // A real Guide me send, then a real Chat send: the old checklist and
+    // desktop overlay are cleared while the user's strokes and the new reply
+    // are kept.
+    let port = ollama(|_| ndjson(&["Plain chat answer."], Duration::ZERO));
+    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::RgbaImage::from_pixel(8, 8, image::Rgba([255, 255, 255, 255]))
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+    let texture = h.ctx.load_texture(
+        "test-screen",
+        egui::ColorImage::new([8, 8], egui::Color32::WHITE),
+        egui::TextureOptions::LINEAR,
+    );
+    h.state_mut().screen = Some(Screen {
+        capture: Screenshot {
+            png: png.into_inner(),
+            width: 8,
+            height: 8,
+            target: None,
+            james_hidden: Some(true),
+        },
+        texture,
+        at: Instant::now(),
+        selection: None,
+        from_primary: true,
+    });
+    // A completed Guide me answer with a running checklist.
+    h.state_mut().sent_image = Some((8, 8));
+    h.state_mut().prefs.guide_marks = true;
+    let answer = h
+        .state_mut()
+        .take_marks("1. First.\n2. Second.\nMarks: 1 (2, 3); 2 (5, 6)");
+    h.state_mut().messages = vec![ChatMessage::new("assistant", &answer)];
+    h.state_mut().annotations.push(screen_context::Stroke {
+        points: vec![screen_context::Point { x: 1.0, y: 2.0 }],
+        color: screen_context::BrushColor::Accent,
+        width: 4.0,
+    });
+    let strokes = h.state().annotations.clone();
+    // A new successful Chat answer retires the guide.
+    h.state_mut().draft = "A plain follow-up question".into();
+    assert!(h.state_mut().send(Ask::Chat));
+    wait_until(&mut h, "the chat answer", |app| app.worker.is_none());
+    frames(&mut h, 2);
+    assert!(
+        h.state().guide_marks.is_none(),
+        "a later answer clears the stale guide"
+    );
+    assert!(
+        h.state()
+            .messages
+            .last()
+            .is_some_and(|m| m.content == "Plain chat answer."),
+        "the chat answer itself is kept"
+    );
+    assert_eq!(h.state().annotations, strokes, "user strokes survive");
+}
+
+#[test]
 fn document_evidence_matches_the_request_and_never_enters_saved_history() {
     let seen = Arc::new(Mutex::new(String::new()));
     let body = Arc::clone(&seen);
@@ -1973,12 +2104,14 @@ fn document_evidence_matches_the_request_and_never_enters_saved_history() {
         )
     });
     let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
-    h.state_mut().attachment = Some(attachments::Attachment {
+    h.state_mut().attachment = attachments::Selection::from_parts(vec![attachments::Attachment {
+        id: 0,
         name: "experiment.txt".into(),
         content: attachments::Content::Text(
             "PRIVATE_SOURCE_TITLE\nPRIVATE_SOURCE_MEASUREMENT".into(),
         ),
-    });
+    }])
+    .unwrap();
     type_message(&mut h, "What did the experiment measure?");
     h.get_by_label("Send").click();
     wait_until(&mut h, "document answer", |app| app.worker.is_none());
@@ -2050,15 +2183,17 @@ fn oversized_fixed_context_is_refused_without_consuming_the_draft_or_document() 
             ..ModelInfo::default()
         },
     ));
-    h.state_mut().attachment = Some(attachments::Attachment {
+    h.state_mut().attachment = attachments::Selection::from_parts(vec![attachments::Attachment {
+        id: 0,
         name: "large.txt".into(),
         content: attachments::Content::Text("x".repeat(12_000)),
-    });
+    }])
+    .unwrap();
     h.state_mut().draft = "Summarize this".into();
     assert!(!h.state_mut().send(Ask::Chat));
     assert!(h.state().status.contains("estimated text budget"));
     assert_eq!(h.state().draft, "Summarize this");
-    assert!(h.state().attachment.is_some());
+    assert!(!h.state().attachment.is_empty());
     assert!(h.state().messages.is_empty());
     assert!(h.state().receipt.is_none());
     assert_eq!(count.load(Ordering::SeqCst), 0);
@@ -2093,10 +2228,12 @@ fn evidence_stays_bound_to_its_answer_after_history_retention() {
     app.messages = (0..80)
         .map(|i| ChatMessage::new(if i % 2 == 0 { "user" } else { "assistant" }, "earlier"))
         .collect();
-    app.attachment = Some(attachments::Attachment {
+    app.attachment = attachments::Selection::from_parts(vec![attachments::Attachment {
+        id: 0,
         name: "source.txt".into(),
         content: attachments::Content::Text("a result".into()),
-    });
+    }])
+    .unwrap();
     app.draft = "Question".into();
     let mut h = harness(app);
     assert!(h.state_mut().send(Ask::Chat));
@@ -2142,6 +2279,334 @@ fn history_search_filters_by_answer_content_without_a_model_request() {
 }
 
 #[test]
+fn grouped_history_returns_to_the_current_chat_without_consuming_its_context() {
+    let mut app = james(Some("gemma3:4b"));
+    let now: u64 = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        .try_into()
+        .unwrap();
+    let day = 86_400_000;
+    for (title, at) in [
+        ("Recent sample", now - 60_000),
+        ("Earlier this week", now - 3 * day),
+        ("Older sample", now - 9 * day),
+        ("Clock adjustment sample", now + day),
+    ] {
+        let id =
+            conversations::archive(&mut app.archives, &[ChatMessage::new("user", title)]).unwrap();
+        app.archives
+            .iter_mut()
+            .find(|chat| chat.id == id)
+            .unwrap()
+            .updated_at = at;
+    }
+    app.messages = vec![ChatMessage::new("user", "Current sample")];
+    app.draft = "Unsent sample draft".into();
+    app.attachment = attachments::Selection::from_parts(vec![attachments::Attachment {
+        id: 0,
+        name: "sample.txt".into(),
+        content: attachments::Content::Text("Unsent sample context".into()),
+    }])
+    .unwrap();
+    let messages = app.messages.clone();
+    let archives = app.archives.clone();
+    let mut h = harness(app);
+    with_screen(&mut h);
+    let capture_time = h.state().screen.as_ref().unwrap().at;
+    h.get_by_label("History").click();
+    frames(&mut h, 2);
+    for group in [
+        "Recent (under 24 hours)",
+        "Previous week (24 hours to under 7 days)",
+        "Earlier (7 days or more)",
+        "Unknown time",
+    ] {
+        assert!(h.query_by_label(group).is_some(), "missing {group}");
+    }
+    h.get_by_label("Search conversation history")
+        .type_text("no matches");
+    frames(&mut h, 2);
+    assert!(
+        h.query_by_label("No saved conversations match. Try a different word.")
+            .is_some()
+    );
+    assert!(h.query_by_label("Recent (under 24 hours)").is_none());
+    h.get_by_label("Return to current conversation").click();
+    frames(&mut h, 3);
+    assert!(!h.state().show_history);
+    assert!(!h.state().confirm_clear);
+    assert_eq!(h.state().messages, messages);
+    assert_eq!(h.state().archives, archives);
+    assert_eq!(h.state().draft, "Unsent sample draft");
+    assert_eq!(h.state().history_query, "no matches");
+    assert_eq!(
+        h.state().attachment.iter().next().unwrap().name,
+        "sample.txt"
+    );
+    assert_eq!(h.state().screen.as_ref().unwrap().at, capture_time);
+    assert!(h.state().worker.is_none());
+    assert!(h.get_by_label("Message to James").is_focused());
+}
+
+#[test]
+fn guide_visibility_is_shared_between_chat_and_screen_and_resets_for_new_answers() {
+    let mut h = harness(james(Some("gemma3:4b")));
+    with_screen(&mut h);
+    h.state_mut().prefs.guide_marks = true;
+    h.state_mut().sent_image = Some((100, 100));
+    let answer = h
+        .state_mut()
+        .take_marks("1. Inspect the menu.\n2. Check the title.\nMarks: 1 (20, 30); 2 (60, 70)");
+    h.state_mut().messages = vec![ChatMessage::new("assistant", &answer)];
+    frames(&mut h, 2);
+    h.get_by_label("Show step 1").click();
+    frames(&mut h, 2);
+    let visible = h.state().guide_marks.as_ref().unwrap().visible_marks();
+    assert_eq!(
+        visible.iter().map(|mark| mark.step).collect::<Vec<_>>(),
+        [2]
+    );
+    assert!(h.query_by_label("Showing 1 of 2 step numbers.").is_some());
+    h.state_mut().page = Page::Screen;
+    frames(&mut h, 2);
+    h.get_by_label("Show step 2").click();
+    frames(&mut h, 2);
+    assert!(
+        h.state()
+            .guide_marks
+            .as_ref()
+            .unwrap()
+            .visible_marks()
+            .is_empty()
+    );
+    assert!(
+        h.query_by_label(
+            "All step numbers are hidden. The instructions still apply to this screenshot."
+        )
+        .is_some()
+    );
+    h.get_by_label("Show all steps").click();
+    frames(&mut h, 2);
+    assert_eq!(
+        h.state()
+            .guide_marks
+            .as_ref()
+            .unwrap()
+            .visible_marks()
+            .len(),
+        2
+    );
+    h.get_by_label("Show step 1").click();
+    frames(&mut h, 2);
+    assert_eq!(h.state().messages[0].content, answer);
+    assert!(
+        h.state().worker.is_none(),
+        "visibility never makes a model request"
+    );
+    h.state_mut()
+        .take_marks("1. Replacement advice.\nMarks: 1 (10, 10)");
+    frames(&mut h, 2);
+    assert!(h.state().guide_marks.as_ref().unwrap().is_visible(1));
+    h.get_by_label("Discard screenshot").click();
+    frames(&mut h, 2);
+    assert!(h.state().guide_marks.is_none());
+    assert!(h.query_by_label("Show step 1").is_none());
+}
+
+/// A Guide me answer whose instructions have no coordinates at all.
+fn guide_without_numbers(h: &mut Harness<'static, JamesApp>) -> String {
+    with_screen(h);
+    h.state_mut().sent_image = Some((100, 100));
+    let answer = h.state_mut().take_marks(
+        "Try this:\n1. Open the settings menu.\n2. Read the first heading.\n3. Close the menu.\nMarks: none",
+    );
+    h.state_mut().messages = vec![ChatMessage::new("assistant", &answer)];
+    answer
+}
+
+#[test]
+fn a_checklist_works_with_no_numbers_and_advances_only_by_your_clicks() {
+    let mut h = harness(james(Some("gemma3:4b")));
+    let answer = guide_without_numbers(&mut h);
+    frames(&mut h, 2);
+    assert_eq!(h.state().messages[0].content, answer);
+    assert!(
+        h.state()
+            .guide_marks
+            .as_ref()
+            .is_some_and(|g| g.marks.is_empty()),
+        "the checklist exists without coordinates"
+    );
+    assert!(h.query_by_label("Show step 1").is_none());
+    assert!(
+        h.query_by_label_contains("No numbers for this Guide me answer")
+            .is_some()
+    );
+    assert!(h.query_by_label("Complete current step").is_some());
+    // Nothing advances on its own; each tick is the user's.
+    h.get_by_label("Complete current step").click();
+    frames(&mut h, 2);
+    let plan = h.state().guide_marks.as_ref().unwrap();
+    assert_eq!(plan.current(), Some(2));
+    assert!(h.query_by_label("Complete current step").is_some());
+    h.get_by_label("Complete current step").click();
+    frames(&mut h, 2);
+    assert_eq!(h.state().guide_marks.as_ref().unwrap().current(), Some(3));
+    // The last step finishes the guide, so its control is named as such.
+    h.get_by_label("Complete current step (last finishes)")
+        .click();
+    frames(&mut h, 2);
+    let plan = h.state().guide_marks.as_ref().unwrap();
+    assert_eq!(plan.mode(), crate::guide::Progress::Finished);
+    assert!(plan.current().is_none());
+    assert!(h.query_by_label_contains("Guide finished").is_some());
+    assert!(
+        h.state().worker.is_none(),
+        "ticking a step contacts no model"
+    );
+    assert!(h.state().pending.is_none(), "ticking proposes no action");
+}
+
+#[test]
+fn a_running_checklist_of_three_steps_finishes_on_the_last_tick() {
+    let mut h = harness(james(Some("gemma3:4b")));
+    with_screen(&mut h);
+    h.state_mut().prefs.guide_marks = true;
+    h.state_mut().sent_image = Some((100, 100));
+    let answer = h
+        .state_mut()
+        .take_marks("1. First.\n2. Second.\n3. Third.\nMarks: 1 (20, 30); 2 (60, 70)");
+    h.state_mut().messages = vec![ChatMessage::new("assistant", &answer)];
+    frames(&mut h, 2);
+    for expected in [2, 3] {
+        h.get_by_label("Complete current step").click();
+        frames(&mut h, 2);
+        let plan = h.state().guide_marks.as_ref().unwrap();
+        assert_eq!(plan.current(), Some(expected));
+    }
+    h.get_by_label("Complete current step (last finishes)")
+        .click();
+    frames(&mut h, 2);
+    assert_eq!(
+        h.state().guide_marks.as_ref().unwrap().mode(),
+        crate::guide::Progress::Finished
+    );
+    assert!(h.state().worker.is_none());
+}
+
+#[test]
+fn pause_resume_and_end_change_numbers_without_touching_drawing() {
+    let mut h = harness(james(Some("gemma3:4b")));
+    with_screen(&mut h);
+    h.state_mut().prefs.guide_marks = true;
+    h.state_mut().sent_image = Some((100, 100));
+    let answer = h
+        .state_mut()
+        .take_marks("1. First.\n2. Second.\nMarks: 1 (20, 30); 2 (60, 70)");
+    h.state_mut().messages = vec![ChatMessage::new("assistant", &answer)];
+    // A drawing the user made with the screen tool.
+    h.state_mut().annotations.push(screen_context::Stroke {
+        points: vec![screen_context::Point { x: 10.0, y: 10.0 }],
+        color: screen_context::BrushColor::Accent,
+        width: 6.0,
+    });
+    frames(&mut h, 2);
+    let drawing = h.state().annotations.clone();
+
+    h.get_by_label("Pause guide").click();
+    frames(&mut h, 2);
+    let plan = h.state().guide_marks.as_ref().unwrap();
+    assert_eq!(plan.mode(), crate::guide::Progress::Paused);
+    assert!(
+        plan.visible_marks().is_empty(),
+        "pausing suppresses desktop numbers"
+    );
+    assert_eq!(plan.marks.len(), 2, "the numbers are kept, just not shown");
+    assert_eq!(h.state().annotations, drawing, "the drawing stays");
+    // Advancement is refused while paused: the click is on a disabled button.
+    assert!(h.query_by_label("Complete current step").is_some());
+    h.get_by_label("Resume guide").click();
+    frames(&mut h, 2);
+    let plan = h.state().guide_marks.as_ref().unwrap();
+    assert_eq!(plan.mode(), crate::guide::Progress::Underway);
+    assert_eq!(
+        plan.visible_marks().len(),
+        2,
+        "the same screenshot restores its numbers"
+    );
+    h.get_by_label("Complete current step").click();
+    frames(&mut h, 2);
+    assert_eq!(h.state().guide_marks.as_ref().unwrap().current(), Some(2));
+
+    h.get_by_label("End guide").click();
+    frames(&mut h, 2);
+    let plan = h.state().guide_marks.as_ref().unwrap();
+    assert_eq!(plan.mode(), crate::guide::Progress::Ended);
+    assert!(plan.visible_marks().is_empty());
+    assert_eq!(plan.current(), None);
+    assert!(h.state().annotations == drawing, "ending keeps the drawing");
+    assert!(
+        h.state().worker.is_none(),
+        "the controls never call a model"
+    );
+    assert!(
+        h.state().pending.is_none(),
+        "the controls never propose a click"
+    );
+}
+
+#[test]
+fn a_new_answer_resets_progress_and_hiding_a_number_does_not_tick_it() {
+    let mut h = harness(james(Some("gemma3:4b")));
+    with_screen(&mut h);
+    h.state_mut().prefs.guide_marks = true;
+    h.state_mut().sent_image = Some((100, 100));
+    let answer = h
+        .state_mut()
+        .take_marks("1. First.\n2. Second.\nMarks: 1 (20, 30); 2 (60, 70)");
+    h.state_mut().messages = vec![ChatMessage::new("assistant", &answer)];
+    frames(&mut h, 2);
+    h.get_by_label("Complete current step").click();
+    frames(&mut h, 2);
+    assert_eq!(h.state().guide_marks.as_ref().unwrap().current(), Some(2));
+    // Hiding the current number is presentation only.
+    h.get_by_label("Show step 2").click();
+    frames(&mut h, 2);
+    assert_eq!(
+        h.state().guide_marks.as_ref().unwrap().current(),
+        Some(2),
+        "hiding a number does not complete the step"
+    );
+    // A replacement answer starts again at step one.
+    let replacement = h
+        .state_mut()
+        .take_marks("1. Start over.\n2. Finish.\nMarks: 1 (10, 10)");
+    h.state_mut().messages = vec![ChatMessage::new("assistant", &replacement)];
+    frames(&mut h, 2);
+    let plan = h.state().guide_marks.as_ref().unwrap();
+    assert_eq!(plan.current(), Some(1));
+    assert_eq!(plan.mode(), crate::guide::Progress::Underway);
+    assert!(h.state().worker.is_none());
+}
+
+#[test]
+fn a_screenshot_only_conversation_can_return_from_history() {
+    let mut h = harness(james(Some("gemma3:4b")));
+    with_screen(&mut h);
+    h.state_mut().show_history = true;
+    frames(&mut h, 2);
+    h.get_by_label("Return to current conversation").click();
+    frames(&mut h, 2);
+    assert!(h.state().screen.is_some());
+    assert!(h.state().messages.is_empty());
+    assert!(h.state().archives.is_empty());
+    assert!(!h.state().show_history);
+    assert!(h.state().worker.is_none());
+}
+
+#[test]
 fn context_controls_attach_and_detach_without_changing_the_draft() {
     let mut h = harness(james(Some("gemma3:4b")));
     let path = h.state().session.parent().unwrap().join("sample.txt");
@@ -2157,14 +2622,14 @@ fn context_controls_attach_and_detach_without_changing_the_draft() {
     frames(&mut h, 2);
     h.get_by_label("Attach").click();
     wait_until(&mut h, "the file to attach", |app| {
-        app.worker.is_none() && app.attachment.is_some()
+        app.worker.is_none() && !app.attachment.is_empty()
     });
     h.get_by_label("sample.txt").click();
     frames(&mut h, 2);
     assert!(h.query_by_label("A local observation").is_some());
-    h.get_by_label("Remove attachment").click();
+    h.get_by_label("Remove").click();
     frames(&mut h, 2);
-    assert!(h.state().attachment.is_none());
+    assert!(h.state().attachment.is_empty());
     h.state_mut().show_attachment = false;
 
     with_screen(&mut h);

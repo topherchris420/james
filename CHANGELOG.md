@@ -11,6 +11,28 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ## Unreleased
 
+- **Clearer conversation history.** Saved chats are grouped by elapsed age and
+  show when they were saved. A separate current-conversation card returns to
+  the composer without discarding its draft, screenshot, attachments or review.
+  Missing and future timestamps are labelled as unknown.
+- **Choose which guidance numbers to show.** Toggle each numbered Guide me mark
+  from the chat preview or Screen context, or restore all numbers. An open
+  desktop overlay updates immediately; hiding the last number closes an overlay
+  with no user drawings. Visibility does not perform or complete a step.
+- **Follow a checklist at your own pace.** Numbered Guide me instructions now
+  show completed, current and upcoming steps, with Pause, Resume, Complete and
+  End controls. Progress works with screenshot numbers switched off and records
+  only your confirmation. A later answer or new capture retires the old guide.
+- **Reject malformed guidance coordinates.** Signed, decimal and otherwise
+  malformed model tuples no longer get reinterpreted as positive pixel locations.
+  See [frontend/backend evidence](docs/KORSO_FRONTEND_BACKEND.md).
+- **Attach several files to one question.** Select up to eight PDFs, UTF-8
+  text files, PNGs, JPEGs or WebP images together (96 KiB of text and 16 MiB
+  of images in total), review each one, and remove any single file before
+  sending. Files are sent only with the next chat question and are restored if
+  that request fails or is interrupted, so a refused reply never silently drops
+  them. A screenshot question and attached images remain mutually exclusive.
+
 ## 0.4.0-preview.4 — 2026-11-11
 
 This preview brings document citations, request evidence, searchable history,

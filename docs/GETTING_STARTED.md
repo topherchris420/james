@@ -157,6 +157,12 @@ setup again from **Settings → Help, updates and about**.
 
 ## 4. Things to try
 
+- **Find a saved conversation.** Open **History** and search saved titles and
+  messages. Results show elapsed save times and are grouped into under 24 hours,
+  the previous week, and older chats; missing or future times are labelled
+  unknown. **Return to current conversation** leaves your draft, screenshot and
+  attachments in place, even while a search filters the saved chats.
+
 - **Ask anything.** Type in the box at the bottom and press **Send** (or
   Ctrl+Enter; ⌘ Return on a Mac). The answer appears as the model writes it.
   If the model is a "thinking" model, James says so while it thinks. Not sure
@@ -177,6 +183,20 @@ setup again from **Settings → Help, updates and about**.
   things you can try. It never clicks or types for you. This needs a model that
   can read pictures, such as Gemma 3; with other models the button is greyed
   out and says why.
+- **Follow the steps.** When Guide me returns a numbered list, its checklist
+  shows your current instruction and what comes next. Press **Complete current
+  step** after doing it, **Pause guide** to stop progress, **Resume guide** to
+  continue, or **End guide** to finish early. James records your confirmation;
+  it does not check that the other app changed. The checklist also works with
+  numbered screenshot marks switched off. Progress stays in memory and resets
+  for a later answer, a replacement screenshot or a new conversation.
+- **Keep guidance readable.** When an answer has numbered screenshot marks,
+  use **Show step 1**, **Show step 2**, or **Show step 3** beside the preview
+  to hide or restore individual numbers. The same choices appear on **Screen
+  context**. **Show all steps** restores them. An already-open desktop overlay
+  follows those choices; restoring numbers does not reopen a closed overlay.
+  Hiding a number does not complete the instruction or operate the other app.
+  A new screenshot or guidance answer starts with its numbers visible.
 - **Ask about your screen.** On **Screen context**, press **Capture primary
   screen**, look at the preview, then tick **Attach this screenshot to my next
   question** before asking.

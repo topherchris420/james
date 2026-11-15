@@ -77,6 +77,25 @@ impl Overlay {
         self.active.is_some()
     }
 
+    /// Update an existing overlay in place. An empty set closes a numbers-only
+    /// overlay, but preserves user-drawn strokes. This never opens a viewport.
+    pub fn update_marks(&mut self, marks: &[GuideMark]) -> Result<(), String> {
+        let Some(active) = self.active.as_mut() else {
+            return Ok(());
+        };
+        match validated_marks(active.width, active.height, marks) {
+            Ok(marks) => active.marks = marks,
+            Err(error) => {
+                self.close();
+                return Err(error);
+            }
+        }
+        if active.marks.is_empty() && active.strokes.is_empty() {
+            self.close();
+        }
+        Ok(())
+    }
+
     /// Call every frame; omit the native viewport during capture. The parent
     /// still provides a visible way to close it because it is click-through.
     pub fn show(&mut self, ctx: &egui::Context, capture_in_progress: bool) {
@@ -254,6 +273,55 @@ fn viewport_matches(actual: Option<Rect>, expected: Vec2) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn visibility_updates_live_marks_without_reopening_or_erasing_user_strokes() {
+        let mark = GuideMark {
+            step: 1,
+            x: 3.0,
+            y: 4.0,
+            label: String::new(),
+        };
+        let mut overlay = Overlay::default();
+        overlay.update_marks(std::slice::from_ref(&mark)).unwrap();
+        assert!(
+            !overlay.is_open(),
+            "updating a closed overlay never opens it"
+        );
+        overlay.active = Some(Guidance {
+            width: 100,
+            height: 100,
+            marks: vec![mark.clone()],
+            strokes: vec![Stroke {
+                points: vec![crate::screen_context::Point { x: 1.0, y: 2.0 }],
+                color: crate::screen_context::BrushColor::Blue,
+                width: 4.0,
+            }],
+        });
+        overlay.update_marks(&[]).unwrap();
+        let active = overlay.active.as_ref().unwrap();
+        assert!(active.marks.is_empty());
+        assert_eq!(active.strokes.len(), 1);
+        overlay.update_marks(std::slice::from_ref(&mark)).unwrap();
+        assert_eq!(
+            overlay.active.as_ref().unwrap().marks.as_slice(),
+            std::slice::from_ref(&mark)
+        );
+        overlay.active.as_mut().unwrap().strokes.clear();
+        overlay.update_marks(&[]).unwrap();
+        assert!(!overlay.is_open());
+        overlay.active = Some(Guidance {
+            width: 2,
+            height: 2,
+            marks: vec![],
+            strokes: vec![],
+        });
+        assert!(overlay.update_marks(&[mark]).is_err());
+        assert!(
+            !overlay.is_open(),
+            "invalid positions clear stale overlay content"
+        );
+    }
 
     #[test]
     fn primary_geometry_handles_scaling_and_rejects_other_monitors() {

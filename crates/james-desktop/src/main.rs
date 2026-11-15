@@ -548,7 +548,9 @@ enum Tone {
 enum WorkerResult {
     SettingsProposal(Result<settings_page::Proposal, String>),
     SettingsOpened(Result<(), String>),
-    Attachment(Result<attachments::Attachment, String>),
+    /// The whole selection after loading one more selected file, so a worker
+    /// result can never lose earlier accepted files.
+    SelectionLoaded(Result<Vec<attachments::Attachment>, String>),
     FileProposal(Result<workspace_create::CreateProposal, String>),
     FileSource(Result<workspace_create::SourceSnapshot, String>),
     FileCreated(Result<PathBuf, String>, workspace_create::CreateProposal),
@@ -700,12 +702,17 @@ struct JamesApp {
     /// The size of the image sent with an action or Guide me request, to map
     /// the model's coordinates back to the screen.
     sent_image: Option<(u32, u32)>,
-    /// Where the latest Guide me answer's steps are on its screenshot.
-    guide_marks: Option<guide::GuideMarks>,
+    /// The checklist for the latest Guide me answer, with where (if anywhere)
+    /// its steps are on that answer's screenshot. Memory only: never saved.
+    guide_marks: Option<guide::GuidePlan>,
     overlay: overlay::Overlay,
     draft: String,
     attachment_path: String,
-    attachment: Option<attachments::Attachment>,
+    /// The ordered files selected for the next chat question. Frozen at load.
+    attachment: attachments::Selection,
+    /// The selection carried by the in-flight chat request. It is restored
+    /// whole on failure or Stop, and dropped on success or explicit clearing.
+    unsent_selection: Option<attachments::Selection>,
     show_attachment: bool,
     file_directory: String,
     file_name: String,
@@ -849,7 +856,8 @@ impl JamesApp {
             overlay: overlay::Overlay::default(),
             draft: String::new(),
             attachment_path: String::new(),
-            attachment: None,
+            attachment: attachments::Selection::default(),
+            unsent_selection: None,
             show_attachment: false,
             file_directory: String::new(),
             file_name: String::new(),
@@ -1005,31 +1013,82 @@ impl JamesApp {
             true
         }
     }
-    /// Keeps a Guide me answer's marks, mapped to full-screen pixels, and
-    /// returns the answer without its Marks line.
+    /// Keeps a Guide me answer's checklist and marks, mapped to full-screen
+    /// pixels, and returns the answer without its Marks line. The checklist
+    /// exists whenever the answer has an ordered numbered list, even when the
+    /// model placed no coordinates (Marks: none) or marks are switched off.
+    /// Usable marks on an answer with no numbered list are kept too, as a
+    /// numbers-only plan with no invented step text.
     fn take_marks(&mut self, reply: &str) -> String {
         self.overlay.close();
         self.guide_marks = None;
         let (Some(sent), Some(screen)) = (self.sent_image, &self.screen) else {
             return guide::split_marks(reply, (0, 0)).0;
         };
-        let (answer, marks) = guide::split_marks(reply, sent);
-        let size = (screen.capture.width, screen.capture.height);
-        let marks: Vec<guide::Mark> = marks
-            .into_iter()
-            .map(|mark| {
-                let (x, y) = to_screen((mark.x, mark.y), sent, size);
-                guide::Mark { x, y, ..mark }
-            })
-            .collect();
-        if !marks.is_empty() {
-            self.guide_marks = Some(guide::GuideMarks {
-                answer: answer.clone(),
-                screenshot: screen.at,
+        // Marks are read when the model was asked for them; without that
+        // request a stray Marks line is still removed but points nowhere.
+        let (answer, marks) = if self.prefs.guide_marks {
+            guide::split_marks(reply, sent)
+        } else {
+            (guide::split_marks(reply, (0, 0)).0, Vec::new())
+        };
+        let steps = guide::parse_steps(&answer);
+        // A checklist exists whenever the answer has an ordered numbered list.
+        // Marks the model placed without such a list are still kept, as a
+        // numbers-only plan with no invented step text or progress.
+        if !steps.is_empty() || !marks.is_empty() {
+            let size = (screen.capture.width, screen.capture.height);
+            let marks: Vec<guide::Mark> = marks
+                .into_iter()
+                .map(|mark| {
+                    let (x, y) = to_screen((mark.x, mark.y), sent, size);
+                    guide::Mark { x, y, ..mark }
+                })
+                .collect();
+            self.guide_marks = Some(guide::GuidePlan::new(
+                answer.clone(),
+                screen.at,
+                steps,
                 marks,
-            });
+            ));
         }
         answer
+    }
+    /// Drops the checklist and its numbers. Progress is memory-only, so this
+    /// is also what a new answer, a new or discarded capture, a conversation
+    /// change and deleting data all do.
+    fn forget_guide(&mut self) {
+        self.guide_marks = None;
+        self.overlay.close();
+    }
+    /// The checklist for the latest answer on the current screenshot, if any.
+    fn current_guide(&self) -> Option<&guide::GuidePlan> {
+        self.guide_marks.as_ref().filter(|plan| {
+            self.screen
+                .as_ref()
+                .is_some_and(|s| s.at == plan.screenshot)
+        })
+    }
+    /// Synchronize presentation choices without recapturing or contacting a model.
+    fn sync_guide_visibility(&mut self) {
+        let marks = self.current_guide().map(|plan| {
+            plan.desktop_marks()
+                .into_iter()
+                .map(|(mark, label)| overlay::GuideMark {
+                    step: mark.step,
+                    x: f64::from(mark.x),
+                    y: f64::from(mark.y),
+                    label,
+                })
+                .collect::<Vec<_>>()
+        });
+        if let Some(marks) = marks {
+            if let Err(error) = self.overlay.update_marks(&marks) {
+                self.fail(error);
+            }
+        } else {
+            self.overlay.close();
+        }
     }
     /// Closes the release notes for good: saving records this version.
     fn dismiss_whats_new(&mut self) {
@@ -1257,40 +1316,42 @@ impl JamesApp {
             self.page = Page::Screen;
             return false;
         }
-        let file_image = mode == Ask::Chat
-            && self
-                .attachment
-                .as_ref()
-                .is_some_and(|a| matches!(a.content, attachments::Content::Image(_)));
-        if file_image && self.attach_screen {
-            self.fail("Choose either the screenshot or the attached image for this question.");
+        let file_images = mode == Ask::Chat && self.attachment.has_images();
+        if file_images && self.attach_screen {
+            self.fail("Choose either the screenshot or the attached image(s) for this question.");
             return false;
         }
-        if (needs_screen || self.attach_screen || file_image) && self.vision() == Support::No {
+        if (needs_screen || self.attach_screen || file_images) && self.vision() == Support::No {
             self.fail(format!(
                 "“{model}” can't read images (its server says so). Choose a vision model, such as Gemma 3, in Settings."
             ));
             return false;
         }
-        let image = if file_image {
-            self.attachment.as_ref().and_then(|a| match &a.content {
-                attachments::Content::Image(png) => Some((png.clone(), 0, 0)),
-                _ => None,
-            })
-        } else if needs_screen || (self.attach_screen && mode == Ask::Chat) {
-            self.screen
-                .as_ref()
-                .map(|s| (s.capture.png.clone(), s.capture.width, s.capture.height))
-        } else {
-            None
-        };
+        // Images follow the screenshot first, then the attachment order.
+        // Crop and annotations apply only to the screenshot, never to
+        // imported images.
+        let mut images: Vec<Vec<u8>> = Vec::new();
+        let mut screen_image = false;
+        if mode == Ask::Chat && file_images {
+            for attachment in self.attachment.images() {
+                let attachments::Content::Image(png) = &attachment.content else {
+                    continue;
+                };
+                images.push(png.clone());
+            }
+        } else if (needs_screen || (self.attach_screen && mode == Ask::Chat))
+            && let Some(screen) = &self.screen
+        {
+            images.push(screen.capture.png.clone());
+            screen_image = true;
+        }
         // A chat question about a selected area sends only that area. Guide me
         // and Suggest one action need whole-screen coordinates, so they always
         // send the full screenshot.
-        let region = (mode == Ask::Chat && !file_image)
+        let region = (mode == Ask::Chat && screen_image)
             .then(|| self.screen.as_ref().and_then(|s| s.selection))
             .flatten();
-        let annotations = if mode == Ask::Chat && image.is_some() && !file_image {
+        let annotations = if mode == Ask::Chat && screen_image {
             self.annotations.clone()
         } else {
             Vec::new()
@@ -1316,21 +1377,31 @@ impl JamesApp {
         }
         self.sent_image = None;
         // Requests that ask the model for pixel coordinates in the screenshot.
+        // A Guide me answer is always mapped back to the screenshot, so its
+        // dimensions are recorded even when the model was not asked to place
+        // marks; only then is the marks instruction itself left out.
         let points = match mode {
             Ask::Plan => Some(PLAN_CONTEXT),
-            Ask::Guide if self.prefs.guide_marks => Some(guide::MARKS_CONTEXT),
+            Ask::Guide => Some(guide::MARKS_CONTEXT),
             _ => None,
         };
-        if let (Some(ask), Some((_, width, height))) = (points, &image) {
-            let sent = scaled_size(*width, *height, MAX_IMAGE_SIDE);
+        if let (Some(ask), Some((_, width, height))) = (
+            points,
+            self.screen
+                .as_ref()
+                .map(|s| ((), s.capture.width, s.capture.height)),
+        ) {
+            let sent = scaled_size(width, height, MAX_IMAGE_SIDE);
             self.sent_image = Some(sent);
-            context.push(ChatMessage::new(
-                "system",
-                format!(
-                    "{ask}\nScreenshot dimensions: {} x {} pixels.",
-                    sent.0, sent.1
-                ),
-            ));
+            if mode != Ask::Guide || self.prefs.guide_marks {
+                context.push(ChatMessage::new(
+                    "system",
+                    format!(
+                        "{ask}\nScreenshot dimensions: {} x {} pixels.",
+                        sent.0, sent.1
+                    ),
+                ));
+            }
         }
         // Only chat questions carry the Lab snapshot. Guide me and Suggest
         // one action send the screenshot and the question alone, so text from
@@ -1345,15 +1416,17 @@ impl JamesApp {
             }
         }
         let mut sources = Vec::new();
-        if mode == Ask::Chat
-            && let Some(attachment) = &self.attachment
-            && let attachments::Content::Text(content) = &attachment.content
-        {
-            sources.push(evidence::Source::new(
-                sources.len(),
-                &attachment.name,
-                content,
-            ));
+        if mode == Ask::Chat {
+            for attachment in self.attachment.texts() {
+                let attachments::Content::Text(content) = &attachment.content else {
+                    continue;
+                };
+                sources.push(evidence::Source::new(
+                    sources.len(),
+                    &attachment.name,
+                    content,
+                ));
+            }
         }
         if mode == Ask::Chat
             && let Some(snapshot) = &self.workspace_context
@@ -1400,9 +1473,12 @@ impl JamesApp {
             port,
             context: context.clone(),
             sources,
-            image: if file_image {
-                "attached image (pixels excluded from evidence)".into()
-            } else if image.is_some() {
+            image: if file_images {
+                format!(
+                    "{} attached image(s) (pixels excluded from evidence)",
+                    images.len()
+                )
+            } else if screen_image {
                 match region {
                     Some(rect) => format!(
                         "selected screenshot region at {}, {} ({} × {}), with {} annotation(s)",
@@ -1431,8 +1507,15 @@ impl JamesApp {
             self.page = Page::Chat;
         }
         self.attach_screen = false;
+        // The selected files are only consumed when the request succeeds; the
+        // exact frozen selection is kept here and restored on any failure.
+        self.unsent_selection = if mode == Ask::Chat {
+            Some(self.attachment.clone())
+        } else {
+            None
+        };
         if mode == Ask::Chat {
-            self.attachment = None;
+            self.attachment = attachments::Selection::default();
             self.attachment_path.clear();
             self.workspace_context = None;
         }
@@ -1449,13 +1532,25 @@ impl JamesApp {
                 Ask::Test => "Sending a test message...",
             },
             move |job| {
-                let result = image
-                    .map(|(png, _, _)| prepare_screen_context(&png, region, &annotations))
-                    .transpose()
-                    .and_then(|png| {
+                // The screenshot, when there is one, is first and is the only
+                // image cropped and annotated; imported images are only scaled.
+                let result = images
+                    .iter()
+                    .enumerate()
+                    .map(|(index, png)| {
+                        if index == 0 && screen_image {
+                            prepare_screen_context(png, region, &annotations)
+                        } else {
+                            prepare_image(png, MAX_IMAGE_SIDE)
+                        }
+                    })
+                    .collect::<Result<Vec<Vec<u8>>, String>>()
+                    .and_then(|prepared| {
+                        let prepared: Vec<&[u8]> =
+                            prepared.iter().map(|png| png.as_slice()).collect();
                         LocalClient::for_provider(provider, port)
                             .and_then(|c| {
-                                c.chat_stream(&model, &context, png.as_deref(), |event| {
+                                c.chat_stream_many(&model, &context, &prepared, |event| {
                                     job.on_stream(event)
                                 })
                             })
@@ -1465,6 +1560,13 @@ impl JamesApp {
             },
         );
         true
+    }
+    /// Puts back the files selected for a question whose request failed, so a
+    /// refused or interrupted reply does not silently drop them.
+    fn restore_unsent_selection(&mut self) {
+        if let Some(selection) = self.unsent_selection.take() {
+            self.attachment = selection;
+        }
     }
     /// Sends the last question again, replacing its answer if there is one.
     /// Nothing is lost if the question cannot be sent.
@@ -1486,7 +1588,7 @@ impl JamesApp {
         // The screenshot selected for the unsent draft belongs to that
         // draft, not to this retry of an earlier question.
         let attach_screen = std::mem::replace(&mut self.attach_screen, false);
-        let attachment = self.attachment.take();
+        let attachment = std::mem::take(&mut self.attachment);
         let workspace_context = self.workspace_context.take();
         if !self.send(Ask::Chat) {
             self.messages = saved;
@@ -1500,7 +1602,7 @@ impl JamesApp {
         !self.messages.is_empty()
             || !self.draft.is_empty()
             || self.screen.is_some()
-            || self.attachment.is_some()
+            || !self.attachment.is_empty()
             || self.file_proposal.is_some()
             || self.settings_proposal.is_some()
             || !self.settings_instruction.is_empty()
@@ -1525,7 +1627,7 @@ impl JamesApp {
         self.conversation_change = Some(String::new());
         if !self.draft.is_empty()
             || self.screen.is_some()
-            || self.attachment.is_some()
+            || !self.attachment.is_empty()
             || self.file_proposal.is_some()
             || self.settings_proposal.is_some()
             || !self.settings_instruction.is_empty()
@@ -1554,7 +1656,7 @@ impl JamesApp {
         self.show_history = false;
         if !self.draft.is_empty()
             || self.screen.is_some()
-            || self.attachment.is_some()
+            || !self.attachment.is_empty()
             || self.file_proposal.is_some()
             || self.settings_proposal.is_some()
             || !self.settings_instruction.is_empty()
@@ -1615,7 +1717,8 @@ impl JamesApp {
         self.show_evidence = false;
         self.history_query.clear();
         self.draft.clear();
-        self.attachment = None;
+        self.attachment = attachments::Selection::default();
+        self.unsent_selection = None;
         self.attachment_path.clear();
         self.file_proposal = None;
         self.file_source = None;
@@ -1644,7 +1747,7 @@ impl JamesApp {
         self.region_drag_start = None;
         self.attach_screen = false;
         self.sent_image = None;
-        self.guide_marks = None;
+        self.forget_guide();
         self.guide_after_capture = false;
         self.pending = None;
         self.action_text.clear();
@@ -1662,6 +1765,7 @@ impl JamesApp {
         match session::delete_all(&self.session) {
             Ok(_) => {
                 self.overlay.close();
+                self.guide_marks = None;
                 self.floating = floating::Floating::default();
                 self.messages.clear();
                 self.receipt = None;
@@ -1670,7 +1774,8 @@ impl JamesApp {
                 self.archives.clear();
                 self.streaming = None;
                 self.draft.clear();
-                self.attachment = None;
+                self.attachment = attachments::Selection::default();
+                self.unsent_selection = None;
                 self.attachment_path.clear();
                 self.file_proposal = None;
                 self.file_source = None;
@@ -1720,7 +1825,7 @@ impl JamesApp {
     fn send_voice_question(&mut self, question: String) -> bool {
         let typed = std::mem::replace(&mut self.draft, question);
         let attached = std::mem::replace(&mut self.attach_screen, false);
-        let attachment = self.attachment.take();
+        let attachment = std::mem::take(&mut self.attachment);
         let workspace_context = self.workspace_context.take();
         let sent = self.send(Ask::Chat);
         if sent || !typed.is_empty() {
@@ -1735,8 +1840,17 @@ impl JamesApp {
         if self.busy() {
             return;
         }
+        // The whole selection travels with the load, so a late result can
+        // never replace files the user already selected.
+        let mut selection = self.attachment.clone();
         self.launch_model("Reading attachment...", move |_| {
-            WorkerResult::Attachment(attachments::load(&path))
+            let loaded = selection.append(&path).map(|()| {
+                selection
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<attachments::Attachment>>()
+            });
+            WorkerResult::SelectionLoaded(loaded)
         });
     }
     fn list_workspace(&mut self) {
@@ -2033,6 +2147,7 @@ impl JamesApp {
         };
         self.capture_from_primary = primary;
         self.overlay.close();
+        self.forget_guide();
         self.screen = None;
         self.pending = None;
         self.attach_screen = false;
@@ -2347,14 +2462,19 @@ impl JamesApp {
                 self.fail(error);
             }
             WorkerResult::FileProposal(Err(error)) => self.fail(error),
-            WorkerResult::Attachment(Ok(attachment)) => {
-                let name = attachment.name.clone();
-                self.attachment = Some(attachment);
-                self.info(format!(
-                    "Attached {name}. It will be sent with your next chat question."
-                ));
+            WorkerResult::SelectionLoaded(Ok(items)) => {
+                let count = items.len();
+                match attachments::Selection::from_parts(items) {
+                    Ok(selection) => {
+                        self.attachment = selection;
+                        self.info(format!(
+                            "{count} file(s) selected. They will be sent with your next chat question."
+                        ));
+                    }
+                    Err(error) => self.fail(error),
+                }
             }
-            WorkerResult::Attachment(Err(error)) => self.fail(error),
+            WorkerResult::SelectionLoaded(Err(error)) => self.fail(error),
             WorkerResult::Models(Ok(list)) => {
                 self.available_models = list.models;
                 self.remote_models = list.remote;
@@ -2443,10 +2563,21 @@ impl JamesApp {
                 }
                 // The streamed text and the final reply are the same text.
                 self.streaming = None;
-                let reply = if mode == Ask::Guide {
-                    self.take_marks(&reply)
-                } else {
-                    reply
+                // The selected files were consumed by this successful answer.
+                if mode == Ask::Chat {
+                    self.unsent_selection = None;
+                }
+                // A successful answer that is not itself Guide me retires the
+                // previous answer's checklist and desktop overlay; user strokes
+                // and the new reply are kept. `take_marks` replaces the plan
+                // for a Guide me answer, and the Test never touches guides.
+                let reply = match mode {
+                    Ask::Guide => self.take_marks(&reply),
+                    Ask::Chat | Ask::Plan => {
+                        self.forget_guide();
+                        reply
+                    }
+                    Ask::Test => reply,
                 };
                 self.messages.push(ChatMessage::new("assistant", &reply));
                 self.save_session();
@@ -2597,6 +2728,7 @@ impl JamesApp {
                 self.keep_partial_reply(&format!("Reply interrupted: {e}"));
                 self.voice = voice::Phase::Off;
                 self.guide_after_capture = false;
+                self.restore_unsent_selection();
                 self.fail(format!(
                     "The reply stopped early and is marked as incomplete: {e}"
                 ));
@@ -2614,6 +2746,7 @@ impl JamesApp {
                     self.fail(e);
                 }
                 self.guide_after_capture = false;
+                self.restore_unsent_selection();
             }
         }
     }
