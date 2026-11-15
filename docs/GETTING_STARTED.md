@@ -2,8 +2,10 @@
 
 James is a desktop companion that talks to an AI model running on your own
 computer. You can chat with it, show it your screen when you choose, and talk to
-it out loud. James itself never connects to the internet: it talks only to a
-model app on the same computer.
+it out loud. Model connections go to a model app on the same computer. Optional
+Google Cloud Text-to-Speech on Windows/macOS sends text selected for playback
+to Google; platform speech remains the default local path. A model server can
+also relay to remote inference, so check its configuration.
 
 This guide takes about 15 minutes, most of it waiting for a model to download.
 No terminal is needed if you use LM Studio.
@@ -29,8 +31,8 @@ No terminal is needed if you use LM Studio.
 - **At least 8 GB of memory.** 16 GB makes answers noticeably faster. A
   graphics card helps a lot; without one, long answers can take minutes.
 - **About 5 GB of free disk space** for a model.
-- An internet connection to download James and a model. After that, James and
-  your model work offline.
+- An internet connection to download James and a model. After that, use a
+  locally running model and keep cloud speech off for an offline setup.
 
 ## 1. Install James
 
