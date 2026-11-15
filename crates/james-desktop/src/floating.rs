@@ -96,17 +96,55 @@ impl Floating {
     pub fn take_changed(&mut self) -> bool {
         std::mem::take(&mut self.changed)
     }
-    /// The companion pet: one line reflecting what James is up to. Korso's
-    /// edge tab showed a pet beside its widgets; James's pet only watches,
-    /// and never claims to do anything.
+    /// A tiny octopus lives in the companion. It reflects local timer state,
+    /// never an AI action, and remains recognizable without emoji fonts.
     pub fn pet_line(&self) -> &'static str {
         if let Some(deadline) = self.deadline {
             if deadline.saturating_duration_since(Instant::now()).is_zero() {
-                return "🔔 The pet rings the bell";
+                return "Octopus is ringing the bell";
             }
-            return "⏳ The pet is watching your timer";
+            return "Octopus is watching your timer";
         }
-        "🐢 The pet is asleep"
+        "Octopus is resting"
+    }
+
+    /// Paint a small octopus directly with egui so every supported platform
+    /// can render it without font/emoji fallback or external image assets.
+    fn paint_octopus(&self, ui: &mut egui::Ui) {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(34.0, 32.0), egui::Sense::hover());
+        let painter = ui.painter_at(rect);
+        let center = rect.center();
+        let color = match self.deadline {
+            Some(deadline) if deadline <= Instant::now() => egui::Color32::from_rgb(217, 106, 109),
+            Some(_) => egui::Color32::from_rgb(67, 157, 186),
+            None => egui::Color32::from_rgb(153, 125, 199),
+        };
+
+        // Eight curved-looking, rounded arms, drawn first behind the mantle.
+        for arm in 0..8 {
+            let lane = arm as f32 - 3.5;
+            let base = egui::pos2(center.x + lane * 1.5, center.y + 3.0);
+            let elbow = egui::pos2(
+                center.x + lane * 2.5,
+                center.y + 9.0 + (arm % 2) as f32,
+            );
+            let tip = egui::pos2(
+                center.x + lane * 3.7,
+                center.y + 7.0 - (arm % 3) as f32,
+            );
+            painter.add(egui::Shape::line(
+                vec![base, elbow, tip],
+                egui::Stroke::new(2.6, color),
+            ));
+            painter.circle_filled(tip, 1.3, color);
+        }
+
+        painter.circle_filled(egui::pos2(center.x, center.y - 4.0), 10.0, color);
+        for dx in [-3.8, 3.8] {
+            let eye = egui::pos2(center.x + dx, center.y - 5.5);
+            painter.circle_filled(eye, 2.6, egui::Color32::WHITE);
+            painter.circle_filled(eye, 1.2, egui::Color32::from_rgb(35, 43, 59));
+        }
     }
     pub fn tick(&mut self, ctx: &egui::Context) {
         self.tick_at(SystemTime::now());
@@ -230,7 +268,10 @@ impl Floating {
                         }
                     });
                     ui.small(status);
-                    ui.label(egui::RichText::new(state.pet_line()).weak());
+                    ui.horizontal(|ui| {
+                        state.paint_octopus(ui);
+                        ui.label(egui::RichText::new(state.pet_line()).weak());
+                    });
                     if cfg!(windows) && class != ViewportClass::Embedded {
                         ui.horizontal(|ui| {
                             let enabled = state.dock_pending.is_none();
@@ -332,16 +373,16 @@ impl Floating {
 mod tests {
     use super::*;
     #[test]
-    fn the_pet_reflects_the_timer() {
+    fn the_octopus_reflects_the_timer() {
         let state = Floating::default();
-        assert_eq!(state.pet_line(), "🐢 The pet is asleep");
+        assert_eq!(state.pet_line(), "Octopus is resting");
         let mut state = Floating {
             deadline: Some(Instant::now() + Duration::from_secs(30)),
             ..Floating::default()
         };
-        assert_eq!(state.pet_line(), "⏳ The pet is watching your timer");
+        assert_eq!(state.pet_line(), "Octopus is watching your timer");
         state.deadline = Some(Instant::now() - Duration::from_secs(1));
-        assert_eq!(state.pet_line(), "🔔 The pet rings the bell");
+        assert_eq!(state.pet_line(), "Octopus is ringing the bell");
     }
     #[test]
     fn restored_overdue_reminders_open_once_and_unsaved_text_is_omitted() {
