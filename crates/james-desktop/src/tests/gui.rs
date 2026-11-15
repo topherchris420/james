@@ -1619,7 +1619,9 @@ fn external_dictation_shows_destination_and_text_before_delivery() {
         },
         "A reviewed transcript".into(),
     ));
-    h.run();
+    // Dictation reviews include editable text, whose caret/selection can keep
+    // requesting repaints. Exercise bounded frames instead of waiting for idle.
+    h.run_steps(2);
     assert!(h.query_by_label_contains("fixture document").is_some());
     assert!(h.query_by_label("A reviewed transcript").is_some());
     assert!(
@@ -1632,9 +1634,9 @@ fn external_dictation_shows_destination_and_text_before_delivery() {
         !h.state().busy(),
         "an attempted delivery must not be repeated"
     );
-    h.run();
+    h.run_steps(2);
     h.get_by_label("Discard dictation").click();
-    h.run();
+    h.run_steps(2);
     assert!(h.state().external_dictation.is_none());
     assert_eq!(h.state().draft, "Keep this draft");
 }
