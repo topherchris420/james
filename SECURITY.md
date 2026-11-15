@@ -22,7 +22,7 @@ Screen capture happens only on an explicit button press, after James hides for t
 
 Voice can only become chat text; it has no path to approving or sending input. Model replies, screen text and Lab snapshots are untrusted data. Prompt instructions are not a security boundary: model output can at most propose one allowlisted action for review, and its stated reason is shown on one line, without line breaks or invisible formatting, as the model's words, not as a guarantee. A Lab snapshot goes only with chat questions, so Lab text never reaches the request that proposes an action.
 
-Links in replies open only after James names the site, shows the full address and the person chooses **Open in browser**; only `http` and `https` addresses can open. A model can write any address, and an address can carry text from the conversation or the screen to that site, so James warns when one carries a lot of text after the site name. Apart from what a model app does with what it receives, an opened link is the only way something from James can leave this computer.
+Links in replies open only after James names the site, shows the full address and the person chooses **Open in browser**; only `http` and `https` addresses can open. A model can write any address, and an address can carry text from the conversation or the screen to that site, so James warns when one carries a lot of text after the site name. On Windows and macOS, optional Google Cloud Text-to-Speech is another outbound path: when enabled, James sends the spoken answer text to Google's service. Platform speech remains local when cloud speech is off. The Google API key is stored in the local session settings without encryption; use a restricted key and understand your provider's handling of text and credentials.
 
 ## Computer input (Windows only)
 
@@ -45,7 +45,7 @@ Windows helpers run fixed embedded PowerShell scripts through the system PowerSh
 
 ## Stored data
 
-Everything James keeps is in one folder: `%LOCALAPPDATA%\Vers3Dynamics\James` on Windows, `~/.james` on macOS and Linux. It holds `session.json` (settings, setup progress and, unless turned off, the conversation), `action-intent.json` (the last approved action, including any text to type, until checked) and `crash.log`.
+Everything James keeps is in one folder: `%LOCALAPPDATA%\Vers3Dynamics\James` on Windows, `~/.james` on macOS and Linux. It holds `session.json` (settings, setup progress, optional cloud-speech API key and, unless turned off, the conversation), `action-intent.json` (the last approved action, including any text to type, until checked) and `crash.log`.
 
 - On macOS and Linux the folder is 0700 and every file 0600, written atomically; folders and files left by older versions are tightened on launch. On Windows, James relies on the default per-user permissions of `%LOCALAPPDATA%` and does not change or check them.
 - Nothing is encrypted at rest. Full-disk encryption (BitLocker, FileVault, LUKS) protects the folder if the computer is lost; another program running as the same user can read it.

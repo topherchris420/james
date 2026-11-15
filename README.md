@@ -16,7 +16,7 @@
 [![Core CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/ci.yml?branch=main&style=flat-square&label=core%20CI)](.github/workflows/ci.yml)
 [![Desktop CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/desktop.yml?branch=main&style=flat-square&label=desktop%20CI)](.github/workflows/desktop.yml)
 
-**[Download a release](https://github.com/topherchris420/james/releases)** · **[Get started](#03-first-operation)** · [Capabilities](#01-the-apparatus) · [New on main](#on-main-after-preview4-unreleased) · [Architecture](#02-principle-of-operation) · [Safety](#04-human-control-of-computer-input) · [Evidence](#06-verification-record) · [Build](#08-build-and-inspect)
+**[Download a release](https://github.com/topherchris420/james/releases)** · **[Get started](#03-first-operation)** · [Capabilities](#01-the-apparatus) · [New in preview.5](#what-preview5-adds) · [Architecture](#02-principle-of-operation) · [Safety](#04-human-control-of-computer-input) · [Evidence](#06-verification-record) · [Build](#08-build-and-inspect)
 
 <img src="docs/assets/james-conversation.png" alt="Recorded James desktop conversation with a locally served Gemma 3 4B model." width="1000" />
 
@@ -34,10 +34,10 @@
 
 James is an open-source Rust desktop application developed at [Vers3Dynamics](https://vers3dynamics.com/). It connects to a separately running local model service, provides conversation and optional screen and voice context, and places a human review step between any proposed computer input and its execution. A read-only connection to R.A.I.N. Lab (Recursive Architecture of Intelligent Nexus) can display research records alongside ordinary conversation. An optional [local Shepherd integration](docs/SHEPHERD.md) shows coding-agent activity without giving agents control over James.
 
-No James account is required. James contains no analytics or automatic-update telemetry. Model, Lab and optional Shepherd connections from James are restricted to loopback addresses, although a separately running model server can use remote services. **The unreleased, opt-in Google Cloud Text-to-Speech option on `main` is a separate external connection**: text selected for playback is sent to Google and the API key is stored locally without at-rest encryption. The default platform speech path remains local. See [Security](SECURITY.md) and [unreleased features](#on-main-after-preview4-unreleased).
+No James account is required. James contains no analytics or automatic-update telemetry. Model, Lab and optional Shepherd connections from James are restricted to loopback addresses, although a separately running model server can use remote services. **The opt-in Google Cloud Text-to-Speech option is a separate external connection**: text selected for playback is sent to Google and the API key is stored locally without at-rest encryption. The default platform speech path remains local. See [Security](SECURITY.md) and [unreleased features](#on-main-after-preview4-unreleased).
 
 > [!IMPORTANT]
-> **Developer preview, not a production-ready assistant.** The last documented downloadable version, [`v0.4.0-preview.4`](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.4), includes document evidence, the updated chat and Companion, searchable history, and the optional local Shepherd panel. **Newer features described under [On `main`](#on-main-after-preview4-unreleased) require building from source until a subsequent release is published.** Check the [changelog](CHANGELOG.md) and [platform evidence matrix](docs/PLATFORM_SUPPORT.md). Windows and macOS packages are unsigned; physical-device, accessibility, and independent security validation remain incomplete.
+> **Developer preview, not a production-ready assistant.** [`v0.4.0-preview.5`](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.5) brings live Talk follow-ups, optional Google Cloud voice, guided step checks, guarded Windows typing Undo, multiple attachments and the illustrated companion octopus. The prior preview introduced document evidence, local history search and the read-only Shepherd panel. Check the [changelog](CHANGELOG.md#040-preview5--2026-11-15) and [platform evidence matrix](docs/PLATFORM_SUPPORT.md). Windows and macOS packages may be unsigned; physical-device, accessibility and independent security validation remain incomplete.
 
 ### Pick an experiment
 
@@ -51,8 +51,8 @@ James is most useful when you can inspect both the result **and its boundary**.
 | **Review a proposed desktop action** | On Windows, capture a fresh screen and use **Suggest one action**. | You can refuse; approval allows at most one checked input, not an unattended task. |
 | **Inspect research context** | Connect a local R.A.I.N. Lab and open its read-only view. | Observations, simulations and hypotheses carry distinct labels. |
 | **Watch coding agents** | Open Shepherd and connect a self-hosted local hub with its token. | Agent claims and messages are read-only assertions, not verified changes or approvals. |
-| **Keep a spoken conversation going** *(`main` only)* | Start Talk, pause, speak again, or interrupt James while it reads a response. | Spoken turns never authorize an action; live mode ends after ten minutes without a spoken turn. |
-| **Check a guided step or reverse reviewed typing** *(`main` only)* | Confirm a checklist step and optionally request a fresh-screen check; after approved Windows typing, inspect the guarded Undo offer. | The check is advisory. Undo is limited to a one-shot backspace attempt, not a general rollback. |
+| **Keep a spoken conversation going** *(`preview.5`)* | Start Talk, pause, speak again, or interrupt James while it reads a response. | Spoken turns never authorize an action; live mode ends after ten minutes without a spoken turn. |
+| **Check a guided step or reverse reviewed typing** *(`preview.5`)* | Confirm a checklist step and optionally request a fresh-screen check; after approved Windows typing, inspect the guarded Undo offer. | The check is advisory. Undo is limited to a one-shot backspace attempt, not a general rollback. |
 
 For a guided first run, follow [Getting started](docs/GETTING_STARTED.md). For exact platform support and test status, use [the capability matrix](docs/PLATFORM_SUPPORT.md), not a screenshot or a badge.
 
@@ -76,8 +76,8 @@ locally. [Workflow, privacy and validation limits](docs/REQUEST_EVIDENCE.md).
 | **Conversation** | Streams replies from a chosen model; Stop, retry, formatted text and code | James does not supply the model or certify its answers |
 | **Screen context** | User-triggered capture, preview, and image questions with a vision model | No continuous screen observation; image-based guidance may be mistaken |
 | **Guide me** | Up to three suggested steps, optionally annotated with model-positioned markers | Guidance only; it does not operate the application |
-| **Voice** | Dictation, read-aloud and Talk through platform facilities; on `main`, live follow-ups and opt-in Google Cloud TTS on Windows/macOS | Voice cannot authorize computer input; cloud TTS sends spoken text off-device |
-| **Reviewed input** | On Windows, one click, key press or text entry after explicit review; `main` can offer a separately guarded one-shot typing Undo | No unattended sequence, shell, self-approval, automatic retry or guaranteed rollback |
+| **Voice** | Dictation, read-aloud and Talk through platform facilities; live follow-ups and opt-in Google Cloud TTS on Windows/macOS in preview.5 | Voice cannot authorize computer input; cloud TTS sends spoken text off-device |
+| **Reviewed input** | On Windows, one click, key press or text entry after explicit review; preview.5 offers a separately guarded one-shot typing Undo | No unattended sequence, shell, self-approval, automatic retry or guaranteed rollback |
 | **R.A.I.N. Lab** | Read-only status, simulator findings, replay state and labelled hypotheses | Cannot command or approve experiments |
 | **Shepherd** | Optional native read-only workspace feed of agent presence, claims and announcements | Self-hosted loopback hub only; does not run agents, send messages or expose MCP tools |
 | **Personal controls** | History retention, conversation management, visual accessibility preferences and optional saved reminders | Local settings, history and any cloud speech key are not encrypted against processes running as the same account |
@@ -100,9 +100,9 @@ The preview includes these features. See the platform matrix for which have been
 
 The [Korso replication report](docs/KORSO_REPLICATION.md) explains which interaction requirements were reconstructed from static evidence and how James implements its **own Rust behavior**. It does not claim product parity or validate Korso at runtime. Consult the [release changelog](CHANGELOG.md#040-preview4--2026-11-11) for feature-level limitations.
 
-### On `main` after preview.4 (unreleased)
+### What preview.5 adds
 
-These capabilities are implemented in the repository's development branch, **not necessarily in any download on the Releases page**. To try them, [build from source](#08-build-and-inspect). The [Unreleased changelog](CHANGELOG.md#unreleased) records the implementation; automated checks do not replace real-device verification.
+These changes are included in **the `v0.4.0-preview.5` developer preview** on the [Releases page](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.5). The [preview.5 changelog](CHANGELOG.md#040-preview5--2026-11-15) provides detail. CI validates specific builds, but does not replace physical-device or accessibility testing.
 
 | Capability | How to use it | Boundary to understand |
 | --- | --- | --- |
@@ -111,7 +111,7 @@ These capabilities are implemented in the repository's development branch, **not
 | **Guide me checklist** | Complete, pause, resume or end steps yourself; toggle numbered screenshot markers. After checking off a step, select **Check it worked** for a fresh-screen model opinion. | Model checks are advisory, can be wrong and never mark a step complete or operate the computer. |
 | **Guarded typing Undo (Windows)** | After reviewed typing, choose the offered Undo to attempt a bounded series of backspaces in the previously reviewed window. | Separate one-shot action; expires after ten minutes, rechecks the target and is not a general-purpose Undo or guaranteed restoration. A model cannot request it. |
 | **Several attachments at once** | Review and remove up to eight selected text/PDF/image files before sending a question. | Limits: 96 KiB text and 16 MiB images in total. A screenshot question and attached image files are mutually exclusive. |
-| **Companion turtle** | Open the companion to see a small state-aware turtle respond to idle, timer and reminder states. | A local visual status indicator, not an agent or background service. |
+| **Companion octopus** | Open the companion to see a small eight-armed octopus drawn directly in the interface, changing color as the timer runs or finishes. | A local visual status indicator, not an agent or background service. |
 | **History and guide refinements** | Navigate age-grouped local history and selectively show or hide guide markers. | Grouping does not affect retention; hiding markers does not execute or complete a step. |
 
 ## 02. Principle of operation
@@ -151,8 +151,8 @@ flowchart TB
 | **Screenshots** | Captured on request, previewed locally and sent only when attached or used for guidance/action suggestion | Screenshot understanding and suggested coordinates are not verified facts |
 | **Lab snapshots** | Read from a local Lab and optionally included in ordinary chat after user preview and opt-in | Lab text cannot authorize input and is not included in guidance/action proposal requests |
 | **Conversation & preferences** | Stored in local `session.json` subject to the history setting | Local files are not encrypted against other processes with the same user access |
-| **Approved Windows input** | One reviewed input is dispatched after countdown and target checks; intent is recorded before sending | James cannot prove the effect occurred; `main` offers only a narrowly scoped, one-shot attempt to backspace previously typed text |
-| **Optional Google Cloud speech (`main`)** | If opted in, spoken answer text is sent to Google's Text-to-Speech service on Windows/macOS | It is an external service, not covered by the loopback-only model transport; its API key is stored locally without encryption |
+| **Approved Windows input** | One reviewed input is dispatched after countdown and target checks; intent is recorded before sending | James cannot prove the effect occurred; preview.5 offers only a narrowly scoped, one-shot attempt to backspace previously typed text |
+| **Optional Google Cloud speech (preview.5)** | If opted in, spoken answer text is sent to Google's Text-to-Speech service on Windows/macOS | It is an external service, not covered by the loopback-only model transport; its API key is stored locally without encryption |
 
 James itself has no telemetry or automatic update checks. Data-handling details, storage paths and the exact limitations of loopback transport are in [Security](SECURITY.md).
 
@@ -213,7 +213,7 @@ Then conduct three observations yourself:
 2. If you selected a vision-capable model, capture a screen, inspect its preview, and decide whether to attach it to a question. **Guide me** suggests steps but does not execute them.
 3. Open **Settings** and inspect history retention, voice configuration, and the action-review controls before enabling anything.
 
-Released preview features are itemized in [What preview.4 adds](#what-preview4-adds); additions available only when building `main` are in [On `main`](#on-main-after-preview4-unreleased) and the [Unreleased changelog](CHANGELOG.md#unreleased). The optional second-pass review of a model-proposed action is **advisory only**; it does not expand the model's authority or substitute for human approval.
+Earlier preview features are itemized in [What preview.4 adds](#what-preview4-adds); new release features are in [What preview.5 adds](#what-preview5-adds) and the [preview.5 changelog](CHANGELOG.md#040-preview5--2026-11-15). The optional second-pass review of a model-proposed action is **advisory only**; it does not expand the model's authority or substitute for human approval.
 
 ## 04. Human control of computer input
 
@@ -232,9 +232,9 @@ flowchart LR
 
 The approval is consumed once. An intent record is written before sending input. If the process is interrupted, the unresolved action is shown for human reconciliation, not automatically retried. Model output and voice cannot approve a proposal. Model-proposed actions on `main` may also receive an advisory second-model review, but that review is **not** authorization or an independent safety guarantee.
 
-**On `main`, a narrow Undo exists for reviewed Windows typing:** if offered within ten minutes, James can attempt to remove the typed characters with backspaces after a fresh target-window check. It is **a separate one-shot, guarded input**, not reversal of arbitrary edits, submissions, clicks, or OS effects; intervening edits or focus changes can make restoration incorrect or impossible. It does not authorize itself and is not available for model proposals.
+**In preview.5, a narrow Undo exists for reviewed Windows typing:** if offered within ten minutes, James can attempt to remove the typed characters with backspaces after a fresh target-window check. It is **a separate one-shot, guarded input**, not reversal of arbitrary edits, submissions, clicks, or OS effects; intervening edits or focus changes can make restoration incorrect or impossible. It does not authorize itself and is not available for model proposals.
 
-**Known limits:** Window matching can be incomplete; a window can change after capture; already-sent input may have irreversible effects; Esc cancels only while James has focus; no system-wide emergency key is provided. James is not an OS sandbox. See [Security](SECURITY.md), [Supervision](docs/SUPERVISION.md) and the [Unreleased changelog](CHANGELOG.md#unreleased).
+**Known limits:** Window matching can be incomplete; a window can change after capture; already-sent input may have irreversible effects; Esc cancels only while James has focus; no system-wide emergency key is provided. James is not an OS sandbox. See [Security](SECURITY.md), [Supervision](docs/SUPERVISION.md) and the [preview.5 changelog](CHANGELOG.md#040-preview5--2026-11-15).
 
 ## 05. Research connection
 
@@ -290,8 +290,8 @@ The [validation ledger](docs/VALIDATION.md) records exercised sessions. The [acc
 | Dictation or Talk unavailable | Follow **Settings → Voice** and the platform setup guide |
 | Windows input refused | Read the reason, capture a fresh screenshot and recheck the target |
 | Action remains unresolved after interruption | Examine the target application and reconcile the saved intent manually |
-| Cloud speech is unavailable (`main` only) | Check the opt-in setting, API key, Windows/macOS support and service access; switch to platform speech for an offline path |
-| Undo is refused (`main`, Windows only) | Check the ten-minute offer, focused target window and whether another action has invalidated the offer; reconcile the text yourself |
+| Cloud speech is unavailable (preview.5) | Check the opt-in setting, API key, Windows/macOS support and service access; switch to platform speech for an offline path |
+| Undo is refused (preview.5, Windows only) | Check the ten-minute offer, focused target window and whether another action has invalidated the offer; reconcile the text yourself |
 
 [Full troubleshooting](docs/GETTING_STARTED.md#if-something-goes-wrong) · [Report a bug](https://github.com/topherchris420/james/issues/new/choose) · [Privately report a vulnerability](https://github.com/topherchris420/james/security/advisories/new)
 

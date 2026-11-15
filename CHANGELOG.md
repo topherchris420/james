@@ -11,6 +11,16 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ## Unreleased
 
+No changes recorded since `0.4.0-preview.5`.
+
+## 0.4.0-preview.5 — 2026-11-15
+
+This developer preview makes live Talk conversations, optional Google Cloud
+speech, multiple attachments, guided step checks and guarded Windows typing
+Undo available in packaged downloads. The companion now features a small
+illustrated octopus. Features remain opt-in and subject to the documented
+platform and safety limitations.
+
 - **Clearer conversation history.** Saved chats are grouped by elapsed age and
   show when they were saved. A separate current-conversation card returns to
   the composer without discarding its draft, screenshot, attachments or review.
@@ -50,9 +60,13 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
   the same window is rechecked immediately before the backspaces are sent.
   The offer is one-shot and expires after ten minutes; model replies cannot
   propose it.
-- **The companion pet.** A small turtle lives in the companion window and
-  reflects what James is doing: asleep, watching your timer, or ringing the
-  bell. It never claims to act.
+- **The companion octopus.** A small eight-armed octopus is painted
+  directly in the companion window, without an emoji font dependency.
+  Its color and accessible label reflect resting, watching a timer, and
+  ringing its bell. It never claims to take an action.
+- **CI reliability.** Fixed two Unix speech compilation mismatches and made
+  two text-input GUI tests use bounded repaint frames, preserving their
+  behavior assertions.
 
 ## 0.4.0-preview.4 — 2026-11-11
 

@@ -10,7 +10,8 @@
     <p>
       James talks to an AI model running on your own computer, through LM Studio,
       Ollama, llama.cpp or another OpenAI-compatible server. It connects only to
-      that app on this computer and has no internet connection of its own.
+      that app on this computer. Optional Google Cloud Text-to-Speech sends
+      text off-device when the user explicitly enables it.
     </p>
     <ul>
       <li>Guided first-run setup that ends with a real reply from your model</li>
@@ -44,6 +45,11 @@
     <display_length compare="ge">760</display_length>
   </requires>
   <releases>
+    <release version="0.4.0~preview.5" type="development" date="2026-11-15">
+      <description>
+        <p>Live Talk follow-ups, multiple attachments, guided checks, guarded typing undo on Windows, and the companion octopus. Cloud speech is optional.</p>
+      </description>
+    </release>
     <release version="0.4.0~preview.4" type="development" date="2026-11-11">
       <description>
         <p>Manage chat attachments beside Send, search past conversations and open cited document lines beside an answer. The optional Shepherd panel displays activity from a local hub.</p>
