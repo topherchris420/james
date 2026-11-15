@@ -125,18 +125,20 @@ pub fn model_facts(app: &JamesApp, ui: &mut egui::Ui) {
 
 /// The checklist for a Guide me answer, beside its screenshot with the steps
 /// marked while that answer and that screenshot are both current. The list
-/// itself shows even when the model gave no numbers to point with.
+/// itself shows even when the model gave no numbers to point with. Returns
+/// whether the desktop overlay needs synchronizing, and whether an advisory
+/// check of the last ticked-off step was requested.
 fn guide_screenshot(
     shown: Option<&mut guide::GuidePlan>,
     screen: Option<&crate::Screen>,
     ui: &mut egui::Ui,
     answer: &str,
-) -> bool {
+) -> (bool, bool) {
     let (Some(shown), Some(screen)) = (shown, screen) else {
-        return false;
+        return (false, false);
     };
     if shown.answer != answer || shown.screenshot != screen.at {
-        return false;
+        return (false, false);
     }
     ui.add_space(4.0);
     if shown.marks.is_empty() {
@@ -161,7 +163,8 @@ fn guide_screenshot(
         ui.small("Your model placed these numbers, and they may be off: find the label each step names before you click.");
     }
     let choices = guide::checklist_ui(shown, ui);
-    guide::apply_choices(shown, choices, true)
+    let sync = guide::apply_choices(shown, choices, true);
+    (sync, choices.check)
 }
 
 fn message_ui(app: &mut JamesApp, ui: &mut egui::Ui, index: usize, last_answer: bool) {
@@ -181,6 +184,7 @@ fn message_ui(app: &mut JamesApp, ui: &mut egui::Ui, index: usize, last_answer: 
     let mut again = false;
     let mut read = false;
     let mut visibility_changed = false;
+    let mut check_step = false;
     frame.show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(
@@ -211,14 +215,20 @@ fn message_ui(app: &mut JamesApp, ui: &mut egui::Ui, index: usize, last_answer: 
         } else {
             markdown::show(ui, &message.content, ("message", index));
             if last_answer {
-                visibility_changed = guide_screenshot(
-                    app.guide_marks.as_mut(), app.screen.as_ref(), ui, &message.content,
+                (visibility_changed, check_step) = guide_screenshot(
+                    app.guide_marks.as_mut(),
+                    app.screen.as_ref(),
+                    ui,
+                    &message.content,
                 );
             }
         }
     });
     if visibility_changed {
         app.sync_guide_visibility();
+    }
+    if check_step {
+        app.check_guide_step(ui.ctx());
     }
     if copy {
         ui.ctx().copy_text(app.messages[index].content.clone());

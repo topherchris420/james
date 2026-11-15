@@ -162,7 +162,10 @@ minute old is flagged and can't be used to review an action.
 **Guide me** (under the message box) captures the screen and asks the model
 what matters on it and up to three next steps you can take yourself. If the
 message box holds a question, that is asked instead. The answer is guidance
-only and never becomes an action.
+only and never becomes an action. Its steps form a checklist you tick off
+yourself, with pause, resume and end; after a ticked step, **Check it
+worked** takes a fresh screenshot and asks the model whether that step looks
+done — advisory only, never an automatic tick or input.
 
 ## Computer control (Windows)
 
@@ -207,7 +210,11 @@ Approval is for one input only. Voice can never approve, and a model's
 words can never approve or chain anything. James does not sandbox the
 target application, verify that the input had the intended effect, or
 support several monitors. A click or Enter can still submit, send or delete
-something, and sent input can't be undone.
+something, and sent input can't be undone — with one exception: after
+approved typing, Computer control offers **Undo your last typing** for ten
+minutes. It removes exactly the characters James typed, with the same window
+rechecked immediately before the backspaces are sent. The offer is one-shot
+and expires; anything typed in between is not restored.
 
 On macOS and Linux, James never clicks or types: Computer control explains
 this and points to Guide me. If an unresolved action record is ever present
@@ -218,8 +225,12 @@ macOS and Linux needs its own reviewed design, which does not exist yet.
 
 **Talk** holds a hands-free conversation: James listens, asks the model,
 speaks the answer and listens again. Saying just "stop", "goodbye" or
-"that's all", pressing Esc or **End conversation**, an error, or 15 seconds
-of silence ends it. **Dictate** puts one utterance into the message box for
+"that's all", pressing Esc or **End conversation**, or an error ends it.
+With **Keep Talk listening for follow-ups** on (the default), silences do
+not end the conversation: James keeps listening until ten minutes pass
+without a spoken turn. Pressing the Talk chord while James is speaking
+interrupts it so you can talk over the answer, and the conversation keeps
+listening. **Dictate** puts one utterance into the message box for
 you to check. **Read aloud** speaks an answer, and **Settings → Voice → Read
 new answers aloud** speaks each new one. Markdown, code blocks and links are
 cleaned up before speaking. Voice requests are chat only: voice can never
@@ -234,6 +245,13 @@ approve or send input.
   written to a private temporary folder, transcribed by `whisper-cli` and
   deleted at once. Speech uses `say` on macOS and `espeak-ng` or `spd-say`
   on Linux.
+
+**Google Cloud speech** (Settings → Voice) is optional: with an API key,
+answers are spoken through Google Cloud Text-to-Speech instead of an
+installed voice, with a language code like `en-US` and an optional voice
+name like `en-US-Neural2-C`. While it is on, everything James says aloud
+is also sent to Google's service — the one voice path that leaves this
+computer. The key is stored in this computer's session file only.
 
 **Settings → Voice** shows whether listening is ready and gives copyable
 setup commands; James never downloads speech models itself. Talk and

@@ -187,9 +187,22 @@ pub fn is_unreviewable(c: char) -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
-    Click { x: u32, y: u32 },
-    Key { key: Key },
-    TypeText { text: String },
+    Click {
+        x: u32,
+        y: u32,
+    },
+    Key {
+        key: Key,
+    },
+    TypeText {
+        text: String,
+    },
+    /// Removes the given number of characters, one backspace each: a guarded
+    /// undo of James's own reviewed typing. Only James constructs it; model
+    /// replies cannot propose it.
+    UndoText {
+        chars: u32,
+    },
 }
 
 impl Action {
@@ -201,7 +214,8 @@ impl Action {
         }
         match self {
             Self::Click { x, y } if *x >= width || *y >= height => Err(Error::InvalidInput("Click is outside the primary screen".into())),
-            Self::TypeText { text } if text.is_empty() || text.chars().count() > 1000 || text.chars().any(is_unreviewable) => Err(Error::InvalidInput("Type 1–1000 visible characters on one line, with no invisible formatting such as zero-width or text-direction marks; use a separate reviewed key action for Enter or Tab".into())),
+            Self::TypeText { text } if text.is_empty() || text.chars().count() > 1000 || text.chars().any(is_unreviewable) => Err(Error::InvalidInput("Type 1-1000 visible characters on one line, with no invisible formatting such as zero-width or text-direction marks; use a separate reviewed key action for Enter or Tab".into())),
+            Self::UndoText { chars } if *chars == 0 || *chars > 1000 => Err(Error::InvalidInput("Undo removes 1-1000 characters".into())),
             _ => Ok(()),
         }
     }
@@ -425,6 +439,59 @@ pub fn speak(text: &str, voice: Option<&str>, cancel: &Cancellation) -> Result<(
         None => None,
     };
     sys::speak(text, voice, cancel)
+}
+
+/// Speaks `text` through Google Cloud Text-to-Speech, so the spoken text and
+/// voice choice leave this computer for Google's service. The API key is
+/// validated here and passed to the OS helper on stdin, never on a command
+/// line. `voice` is a Google voice name such as `en-US-Neural2-C`; `None`
+/// uses the language's default voice. Windows only for now.
+pub fn google_speak(
+    text: &str,
+    key: &str,
+    language: &str,
+    voice: Option<&str>,
+    cancel: &Cancellation,
+) -> Result<(), Error> {
+    if text.trim().is_empty() || text.chars().count() > 8000 {
+        return Err(Error::InvalidInput(
+            "Speech requires 1–8000 characters".into(),
+        ));
+    }
+    let key = key.trim();
+    if key.is_empty() || key.chars().count() > 256 || key.chars().any(char::is_control) {
+        return Err(Error::InvalidInput(
+            "A Google speech API key is 1–256 characters with no control characters".into(),
+        ));
+    }
+    let language = language.trim();
+    if language.is_empty()
+        || !language
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        || language.chars().count() > 16
+    {
+        return Err(Error::InvalidInput(
+            "A Google speech language code looks like en-US".into(),
+        ));
+    }
+    let voice = match voice {
+        Some(name) => {
+            let name = name.trim();
+            if name.is_empty() {
+                None
+            } else {
+                if name.chars().count() > 64 || name.chars().any(char::is_control) {
+                    return Err(Error::InvalidInput(
+                        "A Google speech voice name is at most 64 characters".into(),
+                    ));
+                }
+                Some(name)
+            }
+        }
+        None => None,
+    };
+    sys::google_speak(text, key, language, voice, cancel)
 }
 
 /// The installed text-to-speech voices on this computer, for the reading-voice
@@ -982,6 +1049,27 @@ mod tests {
             std::thread::sleep(Duration::from_millis(500));
             stop.cancel();
             assert!(matches!(worker.join().unwrap(), Err(Error::Cancelled)));
+        }
+    }
+
+    #[test]
+    fn google_speech_input_is_validated_before_any_request() {
+        let cancel = Cancellation::default();
+        // These are all refused by validation on every platform, before any
+        // helper or network request can run.
+        for (text, key, language, voice) in [
+            ("", "a-key", "en-US", None),
+            ("x".repeat(8001).as_str(), "a-key", "en-US", None),
+            ("Hello.", "  ", "en-US", None),
+            ("Hello.", "k\u{7}", "en-US", None),
+            ("Hello.", "a-key", "en_US", None),
+            ("Hello.", "a-key", "", None),
+            ("Hello.", "a-key", "en-US", Some("v".repeat(65).as_str())),
+        ] {
+            let error = google_speak(text, key, language, voice, &cancel)
+                .unwrap_err()
+                .to_string();
+            assert!(!error.is_empty());
         }
     }
 }

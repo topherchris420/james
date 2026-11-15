@@ -32,6 +32,27 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
   sending. Files are sent only with the next chat question and are restored if
   that request fails or is interrupted, so a refused reply never silently drops
   them. A screenshot question and attached images remain mutually exclusive.
+- **Live voice conversations.** Talk now keeps listening through silences for
+  follow-ups until ten minutes pass without a spoken turn, instead of pausing
+  after each 15-second silence (Korso's live mode used the same window).
+  Pressing the Talk chord while James is speaking interrupts it so you can talk
+  over the answer, and the conversation continues listening.
+- **Optional Google Cloud speech.** Answers can be read aloud through Google
+  Cloud Text-to-Speech on Windows and macOS: a voice language code and
+  optional voice name are set in Settings, and the API key stays in this
+  computer's session file. While it is on, the spoken text is sent to
+  Google — the one voice path that leaves the computer, so it is opt-in.
+- **Advisory step checks.** A guided checklist offers "Check it worked"
+  after a step is ticked off: it takes a fresh screenshot and asks the model
+  whether the step looks done. It never ticks a step, clicks or types.
+- **Guarded undo for reviewed typing.** After approved typing, Computer
+  control offers to remove exactly those characters with one checked action:
+  the same window is rechecked immediately before the backspaces are sent.
+  The offer is one-shot and expires after ten minutes; model replies cannot
+  propose it.
+- **The companion pet.** A small turtle lives in the companion window and
+  reflects what James is doing: asleep, watching your timer, or ringing the
+  bell. It never claims to act.
 
 ## 0.4.0-preview.4 — 2026-11-11
 

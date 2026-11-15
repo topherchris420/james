@@ -666,6 +666,27 @@ struct Pending {
     /// didn't run.
     review_note: Option<String>,
 }
+
+/// The last approved typing, so it can be undone with one guarded action.
+/// Undo is one-shot: taking it removes the entry, so it cannot delete more
+/// than James itself typed.
+#[derive(Debug, Clone)]
+struct TypedUndo {
+    chars: u32,
+    width: u32,
+    height: u32,
+    target: Option<james_platform::Target>,
+    /// The app the typing went to, for the undo button's label.
+    app: String,
+    at: Instant,
+}
+
+impl TypedUndo {
+    /// How long after typing an undo is still offered, so an old entry cannot
+    /// delete something the user has since edited. Korso's packaged text
+    /// ledger also refused to silently undo an older edit.
+    const MAX_AGE: Duration = Duration::from_secs(600);
+}
 impl Pending {
     fn awaits_second_look(&self) -> bool {
         self.from_model && !self.checked && review::needs_second_look(&self.proposal.action)
@@ -774,6 +795,15 @@ struct JamesApp {
     shepherd: shepherd_view::ShepherdState,
     recovery: review::Recovery,
     voice: voice::Phase,
+    /// When the last spoken voice turn happened, while a conversation is live.
+    voice_alive: Option<Instant>,
+    /// Set when the user talks over playback: the cancelled speech resumes
+    /// listening instead of pausing the conversation.
+    barge_in: bool,
+    /// The last approved typing, offered back as a guarded undo.
+    typed: Option<TypedUndo>,
+    /// The undo confirmation dialog is open.
+    confirm_undo: bool,
     guide_after_capture: bool,
     whisper_program: String,
     whisper_model: String,
@@ -918,6 +948,10 @@ impl JamesApp {
             shepherd: shepherd_view::ShepherdState::new(),
             recovery,
             voice: voice::Phase::Off,
+            voice_alive: None,
+            barge_in: false,
+            typed: None,
+            confirm_undo: false,
             guide_after_capture: false,
             listening: james_platform::listening(&voice_config),
             whisper_program: saved.whisper_program,
@@ -1229,7 +1263,7 @@ impl JamesApp {
         let had_action = self.scheduled.is_some() || self.pending.is_some();
         self.scheduled = None;
         self.pending = None;
-        self.voice = voice::Phase::Off;
+        self.voice_off();
         self.guide_after_capture = false;
         if let Some(w) = &self.worker {
             w.stop();
@@ -1749,10 +1783,12 @@ impl JamesApp {
         self.sent_image = None;
         self.forget_guide();
         self.guide_after_capture = false;
+        self.typed = None;
+        self.confirm_undo = false;
         self.pending = None;
         self.action_text.clear();
         self.lab.include = false;
-        self.voice = voice::Phase::Off;
+        self.voice_off();
         self.page = Page::Chat;
         self.focus_composer = true;
         if self.save_session() {
@@ -1766,6 +1802,8 @@ impl JamesApp {
             Ok(_) => {
                 self.overlay.close();
                 self.guide_marks = None;
+                self.typed = None;
+                self.confirm_undo = false;
                 self.floating = floating::Floating::default();
                 self.messages.clear();
                 self.receipt = None;
@@ -2031,6 +2069,12 @@ impl JamesApp {
         self.guide_after_capture = true;
         self.capture(ctx);
     }
+    /// Ends the voice conversation: no phase, and no live-window memory.
+    fn voice_off(&mut self) {
+        self.voice = voice::Phase::Off;
+        self.voice_alive = None;
+        self.barge_in = false;
+    }
     fn talk(&mut self) {
         if self.model.trim().is_empty() {
             self.fail("Choose a loaded model in Settings before talking with James.");
@@ -2038,6 +2082,7 @@ impl JamesApp {
             return;
         }
         self.page = Page::Chat;
+        self.voice_alive = Some(Instant::now());
         self.listen();
     }
     fn voice_config(&self) -> james_platform::VoiceConfig {
@@ -2050,6 +2095,7 @@ impl JamesApp {
         self.listening = james_platform::listening(&self.voice_config());
     }
     fn listen(&mut self) {
+        self.barge_in = false;
         self.voice = voice::Phase::Listening;
         let config = self.voice_config();
         self.launch(
@@ -2123,6 +2169,68 @@ impl JamesApp {
             },
         );
     }
+    /// An advisory check of the last ticked-off guide step: captures a fresh
+    /// screenshot and asks Guide me about that step. The new answer replaces
+    /// the old checklist; nothing is ticked, clicked or typed automatically.
+    fn check_guide_step(&mut self, ctx: &egui::Context) {
+        if self.busy() {
+            return;
+        }
+        let Some(plan) = &self.guide_marks else {
+            return;
+        };
+        let Some(step) = plan.done_steps().last() else {
+            return;
+        };
+        let step = step.text.clone();
+        self.draft = format!(
+            "I just did this step from my checklist: \"{step}\". Look at the screen and briefly say whether it looks done. If it does, tell me the next step; if it does not, say what still needs doing."
+        );
+        self.guide_after_capture = true;
+        self.capture(ctx);
+    }
+    /// Removes the last approved typing with one guarded action: the same
+    /// target and screen identity the typing was checked against, rechecked
+    /// by the input helper immediately before the backspaces are sent. The
+    /// undo offer is one-shot and expires after ten minutes.
+    fn undo_typing(&mut self) {
+        let Some(typed) = self.typed.take() else {
+            return;
+        };
+        if self.busy() {
+            // Not executed: put the offer back until the user is free.
+            self.typed = Some(typed);
+            return;
+        }
+        if typed.at.elapsed() > TypedUndo::MAX_AGE {
+            self.info("The typing to undo was approved more than ten minutes ago, so it is no longer offered.");
+            return;
+        }
+        self.confirm_undo = false;
+        let path = self.intent_path();
+        self.launch(
+            "Undoing the typing in 3 seconds — stay in the app it went to...",
+            move |job| {
+                let result = (|| {
+                    for _ in 0..30 {
+                        if job.cancel.is_cancelled() {
+                            return Err("Stopped before the undo was sent.".into());
+                        }
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                    let review = ReviewedAction::approve(
+                        Action::UndoText { chars: typed.chars },
+                        typed.width,
+                        typed.height,
+                        typed.target,
+                    )
+                    .map_err(|e| e.to_string())?;
+                    review::execute(review, &path, &job.cancel, || true)
+                })();
+                WorkerResult::Action(result)
+            },
+        );
+    }
     /// Speaks a reply when the user is in a voice conversation or asked for
     /// spoken answers. Returns false when nothing was spoken.
     fn answer_aloud(&mut self, reply: &str) -> bool {
@@ -2181,6 +2289,43 @@ impl JamesApp {
             .and_then(|list| list.iter().find(|d| d.id == id))
     }
     fn speak(&mut self, text: String) {
+        // Google Cloud TTS sends the spoken text to Google's service; the key
+        // stays in this computer's session file until the request. When it is
+        // on but the key is missing, the installed voice answers instead so a
+        // reply is never lost to a settings gap.
+        if self.prefs.google_tts {
+            let key = self.prefs.google_tts_key.trim().to_owned();
+            if key.is_empty() {
+                self.tell(
+                    Tone::Warn,
+                    "Google speech is on in Settings but its API key is empty, so the installed voice was used.",
+                );
+            } else {
+                let language = {
+                    let language = self.prefs.google_tts_language.trim();
+                    if language.is_empty() {
+                        "en-US".to_owned()
+                    } else {
+                        language.to_owned()
+                    }
+                };
+                let voice = {
+                    let voice = self.prefs.google_tts_voice.trim();
+                    (!voice.is_empty()).then(|| voice.to_owned())
+                };
+                return self.launch("Speaking — Stop silences James", move |job| {
+                    let result = james_platform::google_speak(
+                        &text,
+                        &key,
+                        &language,
+                        voice.as_deref(),
+                        &job.cancel,
+                    )
+                    .map_err(|e| e.to_string());
+                    WorkerResult::Speech(result)
+                });
+            }
+        }
         let voice = {
             let voice = self.tts_voice.trim();
             (!voice.is_empty()).then(|| voice.to_owned())
@@ -2284,6 +2429,22 @@ impl JamesApp {
         let Some(pending) = self.pending.take() else {
             return;
         };
+        // Remember approved typing so it can be undone, guarded by the same
+        // target and screen identity the typing itself was checked against.
+        if let Action::TypeText { text } = &pending.proposal.action {
+            self.typed = Some(TypedUndo {
+                chars: text.chars().count() as u32,
+                width: pending.width,
+                height: pending.height,
+                target: pending.target.clone(),
+                app: pending
+                    .target
+                    .as_ref()
+                    .map(|t| t.process_name.clone())
+                    .unwrap_or_else(|| "the reviewed window".into()),
+                at: Instant::now(),
+            });
+        }
         match ReviewedAction::approve(
             pending.proposal.action,
             pending.width,
@@ -2375,7 +2536,7 @@ impl JamesApp {
                 }
                 Err(TryRecvError::Disconnected) => {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                    self.voice = voice::Phase::Off;
+                    self.voice_off();
                     self.guide_after_capture = false;
                     self.keep_partial_reply(
                         "Reply interrupted: the background task stopped unexpectedly.",
@@ -2404,7 +2565,7 @@ impl JamesApp {
             if let WorkerResult::FileCreated(_, proposal) = &result {
                 self.file_proposal = Some(proposal.clone());
             }
-            self.voice = voice::Phase::Off;
+            self.voice_off();
             self.guide_after_capture = false;
             self.setup_capture = false;
             let kept = self.keep_partial_reply("Stopped by you before the reply finished.");
@@ -2683,18 +2844,28 @@ impl JamesApp {
             WorkerResult::Dictation(Ok(text)) if self.voice == voice::Phase::Listening => {
                 match voice::interpret(&text) {
                     voice::Heard::Nothing => {
-                        self.voice = voice::Phase::Off;
-                        self.info("I didn't hear anything, so I paused our conversation. Choose Talk to continue.");
+                        // Live voice keeps listening through silences until
+                        // ten minutes pass without a spoken turn.
+                        if voice::keep_listening(
+                            self.prefs.live_voice,
+                            self.voice_alive.map(|at| at.elapsed()),
+                        ) {
+                            self.listen();
+                        } else {
+                            self.voice_off();
+                            self.info("I didn't hear anything, so I paused our conversation. Choose Talk to continue.");
+                        }
                     }
                     voice::Heard::Stop => {
-                        self.voice = voice::Phase::Off;
+                        self.voice_off();
                         self.info("Conversation ended.");
                     }
                     voice::Heard::Ask(question) => {
+                        self.voice_alive = Some(Instant::now());
                         self.voice = voice::Phase::Thinking;
                         if !self.send_voice_question(question) {
                             // send() explained why it could not ask (busy, no model...).
-                            self.voice = voice::Phase::Off;
+                            self.voice_off();
                         }
                     }
                 }
@@ -2711,9 +2882,18 @@ impl JamesApp {
                 self.info("Dictation added to your draft. Review it, then Send.");
             }
             WorkerResult::Speech(Ok(())) if self.voice == voice::Phase::Speaking => {
+                // A finished spoken turn refreshes the live window.
+                self.voice_alive = Some(Instant::now());
                 self.listen();
             }
             WorkerResult::Speech(Ok(())) => self.info("Finished speaking."),
+            // The user talked over playback: the interrupted speech resumes
+            // listening instead of pausing the conversation.
+            WorkerResult::Speech(Err(_)) if self.barge_in => {
+                self.barge_in = false;
+                self.info("Interrupted so you could speak. I'm listening.");
+                self.listen();
+            }
             WorkerResult::Action(result) => {
                 self.recovery = review::read_intent(&self.intent_path());
                 self.screen = None;
@@ -2726,7 +2906,7 @@ impl JamesApp {
             }
             WorkerResult::Chat(Err(e), _) if self.streaming.is_some() => {
                 self.keep_partial_reply(&format!("Reply interrupted: {e}"));
-                self.voice = voice::Phase::Off;
+                self.voice_off();
                 self.guide_after_capture = false;
                 self.restore_unsent_selection();
                 self.fail(format!(
@@ -2740,7 +2920,7 @@ impl JamesApp {
             | WorkerResult::Speech(Err(e)) => {
                 self.setup_capture = false;
                 if self.voice != voice::Phase::Off {
-                    self.voice = voice::Phase::Off;
+                    self.voice_off();
                     self.fail(format!("Conversation paused: {e}"));
                 } else {
                     self.fail(e);
@@ -2788,9 +2968,10 @@ impl JamesApp {
         use egui::{Key as K, Modifiers as M};
         let pressed = |modifiers: M, key: K| ctx.input_mut(|i| i.consume_key(modifiers, key));
         if pressed(M::NONE, K::Escape) {
-            if self.confirm_clear || self.confirm_delete {
+            if self.confirm_clear || self.confirm_delete || self.confirm_undo {
                 self.confirm_clear = false;
                 self.confirm_delete = false;
+                self.confirm_undo = false;
                 self.conversation_change = None;
             } else if self.show_history {
                 self.show_history = false;
@@ -2996,11 +3177,20 @@ impl JamesApp {
         if !(talk || dictate) {
             return;
         }
-        if !self.setup_done()
-            || self.busy()
-            || self.voice != voice::Phase::Off
-            || !self.listening.is_ready()
-        {
+        if !self.setup_done() || !self.listening.is_ready() {
+            self.tell(Tone::Warn, "Voice shortcut unavailable while James is busy, setup is incomplete, or listening is unavailable.");
+            return;
+        }
+        // Talking over playback: the Talk chord interrupts James mid-sentence
+        // and resumes listening, rather than being unavailable.
+        if talk && self.voice == voice::Phase::Speaking {
+            self.barge_in = true;
+            if let Some(worker) = &self.worker {
+                worker.stop();
+            }
+            return;
+        }
+        if self.busy() || self.voice != voice::Phase::Off {
             self.tell(Tone::Warn, "Voice shortcut unavailable while James is busy, setup is incomplete, or listening is unavailable.");
             return;
         }

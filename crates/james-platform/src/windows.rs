@@ -121,6 +121,32 @@ pub fn speak(text: &str, voice: Option<&str>, cancel: &Cancellation) -> Result<(
     .map(|_| ())
 }
 
+/// Google Cloud Text-to-Speech: one request, then WAV playback. The key
+/// travels on stdin with the request, never on a command line.
+pub fn google_speak(
+    text: &str,
+    key: &str,
+    language: &str,
+    voice: Option<&str>,
+    cancel: &Cancellation,
+) -> Result<(), Error> {
+    let mut request = serde_json::json!({
+        "text": text,
+        "key": key,
+        "language": language,
+    });
+    if let Some(voice) = voice {
+        request["voice"] = serde_json::Value::String(voice.to_owned());
+    }
+    run(
+        include_str!("google_speak.ps1"),
+        &request,
+        Duration::from_secs(600),
+        cancel,
+    )
+    .map(|_| ())
+}
+
 /// The names of the enabled Windows text-to-speech voices.
 pub fn list_voices() -> Result<Vec<String>, Error> {
     let output = run(

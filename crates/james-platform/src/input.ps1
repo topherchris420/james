@@ -96,6 +96,13 @@ public static class JamesInput {
             }
             [Windows.Forms.SendKeys]::SendWait($escaped.ToString())
         }
+        'undo_text' {
+            $chars = [int64]$action.chars
+            if ($chars -lt 1 -or $chars -gt 1000) { throw 'Invalid undo length.' }
+            $backspaces = [Text.StringBuilder]::new()
+            for ($i = 0; $i -lt $chars; $i++) { [void]$backspaces.Append('{BACKSPACE}') }
+            [Windows.Forms.SendKeys]::SendWait($backspaces.ToString())
+        }
         default { throw 'Unsupported action.' }
     }
 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }

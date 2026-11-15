@@ -55,6 +55,21 @@ pub struct Preferences {
     /// Before you review a proposed action, a second model pass checks it and
     /// adds a short note. On by default; it costs one extra model request.
     pub review_actions: bool,
+    /// Keep a voice conversation listening for follow-ups instead of pausing
+    /// after one silence, until [`crate::voice::LIVE_WINDOW`] passes without a
+    /// spoken turn. On by default.
+    pub live_voice: bool,
+    /// Speak answers through Google Cloud Text-to-Speech instead of an
+    /// installed voice. Off by default: the spoken text is sent to Google.
+    pub google_tts: bool,
+    /// The Google Cloud Text-to-Speech API key, kept in this computer's
+    /// session file.
+    pub google_tts_key: String,
+    /// A BCP-47 language code for Google Cloud Text-to-Speech, like en-US.
+    pub google_tts_language: String,
+    /// A Google Cloud Text-to-Speech voice name, like en-US-Neural2-C.
+    /// Empty is the language's default voice.
+    pub google_tts_voice: String,
 }
 
 impl Default for Preferences {
@@ -72,6 +87,11 @@ impl Default for Preferences {
             shortcut_chords: crate::shortcuts::ShortcutConfig::default(),
             guide_marks: false,
             review_actions: true,
+            live_voice: true,
+            google_tts: false,
+            google_tts_key: String::new(),
+            google_tts_language: "en-US".into(),
+            google_tts_voice: String::new(),
         }
     }
 }
@@ -555,6 +575,11 @@ mod tests {
                 shortcut_chords: crate::shortcuts::ShortcutConfig::default(),
                 guide_marks: true,
                 review_actions: false,
+                live_voice: true,
+                google_tts: false,
+                google_tts_key: String::new(),
+                google_tts_language: "en-US".into(),
+                google_tts_voice: String::new(),
             },
             setup: Some(Setup {
                 step: SetupStep::Test,

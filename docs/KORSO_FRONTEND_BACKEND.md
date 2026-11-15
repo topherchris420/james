@@ -207,6 +207,67 @@ rustfmt on Windows ARM64 building the x86_64-pc-windows-msvc target under
 Visual Studio Build Tools. These are James test-fixture results; they do not
 establish physical-device behavior or Korso parity.
 
+## Worth-doing parity pass, 14 November 2026 (later session)
+
+The next tier of recovered Korso requirements was implemented as original
+James behavior, chosen for value without giving up James's boundaries.
+
+**Live voice exchange.** Korso's `Voice` class coordinates playback,
+interruption, rollover and a grace clock (`out/main/primary-wShsXXbd.js:
+25235-25636`), and its live mode keeps the session open with an auto-off
+choice (`out/main/index.js:4332-4335`, five/thirty-minute-or-never choices,
+default ten minutes). James now keeps a Talk conversation listening through
+silences until ten minutes pass without a spoken turn
+(`voice::keep_listening`, unit-tested), and pressing the Talk chord while
+James is speaking interrupts the speech and resumes listening instead of
+pausing the conversation. Still not replicated: remote voice exchange,
+speech interruption by voice alone, and talking over playback from the
+model's side.
+
+**Optional Google Cloud speech.** Not recovered from Korso (its speech is
+hosted and unverified); requested by the owner. `google_speak` sends the
+spoken text to Google Cloud Text-to-Speech and plays the returned audio:
+through an embedded PowerShell helper on Windows and `curl` + `afplay` on
+macOS. The API key is validated in Rust, travels on stdin, never appears on
+a command line, and is stored only in this computer's session file. This is
+the one voice path whose text leaves the computer; it is off by default and
+labeled in Settings.
+
+**Advisory step checks.** Korso compares control observations with a step's
+expected outcome and re-plans automatically
+(`out/main/permissions-C2fZeNd1.js:807-870,959-972`). James offers
+"Check it worked" after a ticked step: a fresh capture and a Guide me
+question about that step, advisory only. The new answer replaces the
+checklist; nothing is ticked, clicked or typed automatically, and the
+model's judgment is never recorded as progress.
+
+**Guarded undo for reviewed typing.** Korso's packaged `TextLedger` tracks
+per-conversation edits and its `last` lookup refuses to silently undo an
+older edit when the newest cannot be recovered
+(`out/main/permissions-C2fZeNd1.js:1663-1845`). James records each
+approved typing and offers a one-shot undo within ten minutes: a reviewed
+`UndoText` action that sends exactly as many backspaces as James typed
+characters, against the same target window and screen identity, rechecked
+immediately before sending by the existing input helper. Model replies cannot
+propose an undo (`review::parse_proposal` refuses it); only the person's
+button offers it. A GUI fixture drives the confirm flow and the refused
+mismatched-screen case; physical backspace delivery is not tested here.
+
+**The companion pet.** Korso's edge tab presents a pet
+(`out/renderer/assets/tab-DPCu52d-.js:1011-1071`). James's companion now
+shows a turtle that is asleep, watches the timer, or rings its bell. The
+glyph-coverage test now scans `guide.rs` and `floating.rs`, which caught and
+fixed check-mark and small-triangle glyphs the shipped fonts cannot draw.
+
+The expanded suite passed **365 workspace tests** (215 desktop; the new
+tests cover the live-voice window decision, the pet, the advisory check
+flow and the one-shot undo), with four opt-in tests ignored; strict Clippy
+with warnings denied, rustfmt and all PowerShell helper checks passed,
+including the two new or changed helpers. Google speech itself was not
+exercised against the live service in these fixtures: its input validation,
+request building and helper parsing are covered, and a real request remains
+a physical-device check.
+
 Not tested in this pass: authenticated Korso history/guidance, its hosted
 backend, physical overlay transparency/click-through, mixed-DPI monitors, and
 macOS/Linux native windows. The GUI fixtures establish James state and rendering

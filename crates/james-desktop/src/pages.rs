@@ -108,6 +108,7 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     let prior_annotations = app.annotations.clone();
     let mut overlay_error = None;
     let mut guide_visibility_changed = false;
+    let mut check_step = false;
     // None leaves the selection as it is; Some(x) sets it after the read-only
     // borrow of the screenshot ends.
     let mut set_selection: Option<Option<PixelRect>> = None;
@@ -350,6 +351,7 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
             if guide::apply_choices(shown, choices, true) {
                 guide_visibility_changed = true;
             }
+            check_step = choices.check;
         }
         if app.overlay.is_open() {
             if ui.button("Hide desktop guidance").clicked() {
@@ -456,6 +458,9 @@ pub fn screen(app: &mut JamesApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     if guide_visibility_changed {
         app.sync_guide_visibility();
     }
+    if check_step {
+        app.check_guide_step(ui.ctx());
+    }
     if let Some(error) = overlay_error {
         app.fail(error);
     }
@@ -557,6 +562,59 @@ pub fn actions(app: &mut JamesApp, ui: &mut egui::Ui) {
     // A record must always be reviewable, whatever this platform can do now.
     if app.recovery.needs_check() {
         recovery_ui(app, ui);
+    }
+    // The last approved typing can be taken back with one guarded action.
+    if let Some(typed) = app.typed.clone() {
+        if typed.at.elapsed() > crate::TypedUndo::MAX_AGE {
+            app.typed = None;
+        } else {
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.label(RichText::new("Undo your last typing").strong());
+                ui.label(format!(
+                    "James typed {} characters into {}. You can remove exactly those with one checked action.",
+                    typed.chars, typed.app
+                ));
+                ui.small("Offered once, for ten minutes after the typing. The destination window is rechecked immediately before the backspaces are sent; check the field yourself afterward.");
+                if ui
+                    .button(format!("Remove the {} characters", typed.chars))
+                    .clicked()
+                {
+                    app.confirm_undo = true;
+                }
+            });
+            ui.add_space(4.0);
+        }
+    }
+    if app.confirm_undo {
+        let typed = app.typed.clone();
+        let mut open = true;
+        let mut undo = false;
+        egui::Window::new("Remove the typed characters")
+            .open(&mut open)
+            .resizable(false)
+            .show(ui.ctx(), |ui| {
+                if let Some(typed) = typed {
+                    ui.label(format!(
+                        "Remove the {} characters James typed into {}?",
+                        typed.chars, typed.app
+                    ));
+                    ui.label("The same window is checked before the backspaces are sent. Anything typed in between is not restored.");
+                    ui.horizontal(|ui| {
+                        if ui.button("Remove them").clicked() {
+                            undo = true;
+                        }
+                        if ui.button("Keep them").clicked() {
+                            app.confirm_undo = false;
+                        }
+                    });
+                }
+            });
+        if !open {
+            app.confirm_undo = false;
+        }
+        if undo {
+            app.undo_typing();
+        }
     }
     if let Some((target, text)) = &app.external_dictation {
         ui.heading("Review dictation for another app");
@@ -1030,7 +1088,18 @@ fn voice_settings(app: &mut JamesApp, ui: &mut egui::Ui) {
         app.save_session();
     }
     reading_voice(app, ui);
-    ui.label("Talk starts a hands-free conversation: James listens, answers aloud, then listens again. It pauses after 15 seconds of silence; say \"stop\" or press Esc to end. Dictate puts one utterance into the message box for you to check.");
+    google_tts_settings(app, ui);
+    if ui
+        .checkbox(
+            &mut app.prefs.live_voice,
+            "Keep Talk listening for follow-ups",
+        )
+        .on_hover_text("After each spoken turn, keep listening through silences for ten minutes instead of pausing after one. Say \"stop\" or press Esc to end.")
+        .changed()
+    {
+        app.save_session();
+    }
+    ui.label("Talk starts a hands-free conversation: James listens, answers aloud, then listens again. It pauses after 15 seconds of silence; say \"stop\" or press Esc to end. Dictate puts one utterance into the message box for you to check. Pressing the Talk chord while James is speaking interrupts it so you can talk.");
     ui.label("Voice can ask and listen but never approves or performs clicks and typing.");
     ui.small(james_platform::voice_support());
     ui.add_space(4.0);
@@ -1046,6 +1115,65 @@ fn voice_settings(app: &mut JamesApp, ui: &mut egui::Ui) {
     if james_platform::uses_whisper() {
         whisper_settings(app, ui);
     }
+}
+
+/// Optional Google Cloud Text-to-Speech. This is the one voice path whose
+/// text leaves the computer, so it is off until a key is entered.
+fn google_tts_settings(app: &mut JamesApp, ui: &mut egui::Ui) {
+    ui.add_space(4.0);
+    ui.horizontal_wrapped(|ui| {
+        if ui
+            .checkbox(&mut app.prefs.google_tts, "Use Google Cloud speech")
+            .on_hover_text("Speak answers through Google Cloud Text-to-Speech instead of an installed voice. The spoken text is sent to Google; the API key stays in this computer's session file.")
+            .changed()
+        {
+            app.save_session();
+        }
+    });
+    if app.prefs.google_tts {
+        ui.colored_label(
+            ui.visuals().warn_fg_color,
+            "While this is on, everything James says aloud is also sent to Google's speech service.",
+        );
+        let key = single_line(
+            ui,
+            "Google API key",
+            &mut app.prefs.google_tts_key,
+            "google-tts-key",
+        );
+        let language = single_line(
+            ui,
+            "Language code",
+            &mut app.prefs.google_tts_language,
+            "google-tts-language",
+        );
+        let voice = single_line(
+            ui,
+            "Voice name (optional)",
+            &mut app.prefs.google_tts_voice,
+            "google-tts-voice",
+        );
+        if key || language || voice {
+            app.save_session();
+        }
+        ui.small("The key looks like AIza…; the language code looks like en-US; a voice name looks like en-US-Neural2-C. Get them in Google Cloud Console > Text-to-Speech. On Windows and macOS only.");
+    }
+}
+
+/// One labelled single-line text field that saves on change.
+fn single_line(ui: &mut egui::Ui, label: &str, value: &mut String, id: &str) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.label(label);
+        changed = ui
+            .add(
+                egui::TextEdit::singleline(value)
+                    .id_salt(id)
+                    .desired_width(220.0),
+            )
+            .changed();
+    });
+    changed
 }
 
 /// The reading-voice picker: the installed voices James can read answers with.

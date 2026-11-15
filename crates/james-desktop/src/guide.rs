@@ -60,6 +60,9 @@ pub struct Choices {
     pub pause: bool,
     pub resume: bool,
     pub end: bool,
+    /// Ask for an advisory check of the last ticked-off step: a fresh
+    /// capture and Guide me question, never an automatic tick or action.
+    pub check: bool,
 }
 
 impl GuidePlan {
@@ -92,6 +95,16 @@ impl GuidePlan {
             done: 0,
             hidden: 0,
         }
+    }
+
+    /// The steps the user has explicitly ticked off, in tick order.
+    pub fn done_steps(&self) -> &[Step] {
+        &self.steps[..self.done as usize]
+    }
+
+    /// How many steps the user have explicitly ticked off.
+    pub fn done_count(&self) -> usize {
+        self.done as usize
     }
 
     #[cfg(test)]
@@ -391,6 +404,14 @@ pub fn checklist_ui(plan: &mut GuidePlan, ui: &mut egui::Ui) -> Choices {
                     .clicked()
                 {
                     choices.advance = true;
+                }
+                if plan.done_count() > 0
+                    && ui
+                        .button("Check it worked")
+                        .on_hover_text("Takes a fresh screenshot and asks your model whether the last step looks done. Advisory only: it never ticks a step, clicks or types.")
+                        .clicked()
+                {
+                    choices.check = true;
                 }
                 if ui.button("Pause guide").clicked() {
                     choices.pause = true;

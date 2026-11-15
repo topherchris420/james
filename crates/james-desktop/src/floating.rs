@@ -96,6 +96,18 @@ impl Floating {
     pub fn take_changed(&mut self) -> bool {
         std::mem::take(&mut self.changed)
     }
+    /// The companion pet: one line reflecting what James is up to. Korso's
+    /// edge tab showed a pet beside its widgets; James's pet only watches,
+    /// and never claims to do anything.
+    pub fn pet_line(&self) -> &'static str {
+        if let Some(deadline) = self.deadline {
+            if deadline.saturating_duration_since(Instant::now()).is_zero() {
+                return "🔔 The pet rings the bell";
+            }
+            return "⏳ The pet is watching your timer";
+        }
+        "🐢 The pet is asleep"
+    }
     pub fn tick(&mut self, ctx: &egui::Context) {
         self.tick_at(SystemTime::now());
         if self.reminders.iter().any(|r| !r.announced) {
@@ -218,6 +230,7 @@ impl Floating {
                         }
                     });
                     ui.small(status);
+                    ui.label(egui::RichText::new(state.pet_line()).weak());
                     if cfg!(windows) && class != ViewportClass::Embedded {
                         ui.horizontal(|ui| {
                             let enabled = state.dock_pending.is_none();
@@ -318,6 +331,18 @@ impl Floating {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn the_pet_reflects_the_timer() {
+        let state = Floating::default();
+        assert_eq!(state.pet_line(), "🐢 The pet is asleep");
+        let mut state = Floating {
+            deadline: Some(Instant::now() + Duration::from_secs(30)),
+            ..Floating::default()
+        };
+        assert_eq!(state.pet_line(), "⏳ The pet is watching your timer");
+        state.deadline = Some(Instant::now() - Duration::from_secs(1));
+        assert_eq!(state.pet_line(), "🔔 The pet rings the bell");
+    }
     #[test]
     fn restored_overdue_reminders_open_once_and_unsaved_text_is_omitted() {
         let now = UNIX_EPOCH + Duration::from_secs(200);

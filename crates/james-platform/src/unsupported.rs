@@ -25,6 +25,15 @@ pub fn dictate(_: Duration, _: &VoiceConfig, _: &Cancellation) -> Result<String,
 pub fn speak(_: &str, _: Option<&str>, _: &Cancellation) -> Result<(), Error> {
     Err(Error::Unsupported(MESSAGE))
 }
+pub fn google_speak(
+    _: &str,
+    _: &str,
+    _: &str,
+    _: Option<&str>,
+    _: &Cancellation,
+) -> Result<(), Error> {
+    Err(Error::Unsupported(MESSAGE))
+}
 pub fn list_voices() -> Result<Vec<String>, Error> {
     Ok(Vec::new())
 }

@@ -194,6 +194,108 @@ pub fn speak(text: &str, voice: Option<&str>, cancel: &Cancellation) -> Result<(
     ))
 }
 
+/// Google Cloud Text-to-Speech on macOS: one `curl` request, the returned
+/// PCM wrapped in a WAV header, played once through `afplay` from an
+/// owner-only temporary file that is deleted immediately afterwards. The key
+/// is passed to curl through a header argument; Linux keeps its local voices.
+pub fn google_speak(
+    text: &str,
+    key: &str,
+    language: &str,
+    voice: Option<&str>,
+    cancel: &Cancellation,
+) -> Result<(), Error> {
+    if !cfg!(target_os = "macos") {
+        return Err(Error::Failed(
+            "Google speech is available on Windows and macOS for now.".into(),
+        ));
+    }
+    let curl = find_tool("curl").ok_or_else(|| Error::Failed("curl was not found".into()))?;
+    let afplay = find_tool("afplay")
+        .ok_or_else(|| Error::Failed("macOS playback (afplay) was not found".into()))?;
+    let mut voice_json = serde_json::json!({ "languageCode": language });
+    if let Some(voice) = voice {
+        voice_json["name"] = serde_json::Value::String(voice.to_owned());
+    }
+    let body = serde_json::json!({
+        "input": { "text": text },
+        "voice": voice_json,
+        "audioConfig": { "audioEncoding": "LINEAR16", "sampleRateHertz": 24000 },
+    })
+    .to_string();
+    let temporary = std::env::temp_dir().join(format!(
+        "james-google-speech-{}-{}.wav",
+        std::process::id(),
+        temp_stem()
+    ));
+    let mut command = Command::new(curl);
+    command
+        .args(["-s", "--max-time", "90", "-X", "POST"])
+        .arg("-H")
+        .arg(format!("X-Goog-Api-Key: {key}"))
+        .args(["-H", "Content-Type: application/json"])
+        .arg("-d")
+        .arg(&body)
+        .arg("--output")
+        .arg(&temporary)
+        .arg("https://texttospeech.googleapis.com/v1/text/synthesize");
+    let outcome = (|| {
+        supervise(command, &[], SPEECH_LIMIT, cancel)?;
+        let response: serde_json::Value = serde_json::from_str(
+            &String::from_utf8(
+                std::fs::read(&temporary).map_err(|e| Error::Failed(e.to_string()))?,
+            )
+            .map_err(|e| Error::Failed(format!("Google's answer was not UTF-8: {e}")))?,
+        )
+        .map_err(|e| Error::Failed(format!("Google's answer was not JSON: {e}")))?;
+        let audio = response["audioContent"]
+            .as_str()
+            .ok_or_else(|| Error::Failed("Google returned no audio.".into()))?;
+        use base64::Engine;
+        let pcm: Vec<u8> = base64::engine::general_purpose::STANDARD
+            .decode(audio)
+            .map_err(|e| Error::Failed(format!("Google's audio was not valid base64: {e}")))?;
+        if pcm.is_empty() {
+            return Err(Error::Failed("Google returned no audio.".into()));
+        }
+        let rate: u32 = 24000;
+        let mut wav = Vec::with_capacity(44 + pcm.len());
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&rate.to_le_bytes());
+        wav.extend_from_slice(&(rate * 2).to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
+        wav.extend_from_slice(&pcm);
+        std::fs::write(&temporary, wav).map_err(|e| Error::Failed(e.to_string()))?;
+        // The spoken text is in this file until playback ends: owner-only.
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&temporary, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| Error::Failed(e.to_string()))?;
+        }
+        let play = Command::new(afplay).arg(&temporary);
+        supervise(play, &[], SPEECH_LIMIT, cancel).map(|_| ())
+    })();
+    let _ = std::fs::remove_file(&temporary);
+    outcome
+}
+
+/// A distinct temporary file name for each Google speech request.
+fn temp_stem() -> usize {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    NEXT.fetch_add(
+        std::sync::atomic::Ordering::Relaxed,
+        std::sync::atomic::Ordering::Relaxed,
+    )
+}
+
 /// Installed voices on macOS (`say -v '?'`) or Linux (`espeak-ng --voices`).
 /// Returns an empty list where the speech tool cannot enumerate voices.
 pub fn list_voices() -> Result<Vec<String>, Error> {

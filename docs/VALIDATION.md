@@ -48,6 +48,22 @@ x86_64-pc-windows-msvc target under Visual Studio 2026 Build Tools, Rust 1.99.0,
 The workspace was not re-verified on macOS, Linux or the minimum supported
 Rust toolchain in this session.
 
+### Worth-doing parity run (2026-11-14, final)
+
+The live-voice, Google speech, advisory check, guarded undo and companion pet
+pass (see the feature report) re-ran the same checks:
+
+- `cargo test --workspace --all-targets -- --test-threads=1`: **365 passed,
+  0 failed, 4 ignored** (215 desktop tests).
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- `cargo fmt --check`: clean.
+- `scripts/check-powershell.ps1`: all twelve helpers parse, including the new
+  `google_speak.ps1` and the `undo_text` case in `input.ps1`.
+
+Not exercised against live services or physical devices: a real Google Cloud
+Text-to-Speech request, real microphone/speech loops, and physical backspace
+delivery from the guarded undo. macOS and Linux were not re-verified.
+
 ## Conversation reliability checks (2026-10-21)
 
 Automated checks on Windows using Rust 1.99.0 with the x64 GNU target:

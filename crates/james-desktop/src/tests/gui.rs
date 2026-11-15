@@ -995,6 +995,7 @@ fn every_character_the_interface_uses_can_be_drawn() {
         include_str!("../main.rs"),
         include_str!("../chat.rs"),
         include_str!("../guide.rs"),
+        include_str!("../floating.rs"),
         include_str!("../setup.rs"),
         include_str!("../pages.rs"),
         include_str!("../lab_view.rs"),
@@ -1116,6 +1117,48 @@ mod review_screen {
             "Pending action cancelled. Nothing was sent."
         );
         assert!(!session::intent_path(&h.state().session).exists());
+    }
+
+    #[test]
+    fn undo_removes_only_james_typing_once_and_refuses_a_mismatched_screen() {
+        let mut h = harness(james(Some("gemma3:4b")));
+        h.state_mut().typed = Some(crate::TypedUndo {
+            chars: 5,
+            width: 100,
+            height: 100,
+            target: None,
+            app: "the reviewed window".into(),
+            at: Instant::now(),
+        });
+        h.state_mut().page = Page::Actions;
+        frames(&mut h, 2);
+        // Before any approval there is no undo to offer.
+        h.state_mut().typed = None;
+        frames(&mut h, 2);
+        assert!(h.query_by_label("Remove the 5 characters").is_none());
+        h.state_mut().typed = Some(crate::TypedUndo {
+            chars: 5,
+            width: 100,
+            height: 100,
+            target: None,
+            app: "the reviewed window".into(),
+            at: Instant::now(),
+        });
+        frames(&mut h, 2);
+        h.get_by_label("Remove the 5 characters").click();
+        frames(&mut h, 2);
+        h.get_by_label("Remove them").click();
+        wait_until(&mut h, "the refused undo", |app| {
+            app.worker.is_none() && app.typed.is_none()
+        });
+        // The fixture's 100x100 screen no longer matches the primary display,
+        // so the helper refuses before anything is sent.
+        let status = h.state().status.clone();
+        assert!(
+            status.contains("Screen size changed") || status.contains("James itself is in front"),
+            "{status}"
+        );
+        assert!(h.state().typed.is_none(), "the undo offer is one-shot");
     }
 }
 
@@ -2413,6 +2456,38 @@ fn guide_visibility_is_shared_between_chat_and_screen_and_resets_for_new_answers
     frames(&mut h, 2);
     assert!(h.state().guide_marks.is_none());
     assert!(h.query_by_label("Show step 1").is_none());
+}
+
+#[test]
+fn checking_a_guide_step_takes_a_fresh_screenshot_and_asks_advisory() {
+    let mut h = harness(james(Some("gemma3:4b")));
+    with_screen(&mut h);
+    h.state_mut().prefs.guide_marks = true;
+    h.state_mut().sent_image = Some((100, 100));
+    let answer = h
+        .state_mut()
+        .take_marks("1. Inspect the menu.\n2. Check the title.\nMarks: 1 (20, 30); 2 (60, 70)");
+    h.state_mut().messages = vec![ChatMessage::new("assistant", &answer)];
+    frames(&mut h, 2);
+    // Before any step is ticked off, there is nothing to check.
+    assert!(h.query_by_label("Check it worked").is_none());
+    h.get_by_label("Complete current step").click();
+    frames(&mut h, 2);
+    h.get_by_label("Check it worked").click();
+    frames(&mut h, 2);
+    // The check takes a fresh screenshot with a question about the step, and
+    // never sends input. The capture is stopped here; only its start is
+    // asserted, so the test needs no real screen.
+    let draft = h.state().draft.clone();
+    assert!(draft.contains("Inspect the menu"), "{draft}");
+    assert!(
+        h.state().screen.is_none(),
+        "a fresh capture replaces the screen"
+    );
+    assert!(h.state().busy(), "the capture is running");
+    h.state_mut().stop();
+    wait_until(&mut h, "the cancelled capture", |app| app.worker.is_none());
+    assert!(h.state().messages.len() == 1, "no answer was sent");
 }
 
 /// A Guide me answer whose instructions have no coordinates at all.

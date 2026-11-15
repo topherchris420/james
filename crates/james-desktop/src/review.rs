@@ -44,6 +44,11 @@ pub fn parse_proposal(reply: &str) -> Result<Proposal, String> {
     if rationale.is_empty() || proposal.rationale.len() > 2048 {
         return Err("Missing or oversized explanation".into());
     }
+    if matches!(proposal.action, Action::UndoText { .. }) {
+        // Undo of James's own typing is offered by James after a reviewed
+        // typing, never proposed from a model reply.
+        return Err("Undo is offered by James, not proposed".into());
+    }
     Ok(Proposal {
         rationale,
         action: proposal.action,
@@ -79,6 +84,9 @@ pub fn describe(action: &Action) -> String {
         Action::TypeText { text } => {
             format!("Type “{text}” ({} characters)", text.chars().count())
         }
+        Action::UndoText { chars } => {
+            format!("Remove the last {chars} characters James typed")
+        }
     }
 }
 
@@ -103,6 +111,7 @@ pub fn needs_second_look(action: &Action) -> bool {
         action,
         Action::Click { .. }
             | Action::TypeText { .. }
+            | Action::UndoText { .. }
             | Action::Key {
                 key: Key::Enter | Key::Space | Key::Delete | Key::Backspace
             }

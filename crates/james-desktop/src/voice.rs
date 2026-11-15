@@ -6,6 +6,18 @@ use std::time::Duration;
 /// Silence allowed before a listening turn ends and the conversation pauses.
 pub const LISTEN: Duration = Duration::from_secs(15);
 
+/// How long a live voice conversation keeps listening after the last spoken
+/// turn before it pauses itself, so an open mic does not wait forever. Korso's
+/// packaged live mode used the same ten minutes.
+pub const LIVE_WINDOW: Duration = Duration::from_secs(600);
+
+/// Whether one more listening turn should follow a heard silence: live voice
+/// keeps going until [`LIVE_WINDOW`] has passed since the last spoken turn.
+/// `since_last_turn` is `None` when no turn has happened yet.
+pub fn keep_listening(live_voice: bool, since_last_turn: Option<Duration>) -> bool {
+    live_voice && since_last_turn.is_some_and(|since| since < LIVE_WINDOW)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     Off,
@@ -183,5 +195,16 @@ mod tests {
         );
         assert_eq!(speakable("   "), "My answer is in the conversation.");
         assert_eq!(links_to_text("a [b] c [d](e"), "a [b] c [d](e");
+    }
+
+    #[test]
+    fn live_voice_keeps_listening_until_the_window_passes() {
+        // Off, or no spoken turn yet: a silence pauses the conversation.
+        assert!(!keep_listening(false, Some(Duration::from_secs(1))));
+        assert!(!keep_listening(true, None));
+        // On, with a recent spoken turn: keep listening through the silence.
+        assert!(keep_listening(true, Some(Duration::from_secs(599))));
+        assert!(!keep_listening(true, Some(LIVE_WINDOW)));
+        assert!(!keep_listening(true, Some(Duration::from_secs(601))));
     }
 }
