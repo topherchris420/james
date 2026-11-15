@@ -1,5 +1,18 @@
 # Source provenance
 
+## November 2026 README campaign artwork
+
+The two images in [`docs/assets/marketing`](docs/assets/marketing/README.md)
+were generated for James with OpenAI's built-in image-generation tool on
+2026-11-15 and encoded as WebP for the README. They are conceptual campaign
+illustrations, not application screenshots or evidence of implemented UI.
+The octopus artwork interprets the existing companion's lavender palette;
+the glass layers illustrate the theme of inspectable context. No Apple logo,
+product image, interface, or other third-party visual asset was incorporated.
+The artwork is supplied under this repository's MIT license; the prompts and
+asset inventory are recorded alongside it. Existing application screenshots
+remain unchanged and retain their recorded validation provenance below.
+
 ## November 2026 Korso replication
 
 The 14 November frontend/backend pass independently adds elapsed history groups,
