@@ -1416,7 +1416,9 @@ fn reminders_save_only_after_opt_in_and_can_be_removed_from_disk() {
     let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
     let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
     h.state_mut().floating.visible = true;
-    h.run();
+    // Text selection and caret rendering can request extra repaints on Windows
+    // and macOS. Render the companion without waiting for the UI to go idle.
+    h.run_steps(2);
     h.get_by_label("Reminder text").click();
     h.get_by_label("Reminder text").type_text("Local reminder");
     // Editing the focused field can request continuing text-selection repaints,
