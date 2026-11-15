@@ -128,7 +128,7 @@ impl Floating {
             let tip = egui::pos2(center.x + lane * 3.7, center.y + 7.0 - (arm % 3) as f32);
             painter.add(egui::Shape::line(
                 vec![base, elbow, tip],
-                egui::Stroke::new(2.6, color),
+                egui::Stroke::new(2.6_f32, color),
             ));
             painter.circle_filled(tip, 1.3, color);
         }
