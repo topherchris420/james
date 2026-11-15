@@ -124,14 +124,8 @@ impl Floating {
         for arm in 0..8 {
             let lane = arm as f32 - 3.5;
             let base = egui::pos2(center.x + lane * 1.5, center.y + 3.0);
-            let elbow = egui::pos2(
-                center.x + lane * 2.5,
-                center.y + 9.0 + (arm % 2) as f32,
-            );
-            let tip = egui::pos2(
-                center.x + lane * 3.7,
-                center.y + 7.0 - (arm % 3) as f32,
-            );
+            let elbow = egui::pos2(center.x + lane * 2.5, center.y + 9.0 + (arm % 2) as f32);
+            let tip = egui::pos2(center.x + lane * 3.7, center.y + 7.0 - (arm % 3) as f32);
             painter.add(egui::Shape::line(
                 vec![base, elbow, tip],
                 egui::Stroke::new(2.6, color),
