@@ -280,7 +280,8 @@ pub fn google_speak(
             std::fs::set_permissions(&temporary, std::fs::Permissions::from_mode(0o600))
                 .map_err(|e| Error::Failed(e.to_string()))?;
         }
-        let play = Command::new(afplay).arg(&temporary);
+        let mut play = Command::new(afplay);
+        play.arg(&temporary);
         supervise(play, &[], SPEECH_LIMIT, cancel).map(|_| ())
     })();
     let _ = std::fs::remove_file(&temporary);
@@ -290,10 +291,7 @@ pub fn google_speak(
 /// A distinct temporary file name for each Google speech request.
 fn temp_stem() -> usize {
     static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    NEXT.fetch_add(
-        std::sync::atomic::Ordering::Relaxed,
-        std::sync::atomic::Ordering::Relaxed,
-    )
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Installed voices on macOS (`say -v '?'`) or Linux (`espeak-ng --voices`).
