@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-interop/v1/agent-event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "system", "seq", "at", "actor", "kind", "task_id", "generation", "data", "prev", "sha256"],
+  "properties": {
+    "schema": { "const": "agent-event/v1" },
+    "system": { "enum": ["james-desktop", "rain-lab"] },
+    "seq": { "type": "integer", "minimum": 1 },
+    "at": { "type": "string", "maxLength": 24 },
+    "actor": { "type": "string", "pattern": "^(person|host|[a-z][a-z0-9-]{1,63})$" },
+    "kind": { "type": "string", "pattern": "^[a-z][a-z0-9_.]{0,63}$" },
+    "task_id": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
+    "generation": { "enum": ["model", "scripted", "person", "host"] },
+    "data": { "type": "object" },
+    "prev": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

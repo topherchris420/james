@@ -1,0 +1,17 @@
+{
+  "schema": "agent-identity/v1",
+  "system": "james-desktop",
+  "agent_id": "coordinator",
+  "display_name": "Coordinator",
+  "role": "Plans the work, delegates and assembles the result",
+  "kind": "model-seat",
+  "capabilities": [
+    "delegate",
+    "draft",
+    "remember",
+    "review"
+  ],
+  "revision": 1,
+  "created_at": "2026-11-16T12:00:00Z",
+  "sha256": "676f2fe91c1f8a02b57d1a1cd23b65978faea23335fa437588abcf53fefe539e"
+}

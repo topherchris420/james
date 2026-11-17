@@ -38,6 +38,7 @@ James connects to a model server running on your computer: **Ollama, LM Studio, 
 | **A conversation out loud** | Use Talk, Dictate, and read aloud. Live Talk accepts follow-ups and lets you interrupt spoken replies with the Talk shortcut. Voice setup depends on your platform. |
 | **Keeping your place** | Summon a compact conversation view or open the floating octopus companion with a timer and reminders. Timers and reminder delivery require James to stay open. |
 | **Taking a deliberate next step** | On Windows, review one proposed click, key, or text entry before allowing it. Guidance and spoken replies never authorize input. |
+| **A team for bigger tasks** *(unreleased)* | Give a task to four persistent assistants — Coordinator, Researcher, Writer, Reviewer — that delegate within bounds, read only the folder you choose, keep notes you can inspect or forget, and write a file only after you approve its exact content. [The Team](docs/TEAM.md). |
 
 The octopus is a small local status indicator: lavender while resting, blue while watching a timer, and coral when it finishes. The sculptural character above is its campaign interpretation; the app uses a simple illustrated companion.
 
@@ -137,9 +138,25 @@ Windows typing Undo, when offered, expires after ten minutes and attempts backsp
 
 <a id="05-research-connection"></a>
 
+## A team at your side
+
+*Unreleased; not in preview.5.* Open **Team** (Ctrl+7), choose a workspace folder, and give a task to the Coordinator. It can hand parts to the Researcher (reads and quotes files), the Writer (drafts and proposes files) and the Reviewer (has James check every `[path:line]` citation). Each assistant uses the model you chose in Settings; every reply must be one action from a closed list, and James's own code decides whether it is allowed.
+
+| You stay in control | How |
+| --- | --- |
+| **Nothing is written without you** | A proposed file shows its exact content and SHA-256. **Approve this exact change** applies it only if the file is unchanged since the proposal. |
+| **Bounded delegation** | Two levels deep, four sub-tasks per task, no assistant twice on one chain, and a sub-task's budget comes out of its parent's. |
+| **Inspectable memory** | Each note shows who can see it, who wrote it and which files it came from. **Forget** deletes its words. |
+| **A record you can check** | Every step is one hash-chained journal entry, verified each time James opens it. After a restart, interrupted work waits for you; nothing is retried on its own. |
+| **Stop at any time** | Cancel stops a task and everything below it, including a model reply in progress. Pause holds the whole team. |
+
+Try it without a model server: `cargo run -p james-agents --example team_demo -- --approve`. With small local models (Qwen2.5 1.5B and 3B through llama.cpp) the team did **not** complete the demonstration task; the limits held and nothing was written. [Recorded runs and limits](docs/TEAM.md#demonstration-a).
+
 ## A window into the lab
 
 Connect James to a locally running [R.A.I.N. Lab](https://github.com/topherchris420/lop-nur-twin) — **Recursive Architecture for Intelligent Nexus** — to inspect research status and evidence labels. The view separates observed activity, simulations, replay status, and hypotheses. Sharing a Lab snapshot with ordinary chat requires opt-in and preview; guidance and action proposals do not receive it.
+
+*Unreleased:* when the Lab's operator turns on its optional `agent-interop/v1` interface, paste the read token on the Lab page to load **sealed evidence** from completed experiments. James recomputes each record's SHA-256 under the [shared specification](docs/interop/agent-interop-v1/README.md) and shows the claims, runs, challenges, limits and provenance; a record that does not match is refused. With a separate proposal token you can send one proposal after reviewing its exact text and digest; the Lab only queues it for its operator and authorizes nothing. Tokens are never saved. [Interop details](docs/LAB.md#optional-evidence-interface-agent-interopv1).
 
 An optional [Shepherd wallboard](docs/SHEPHERD.md) shows activity from a self-hosted local coding-agent hub. James reads the feed; it does not start agents or grant them control. Agent messages remain unverified assertions, and live-hub validation is pending.
 
@@ -159,7 +176,9 @@ A native **eframe/egui** interface, a Rust workspace, and small components with 
 | [`james-loopback`](crates/james-loopback) | Bounded local transport, timeouts, and cancellation |
 | [`james-core`](crates/james-core) | Review, policy contracts, and supervision |
 | [`james-platform`](crates/james-platform) | Screen capture, speech, and reviewed Windows input |
-| [`james-lab`](crates/james-lab) | Read-only research snapshots and provenance labels |
+| [`james-lab`](crates/james-lab) | Read-only research snapshots and provenance labels; optional `agent-interop/v1` evidence client |
+| [`james-agents`](crates/james-agents) | The Team: identities, hash-chained journal, scoped memory, bounded delegation, approvals, routines, recovery |
+| [`james-interop`](crates/james-interop) | The canonical JSON and SHA-256 rule shared with the R.A.I.N. Lab |
 
 ### Build from source
 
@@ -185,7 +204,7 @@ With Ollama running, probe the adapter independently:
 cargo run -p james-models --locked --example probe -- ollama --chat "Say hello"
 ```
 
-The smaller library crates retain Rust 1.85 support. Broader agent orchestration and SQLite journaling in the [architecture document](docs/ARCHITECTURE.md) are proposed work, not shipped capabilities.
+The smaller library crates retain Rust 1.85 support. The Team's journal is an append-only, hash-chained JSON Lines file rather than the SQLite store the [architecture document](docs/ARCHITECTURE.md) proposed (ADR 009 explains why); an OS sandbox, MCP extensions and cloud models remain unbuilt.
 
 <a id="06-verification-record"></a>
 

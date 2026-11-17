@@ -1,0 +1,44 @@
+Lab on port 4173: commit 94c6c14f91535056143f211a42b849be84b26f3d · scopes ["read", "propose"] · 1 episode(s) · 0 proposal(s) waiting for its operator
+
+Host-written explanation (no model involved):
+“Is a driven oscillator's displacement response largest at its natural frequency?” (E-assumption-v1), simulated evidence from the R.A.I.N. Lab.
+Question: Does driving at the undamped natural frequency maximize a damped oscillator's displacement, and does the lab's 10 s template window show where the response peaks?
+Outcome under the Lab's preregistered criteria: supported.
+- Claim C-1 by rain-james (words: scripted): “Driving at the undamped natural frequency w0 = sqrt(k/m) maximizes RMS displacement.” — now refuted.
+- Claim M-1 by host (words: host): “The lab's 10-second numerical template window (scientific/example.ts) measures where a driven oscillator responds most.” — now superseded.
+- Claim C-2 by rain-jasmine (words: scripted): “RMS displacement is larger at 1.9799 rad/s than at w0 = 2 rad/s when the transient has decayed.” — now superseded.
+- Claim C-3 by rain-jasmine (words: scripted): “Steady displacement peaks at w_r = sqrt(w0^2 - 2 gamma^2), below w0, and a response comparison needs a window of at least 8/gamma.” — now supported, revises C-2.
+- Claim M-2 by host (words: host): “Response comparisons use a window of at least 8/gamma; the 10 s template is not used to locate a response peak.” — now supported, revises M-1.
+- Run NR-1a3d76cda097d03c8718a3e8 (template window, drive at w0): the run's own preregistered check passed / supported; re-executed and matched by the Lab.
+- Run NR-76c99aceb17e182333f7ceca (template window, drive at 0.9 w0): the run's own preregistered check passed / supported; re-executed and matched by the Lab.
+- Run NR-91d4b7950d99a50534d2e7ea (8/gamma window, drive at w0): the run's own preregistered check passed / supported; re-executed and matched by the Lab.
+- Run NR-889439000c0f142fd098b72b (8/gamma window, drive at w_r): the run's own preregistered check passed / supported; re-executed and matched by the Lab.
+- Run NR-15e362cc2151f2585caaa5c4 (replication: 1.5x window, half timestep, w0): the run's own preregistered check passed / supported; re-executed and matched by the Lab.
+- Run NR-77383f7e93471abb74e18b88 (replication: 1.5x window, half timestep, w_r): the run's own preregistered check passed / supported; re-executed and matched by the Lab.
+- Run HT-C3-ad1397f597be (held-out test of C-3 (312 backend runs; record_sha256 is the digest of their record digests)): the run's own preregistered check passed / supported; re-executed and matched by the Lab.
+- Run HT-A2-ad1397f597be (held-out test of the template window, A2 (same 312 runs)): the run's own preregistered check passed / supported; re-executed and matched by the Lab.
+- Challenge X-1 by rain-jasmine on C-1: Steady displacement amplitude peaks at sqrt(w0^2 - 2 gamma^2) = 1.9799 rad/s, below w0 = 2 rad/s; compare those two frequencies. (upheld).
+- Challenge X-2 by rain-jasmine on M-1: The 10 s window is shorter than 8/gamma = 40.0 s, so the RMS is dominated by the start-up transient. (rejected).
+Limits:
+- Simulated evidence: a linear damped oscillator integrated by the lab's numerical backend, not a physical measurement.
+- Every seat in this episode is a rule-based policy (scripted). No language model wrote these claims or challenges.
+- The correction is textbook physics; the episode shows the lab's protocol catching and testing it, not a new discovery.
+- Replication re-runs a deterministic simulator with perturbed numerics; it detects numerical sensitivity, not sampling variability.
+- A digest shows a record is intact, not that it is true. The lab's authorizations here are scripted demonstration authorizations, not a person's review.
+Provenance: evidence sha256 7765daf106a73088 (recomputed by James), protocol 5428a48c5ab4dd58, journal head 95f5818b4272fa99, lab commit 060ee4c4ed1a9d473bb6f68c37702ea1cf82d19f. A digest shows the record is intact, not that it is true.
+
+Proposal James would send (words written by a person), exact sha256 96ee9bbcd011fc3fe2812a070de5e8dc5dba098263fd082faf1738cef9cbc5e8:
+{
+  "from": {
+    "agent_id": "researcher",
+    "system": "james-desktop"
+  },
+  "generation": "person",
+  "hypothesis": "The peak ratio follows sqrt(1 - 2 zeta^2) within one grid step across that range.",
+  "kind": "proposal_submission",
+  "question": "For damping ratios from 0.05 to 0.35, how far below the natural frequency is the RMS displacement peak in a window of at least 8/gamma?",
+  "rationale": "Extends the Lab's episode E-assumption-v1 beyond its held-out damping range.",
+  "title": "How far below w0 does the peak move as damping grows?"
+}
+Lab receipt: queued_for_operator_review (position 1): Queued for a lab operator. Nothing has been authorized, preregistered or run.
+Not sent: No proposal token is set; the Lab operator decides whether James may propose

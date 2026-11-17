@@ -1,0 +1,17 @@
+[package]
+name = "james-interop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "agent-interop/v1 for James: canonical JSON and SHA-256 digests shared with the R.A.I.N. Lab"
+publish = false
+
+[dependencies]
+# float_roundtrip: parse numbers exactly as JavaScript does, so digests of
+# records written by the R.A.I.N. Lab can be recomputed here.
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
+sha2 = "0.10"
+
+[lints]
+workspace = true

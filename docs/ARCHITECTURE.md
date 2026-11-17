@@ -8,6 +8,8 @@ The Phase 1 implementation is a small `james-core` Rust policy and action-lifecy
 
 Since then the desktop, streamed inference adapters for LM Studio, Ollama, llama.cpp and other OpenAI-compatible servers, and the `james-loopback` transport (ADR 008) have shipped as a developer preview; [VALIDATION.md](VALIDATION.md) records what was checked. The SQLite store, MCP client, OS sandbox, and multi-agent runtime below remain **proposed later work**. A type, interface, or passing unit test is not proof that those integrations exist or enforce their intended boundary.
 
+**Team note (2026-11-16, unreleased).** A bounded multi-assistant runtime now exists in `james-agents`, with a durable journal; see ADR 009 and [TEAM.md](TEAM.md). The SQLite store, MCP client, OS sandbox and external model adapters below remain unbuilt.
+
 **0.4.0 note (2026-10-12).** The shipped desktop uses eframe/egui with AccessKit, plain threads and channels rather than Tokio, a JSON session file written atomically with owner-only permissions rather than SQLite, and a synced JSON intent record as its one-action gate. Those are deliberate simplifications for a single-user, one-action-at-a-time desktop; the Tokio supervisor and SQLite journal below are still the plan if James grows multi-step tools. See [END_USER_READINESS.md](END_USER_READINESS.md) for what is verified.
 
 ## ADR 001: Rust application and Rust-rendered desktop
@@ -84,6 +86,20 @@ Decision, 2026-10-12: every network request goes through `james-loopback`, a dep
 Owning the socket also gives James an `AbortHandle` that shuts the connection down from another thread. Stop therefore ends a streaming reply on the wire, including during the wait for the first byte, instead of discarding text that keeps arriving. Whether the server then stops computing remains the server's behavior, and James does not claim otherwise.
 
 The client deliberately implements only what loopback model and Lab servers need: one request per connection, `Content-Length`, chunked and until-close bodies, interim 1xx responses, and bounded header, line and body sizes with connect, idle and total timeouts. Compression and other transfer codings are refused by name rather than guessed at. The cost is owning a small HTTP parser; it is covered by socket fixtures that split messages at arbitrary byte boundaries. Remote providers, if ever added, would need a separate, visibly labelled transport and an explicit user opt-in, never a change to this crate.
+
+## ADR 009: A step-driven team runtime over a hash-chained journal
+
+Decision, 2026-11-16 (unreleased): the Team (`james-agents`, [TEAM.md](TEAM.md)) implements ADR 004's and ADR 007's rules for multiple assistants, with three deliberate departures from the proposals above.
+
+- **Journal, not SQLite.** State is a fold over an append-only JSON Lines file of canonical `agent-event/v1` records, each naming its predecessor's SHA-256 and flushed before it counts. A single writer, one record per change and full re-verification on open give ADR 006's intent-before-effect and honest recovery without a native database dependency, and the file is inspectable with a text editor. An unfinished last line is set aside; any other damage refuses to open. Content that must be forgettable (memory text, proposed file contents) lives in content-addressed files beside it.
+- **Threads, not Tokio.** `Runtime::step` advances one task by one model call and the one action it names; the desktop drives it on a worker thread and cancels through a shared signal that cuts the loopback connection. Tests drive it directly and deterministically.
+- **Approval binds to digests, not generations.** A file write becomes an `agent-approval/v1` request bound to the SHA-256 of the exact action and the file's previous content; the decision must carry the digest the person was shown, and the write is refused if the file changed. This is the same idea as `james-core`'s generation-bound `Approval`, made durable across restarts.
+
+Delegation is bounded by depth, width, a carved-out step budget and a no-repeat rule on each chain, which removes the A→B→A wait that an unbounded "ask another bot" design allows. Interrupted work is reported and waits for the person, never replayed. The runtime does not sandbox anything: its limits are host code. Agents have no desktop-input action; ADR 004's single reviewed input path is unchanged.
+
+## ADR 010: agent-interop/v1, a contract shared with the R.A.I.N. Lab
+
+Decision, 2026-11-16 (unreleased): James and Lop Nur Twin share one small versioned data contract ([`docs/interop/agent-interop-v1/`](interop/agent-interop-v1/README.md)) for identities, tasks, events, memory, approvals and three optional Lab routes, rather than a shared runtime or a third repository. Each repository vendors the directory byte for byte and pins the SHA-256 of its manifest; `james-interop` reproduces the Lab's canonical JSON (UTF-16 key order, ECMAScript number formatting) and is tested against golden fixtures the Lab's own code wrote. The Lab serves the routes only when its operator configures a token, only to loopback peers; `read` returns sealed evidence and `propose` queues for human review with `"authorizes_execution": false`. James refuses evidence whose digest does not recompute, keeps tokens in memory, and sends a proposal only after the person approves its digest. Neither system can control the other, and both run without it.
 
 ## Data privacy and release gates
 

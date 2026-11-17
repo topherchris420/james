@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-interop/v1/rain-interop-error",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "code", "message"],
+  "properties": {
+    "schema": { "const": "rain-interop-error/v1" },
+    "code": { "enum": ["not_configured", "unauthorized", "forbidden_scope", "not_loopback", "not_found", "invalid_request", "too_large", "queue_full", "method_not_allowed"] },
+    "message": { "type": "string", "maxLength": 400 }
+  }
+}

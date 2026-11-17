@@ -2752,3 +2752,66 @@ fn a_long_draft_leaves_room_for_the_conversation_in_companion_mode() {
         "starter prompts must preserve an existing draft"
     );
 }
+
+#[test]
+fn the_team_page_runs_a_task_and_writes_only_after_approval() {
+    // A scripted Ollama: the writer proposes a file, then finishes.
+    let port = ollama(|body| {
+        let action = if body.contains("You are Writer") && !body.contains("your proposal was") {
+            serde_json::json!({"action": "propose_write", "path": "notes/hello.md", "content": "Hello from the team.\n"})
+        } else {
+            serde_json::json!({"action": "finish", "result": "Wrote notes/hello.md after approval."})
+        };
+        ndjson(&[&action.to_string()], Duration::ZERO)
+    });
+    let workspace = session::scratch_dir("team-ws");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let mut app = james_on(port, Some("gemma3:4b"), SetupStep::Done);
+    app.page = Page::Team;
+    let mut h = harness(app);
+    wait_until(&mut h, "the team opens", |app| app.team.snapshot.is_some());
+    assert_eq!(
+        h.state().team.snapshot.as_ref().unwrap().state.agents.len(),
+        4
+    );
+    h.state_mut().team.workspace = workspace.display().to_string();
+    frames(&mut h, 1);
+    h.get_by_label("Use this folder").click();
+    wait_until(&mut h, "the folder is chosen", |app| {
+        app.team
+            .snapshot
+            .as_ref()
+            .is_some_and(|s| s.state.workspace.is_some())
+    });
+    h.state_mut().team.objective = "Write notes/hello.md saying hello.".into();
+    h.state_mut().team.assignee = "writer".into();
+    frames(&mut h, 1);
+    h.get_by_label("Start task").click();
+    wait_until(&mut h, "the proposal waits for approval", |app| {
+        app.team
+            .snapshot
+            .as_ref()
+            .is_some_and(|s| s.state.approvals.values().any(|a| a.is_pending()))
+    });
+    assert!(
+        !workspace.join("notes/hello.md").exists(),
+        "nothing is written before approval"
+    );
+    h.get_by_label("Approve this exact change").click();
+    wait_until(&mut h, "the task finishes", |app| {
+        app.team.snapshot.as_ref().is_some_and(|s| {
+            s.state
+                .tasks
+                .values()
+                .any(|t| t.state == james_agents::runtime::TaskState::Succeeded)
+        })
+    });
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("notes/hello.md")).unwrap(),
+        "Hello from the team.\n"
+    );
+    let snap = h.state().team.snapshot.clone().unwrap();
+    assert!(snap.verified.is_ok());
+    let journal = std::fs::read_to_string(&snap.journal).unwrap();
+    assert!(journal.contains("\"kind\":\"approval.decided\""));
+}

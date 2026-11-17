@@ -1,0 +1,8 @@
+{
+  "schema": "rain-interop-receipt/v1",
+  "proposal_sha256": "d3162ca0619d67be974838a09dec080b156f6689289a766207ec2ac2567cc7e0",
+  "status": "queued_for_operator_review",
+  "authorizes_execution": false,
+  "queue_position": 1,
+  "note": "Queued for a lab operator. Nothing has been authorized or run."
+}

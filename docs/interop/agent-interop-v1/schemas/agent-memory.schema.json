@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-interop/v1/agent-memory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "system", "memory_id", "scope", "content_sha256", "content_bytes", "provenance", "supersedes", "created_at", "sha256"],
+  "properties": {
+    "schema": { "const": "agent-memory/v1" },
+    "system": { "enum": ["james-desktop", "rain-lab"] },
+    "memory_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
+    "scope": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["kind", "agent_id"], "properties": { "kind": { "const": "agent" }, "agent_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$" } } },
+        { "type": "object", "additionalProperties": false, "required": ["kind", "task_id"], "properties": { "kind": { "const": "task" }, "task_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" } } },
+        { "type": "object", "additionalProperties": false, "required": ["kind"], "properties": { "kind": { "const": "team" } } }
+      ]
+    },
+    "content_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "content_bytes": { "type": "integer", "minimum": 0, "maximum": 65536 },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["author", "task_id", "generation", "sources"],
+      "properties": {
+        "author": { "type": "string", "pattern": "^(person|host|[a-z][a-z0-9-]{1,63})$" },
+        "task_id": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
+        "generation": { "enum": ["model", "scripted", "person", "host"] },
+        "sources": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "ref", "sha256"],
+            "properties": {
+              "kind": { "enum": ["file", "run", "record", "message", "person"] },
+              "ref": { "type": "string", "minLength": 1, "maxLength": 512 },
+              "sha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" }
+            }
+          }
+        }
+      }
+    },
+    "supersedes": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
+    "created_at": { "type": "string", "maxLength": 24 },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

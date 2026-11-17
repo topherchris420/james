@@ -1,5 +1,24 @@
 # Source provenance
 
+## November 2026 Team and agent-interop/v1
+
+`james-agents`, `james-interop`, the Team page and the Lab interop client
+were written for James on 16–17 November 2026 by Claude Code (Anthropic),
+working in this repository. Ideas were taken, not code, from
+[SuperBot](https://github.com/davidondrej/superbot) (MIT, © 2026 David
+Ondrej) at commit `652e100`: one small adapter per model source, routines as
+data, delegation as a message to another assistant's queue, queued work that
+survives a restart, and interrupted work reported rather than replayed. Its
+permission-bypass flags, single all-powerful token, unbounded delegation and
+self-edited memory were deliberately not adopted. No SuperBot source, text,
+images or names were copied, so its licence imposes no notice here; this
+entry records the influence. The `agent-interop/v1` specification and its
+fixtures are shared with `topherchris420/lop-nur-twin`, whose own code wrote
+the fixtures. The demonstration transcripts in `docs/team-demo/` are real
+runs: the scripted team, and Qwen2.5-1.5B/3B-Instruct Q4_K_M GGUF files from
+Hugging Face served by llama.cpp `e8fbcad` on a CPU container. No model files
+are in this repository.
+
 ## November 2026 README campaign artwork
 
 The two images in [`docs/assets/marketing`](docs/assets/marketing/README.md)

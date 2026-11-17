@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-interop/v1/agent-approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "system", "request_id", "task_id", "requested_by", "effect", "action", "action_sha256", "expires_at", "decision", "sha256"],
+  "properties": {
+    "schema": { "const": "agent-approval/v1" },
+    "system": { "enum": ["james-desktop", "rain-lab"] },
+    "request_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
+    "task_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
+    "requested_by": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$" },
+    "effect": { "enum": ["file_write", "experiment_execution", "proposal_submission", "desktop_input", "network_disclosure"] },
+    "action": { "type": "object" },
+    "action_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "expires_at": { "type": "string", "maxLength": 24 },
+    "decision": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["by", "verdict", "at", "action_sha256"],
+          "properties": {
+            "by": { "const": "person" },
+            "verdict": { "enum": ["approved", "denied"] },
+            "at": { "type": "string", "maxLength": 24 },
+            "action_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          }
+        }
+      ]
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

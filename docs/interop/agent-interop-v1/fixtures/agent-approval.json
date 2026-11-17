@@ -1,0 +1,23 @@
+{
+  "schema": "agent-approval/v1",
+  "system": "james-desktop",
+  "request_id": "A-000001",
+  "task_id": "T-000004",
+  "requested_by": "writer",
+  "effect": "file_write",
+  "action": {
+    "kind": "file_write",
+    "path": "notes/summary.md",
+    "content_sha256": "88501c2f5e6660af97d9cafe49c86afa7adff4dc92cbe9e27141b4ef45642ee8",
+    "previous_sha256": null
+  },
+  "action_sha256": "da9aa934ab4354984ba71bcd70dd5c1875b89c947cd069004ec73af0376b9827",
+  "expires_at": "2026-11-16T12:10:00Z",
+  "decision": {
+    "by": "person",
+    "verdict": "approved",
+    "at": "2026-11-16T12:01:00Z",
+    "action_sha256": "da9aa934ab4354984ba71bcd70dd5c1875b89c947cd069004ec73af0376b9827"
+  },
+  "sha256": "f9ad2ec82ed511b7b724e7daffefc3e129270032586dd7cb2539604b73988bed"
+}

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-interop/v1/rain-interop-evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "episode_id", "title", "question", "outcome", "claims", "runs", "challenges", "limitations", "provenance", "sha256"],
+  "properties": {
+    "schema": { "const": "rain-interop-evidence/v1" },
+    "episode_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
+    "title": { "type": "string", "maxLength": 160 },
+    "question": { "type": "string", "maxLength": 600 },
+    "outcome": { "enum": ["supported", "refuted", "inconclusive", "contested"] },
+    "claims": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_id", "statement", "author", "generation", "standing", "evidence_run_ids", "open_challenges", "supersedes"],
+        "properties": {
+          "claim_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
+          "statement": { "type": "string", "maxLength": 600 },
+          "author": { "type": "string", "pattern": "^(person|host|[a-z][a-z0-9-]{1,63})$" },
+          "generation": { "enum": ["model", "scripted", "person", "host"] },
+          "standing": { "enum": ["proposed", "supported", "refuted", "contested", "insufficient", "superseded"] },
+          "evidence_run_ids": { "type": "array", "maxItems": 64, "items": { "type": "string", "maxLength": 96 } },
+          "open_challenges": { "type": "integer", "minimum": 0 },
+          "supersedes": { "type": ["string", "null"], "maxLength": 96 }
+        }
+      }
+    },
+    "runs": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["run_id", "purpose", "record_sha256", "status", "verdict", "measurements", "replay_verified"],
+        "properties": {
+          "run_id": { "type": "string", "maxLength": 96 },
+          "purpose": { "type": "string", "maxLength": 200 },
+          "record_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "status": { "enum": ["passed", "failed", "inconclusive", "error"] },
+          "verdict": { "enum": ["supported", "not_supported", "insufficient_evidence", "not_evaluated"] },
+          "measurements": { "type": "object", "maxProperties": 32, "additionalProperties": { "type": ["number", "null"] } },
+          "replay_verified": { "type": "boolean" }
+        }
+      }
+    },
+    "challenges": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["challenge_id", "by", "target_claim_id", "text", "generation", "resolution", "resolved_by_run"],
+        "properties": {
+          "challenge_id": { "type": "string", "maxLength": 96 },
+          "by": { "type": "string", "pattern": "^(person|host|[a-z][a-z0-9-]{1,63})$" },
+          "target_claim_id": { "type": "string", "maxLength": 96 },
+          "text": { "type": "string", "maxLength": 600 },
+          "generation": { "enum": ["model", "scripted", "person", "host"] },
+          "resolution": { "enum": ["open", "upheld", "rejected"] },
+          "resolved_by_run": { "type": ["string", "null"], "maxLength": 96 }
+        }
+      }
+    },
+    "limitations": { "type": "array", "maxItems": 16, "items": { "type": "string", "maxLength": 400 } },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lab_commit", "protocol_sha256", "journal_head_sha256", "evidence_class", "roster_sha256"],
+      "properties": {
+        "lab_commit": { "type": ["string", "null"], "pattern": "^[a-f0-9]{7,40}$" },
+        "protocol_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "journal_head_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "roster_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "evidence_class": { "const": "simulated" }
+      }
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

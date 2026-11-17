@@ -1,0 +1,26 @@
+{
+  "schema": "agent-memory/v1",
+  "system": "james-desktop",
+  "memory_id": "M-000001",
+  "scope": {
+    "kind": "agent",
+    "agent_id": "writer"
+  },
+  "content_sha256": "1b9675999ab56f2db918d31133c5e6a891aa54284448aca1b6280ba5cb98cce0",
+  "content_bytes": 43,
+  "provenance": {
+    "author": "person",
+    "task_id": null,
+    "generation": "person",
+    "sources": [
+      {
+        "kind": "person",
+        "ref": "Team page",
+        "sha256": null
+      }
+    ]
+  },
+  "supersedes": null,
+  "created_at": "2026-11-16T12:00:00Z",
+  "sha256": "7d502001b3a4c7e72b5d09ae9d530fd71e49aaa810d75736f945f6314472e977"
+}

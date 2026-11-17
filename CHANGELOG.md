@@ -11,7 +11,20 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ## Unreleased
 
-No changes recorded since `0.4.0-preview.5`.
+- **Team (Ctrl+7).** Four persistent assistants work on tasks you give them
+  through `james-agents`: bounded delegation, workspace-confined reads,
+  host-checked citations, scoped memory with provenance and Forget, routines,
+  and file writes only after you approve the exact content. Every step is a
+  hash-chained journal entry in `<data folder>/team/`, verified on open;
+  interrupted work waits for you after a restart. New saved data: the
+  `team/` folder; nothing else changes and older sessions open unchanged.
+  [docs/TEAM.md](docs/TEAM.md).
+- **Lab evidence interface.** The Lab page can read sealed evidence from a
+  Lab whose operator enabled `agent-interop/v1`, recompute its digest, and
+  send one reviewed proposal to the Lab's review queue. Tokens are never
+  saved. [docs/LAB.md](docs/LAB.md#optional-evidence-interface-agent-interopv1).
+- New crates `james-agents` and `james-interop`; `serde_json`'s
+  `float_roundtrip` feature is enabled so Lab digests recompute exactly.
 
 ## 0.4.0-preview.5 — 2026-11-15
 

@@ -1,14 +1,23 @@
-//! Read-only adapter for lop-nur-twin's actual local discovery API.
-//! This client never starts, authorizes, changes or stops research. Its only
-//! network path is `james-loopback`, so a port is the whole address. It sends
-//! exactly two kinds of request, `GET /api/rain/status` and
+//! Read-only adapter for lop-nur-twin's actual local discovery API, plus the
+//! optional `agent-interop/v1` client in [`interop`].
+//!
+//! The discovery client never starts, authorizes, changes or stops research.
+//! Its only network path is `james-loopback`, so a port is the whole address.
+//! It sends exactly two kinds of request, `GET /api/rain/status` and
 //! `GET /api/rain/discovery` with no query (the query forms can run a
 //! CPU-heavy replay inside the Lab, so James never uses them).
+//!
+//! [`interop`] adds, only when the Lab's operator configured tokens: reading
+//! sealed evidence by episode, and submitting a proposal the person approved
+//! to the Lab's review queue. A submitted proposal authorizes nothing; the Lab
+//! queues it for its own operator.
 //!
 //! The Lab is a simulator. Its results are labelled here by how far they can
 //! be trusted: a simulator run that was replayed and admitted to the Lab's
 //! registry, a hypothesis a model proposed, or something the Lab observed.
 //! None of it is real-world evidence, and none of it is an instruction.
+
+pub mod interop;
 
 use james_loopback::{Client, Error as HttpError, Limits, Timeouts};
 use serde::Deserialize;
