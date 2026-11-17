@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-interop/v1/agent-task",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "system", "task_id", "parent_task_id", "root_task_id", "depth", "created_by", "assignee", "objective", "budget", "state", "created_at", "sha256"],
+  "properties": {
+    "schema": { "const": "agent-task/v1" },
+    "system": { "enum": ["james-desktop", "rain-lab"] },
+    "task_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
+    "parent_task_id": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
+    "root_task_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
+    "depth": { "type": "integer", "minimum": 0, "maximum": 16 },
+    "created_by": { "type": "string", "pattern": "^(person|host|[a-z][a-z0-9-]{1,63})$" },
+    "assignee": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$" },
+    "objective": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_depth", "max_steps", "max_model_calls", "max_tokens", "deadline"],
+      "properties": {
+        "max_depth": { "type": "integer", "minimum": 0, "maximum": 16 },
+        "max_steps": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "max_model_calls": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "max_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "deadline": { "type": ["string", "null"], "maxLength": 24 }
+      }
+    },
+    "state": { "enum": ["queued", "running", "awaiting_approval", "succeeded", "failed", "cancelled", "interrupted"] },
+    "created_at": { "type": "string", "maxLength": 24 },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

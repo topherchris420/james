@@ -1,0 +1,25 @@
+James team demonstration
+  model:     llama.cpp server on port 8080 · qwen2.5-1.5b-instruct-q4_k_m
+  workspace: <temp>/workspace
+  journal:   <scratch>/demoA-llm/team/journal.jsonl
+
+You → coordinator (T-000001): Read the project notes in docs/ and produce notes/brief.md: a short brief of what must happen before release, with every point cited as [path:line]. Have the reviewer check the citations before the wr…
+
+  #7   T-000001 created for coordinator by person
+  #10  coordinator [model] asks reviewer: The reviewer should read the project notes in docs/ and provide citations for ea…
+  #11  T-000002 created for reviewer by coordinator
+  #15  reviewer [model] checks citations
+  #16  host → reviewer: verify_citations returned: No [path:line] citations were found in the text.
+  #18  reviewer [model] gives up: No [path:line] citations were found in the text.
+  #19  T-000002 failed
+  #23  coordinator [model] gives up: No [path:line] citations were found in the text.
+  #24  T-000001 failed
+
+Result (failed, words by model):
+No [path:line] citations were found in the text.
+
+Memory kept, with provenance:
+
+notes/brief.md on disk: not written
+Tasks in the tree: 2; model calls: 4; unusable replies refused: 0
+Journal chain verified: 24 records, head 7000b41530808db3

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-interop/v1/rain-interop-receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "proposal_sha256", "status", "authorizes_execution", "queue_position", "note"],
+  "properties": {
+    "schema": { "const": "rain-interop-receipt/v1" },
+    "proposal_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "status": { "enum": ["queued_for_operator_review", "duplicate"] },
+    "authorizes_execution": { "const": false },
+    "queue_position": { "type": "integer", "minimum": 1 },
+    "note": { "type": "string", "maxLength": 400 }
+  }
+}

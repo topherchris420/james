@@ -19,11 +19,14 @@ jobs:
       - name: Toolchain
         run: rustup toolchain install ${{ matrix.rust }} --profile minimal --component rustfmt --component clippy
       # Every crate that declares the minimum supported Rust is built with it.
-      - name: Core contracts, loopback transport, model and Lab clients, notices tool
-        run: cargo +${{ matrix.rust }} test -p james-core -p james-loopback -p james-models -p james-lab -p james-notices --all-targets --locked
+      - name: Core contracts, loopback transport, interop, team runtime, model and Lab clients, notices tool
+        run: cargo +${{ matrix.rust }} test -p james-core -p james-loopback -p james-interop -p james-agents -p james-models -p james-lab -p james-notices --all-targets --locked
       - name: Clippy on the same crates
-        run: cargo +${{ matrix.rust }} clippy -p james-core -p james-loopback -p james-models -p james-lab -p james-notices --all-targets --locked -- -D warnings
+        run: cargo +${{ matrix.rust }} clippy -p james-core -p james-loopback -p james-interop -p james-agents -p james-models -p james-lab -p james-notices --all-targets --locked -- -D warnings
       - name: Original demonstration
         run: cargo +${{ matrix.rust }} run -p james-core --locked --example approval_demo
       - name: Supervised demonstration
         run: cargo +${{ matrix.rust }} run -p james-core --locked --example supervised_demo
+      # Demonstration A with the scripted (rule-based) team; no model server in CI.
+      - name: Team demonstration (scripted, offline)
+        run: cargo +${{ matrix.rust }} run -p james-agents --locked --example team_demo -- --approve

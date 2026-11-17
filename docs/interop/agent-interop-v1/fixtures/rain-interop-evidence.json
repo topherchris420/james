@@ -1,0 +1,73 @@
+{
+  "schema": "rain-interop-evidence/v1",
+  "episode_id": "E-fixture",
+  "title": "Where does a damped oscillator respond most?",
+  "question": "At which drive frequency is RMS displacement largest?",
+  "outcome": "refuted",
+  "claims": [
+    {
+      "claim_id": "C-1",
+      "statement": "Peak RMS displacement occurs at the undamped natural frequency.",
+      "author": "james",
+      "generation": "scripted",
+      "standing": "refuted",
+      "evidence_run_ids": [
+        "NR-0123456789abcdef01234567"
+      ],
+      "open_challenges": 0,
+      "supersedes": null
+    },
+    {
+      "claim_id": "C-2",
+      "statement": "Peak RMS displacement occurs below the natural frequency.",
+      "author": "jasmine",
+      "generation": "scripted",
+      "standing": "supported",
+      "evidence_run_ids": [
+        "NR-0123456789abcdef01234567"
+      ],
+      "open_challenges": 0,
+      "supersedes": "C-1"
+    }
+  ],
+  "runs": [
+    {
+      "run_id": "NR-0123456789abcdef01234567",
+      "purpose": "discriminating frequency pair",
+      "record_sha256": "257cf98b198f88e578e086d936c23f6211c73185ee8791888a2933323fd4a768",
+      "status": "failed",
+      "verdict": "not_supported",
+      "measurements": {
+        "rms_control_m": 0.012345678901234,
+        "rms_treatment_m": 1e-9,
+        "rms_displacement_delta_m": -0.012345677901234,
+        "reference_max_error_m": 2.5e-13,
+        "arms_completed": 2,
+        "missing": null
+      },
+      "replay_verified": true
+    }
+  ],
+  "challenges": [
+    {
+      "challenge_id": "X-1",
+      "by": "jasmine",
+      "target_claim_id": "C-1",
+      "text": "Displacement amplitude peaks at sqrt(w0^2 - 2 gamma^2), not w0.",
+      "generation": "scripted",
+      "resolution": "upheld",
+      "resolved_by_run": "NR-0123456789abcdef01234567"
+    }
+  ],
+  "limitations": [
+    "Simulated oscillator only; no physical measurement."
+  ],
+  "provenance": {
+    "lab_commit": null,
+    "protocol_sha256": "2ea88c7a30351b12a4dcfc06cdce2af6eab18416176466c2500cb6ef74f745bf",
+    "journal_head_sha256": "4d62571d95049261e7bc553070a53af8967c4635e9138563d567e9f27a528264",
+    "roster_sha256": "c6836f7ad1c4da8a997c009a4b4b120c237b1993693239e194d6307d9d0b8c3a",
+    "evidence_class": "simulated"
+  },
+  "sha256": "3e31416823259ba7bacc3993701a17d445052d9503ef902df9d8b74b9c291b7b"
+}

@@ -1,0 +1,24 @@
+{
+  "schema": "rain-interop-status/v1",
+  "system": "rain-lab",
+  "interop_version": "agent-interop/v1",
+  "lab": {
+    "commit": null,
+    "dirty": null
+  },
+  "scopes_enabled": [
+    "read"
+  ],
+  "episodes": [
+    {
+      "episode_id": "E-fixture",
+      "title": "Where does a damped oscillator respond most?",
+      "outcome": "refuted",
+      "evidence_sha256": "3e31416823259ba7bacc3993701a17d445052d9503ef902df9d8b74b9c291b7b"
+    }
+  ],
+  "proposals_pending": 0,
+  "limitations": [
+    "Simulated evidence only."
+  ]
+}

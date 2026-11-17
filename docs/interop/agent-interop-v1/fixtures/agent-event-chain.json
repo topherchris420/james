@@ -1,0 +1,52 @@
+{
+  "schema": "agent-interop-event-chain/v1",
+  "events": [
+    {
+      "schema": "agent-event/v1",
+      "system": "rain-lab",
+      "seq": 1,
+      "prev": null,
+      "at": "2026-11-16T12:00:00Z",
+      "actor": "host",
+      "kind": "episode.opened",
+      "task_id": null,
+      "generation": "host",
+      "data": {
+        "episode": "E-fixture"
+      },
+      "sha256": "bc146d4713a108202b5aac15691995622951d6df315988a583114753b7f8161a"
+    },
+    {
+      "schema": "agent-event/v1",
+      "system": "rain-lab",
+      "seq": 2,
+      "prev": "bc146d4713a108202b5aac15691995622951d6df315988a583114753b7f8161a",
+      "at": "2026-11-16T12:00:00Z",
+      "actor": "james",
+      "kind": "message.hypothesis",
+      "task_id": "E-fixture",
+      "generation": "scripted",
+      "data": {
+        "text": "Peak response at 1.0 rad/s.",
+        "ratio": 0.995
+      },
+      "sha256": "95f0b33cd228b88a0847f5a662f6fdf5251619fcdbcc3a3f6eda31992147bb56"
+    },
+    {
+      "schema": "agent-event/v1",
+      "system": "rain-lab",
+      "seq": 3,
+      "prev": "95f0b33cd228b88a0847f5a662f6fdf5251619fcdbcc3a3f6eda31992147bb56",
+      "at": "2026-11-16T12:00:00Z",
+      "actor": "jasmine",
+      "kind": "message.challenge",
+      "task_id": "E-fixture",
+      "generation": "scripted",
+      "data": {
+        "text": "The window includes the transient.",
+        "decay_time_s": 12.5
+      },
+      "sha256": "4d62571d95049261e7bc553070a53af8967c4635e9138563d567e9f27a528264"
+    }
+  ]
+}

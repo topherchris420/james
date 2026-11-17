@@ -4,6 +4,8 @@ members = [
     "crates/james-loopback",
     "crates/james-models",
     "crates/james-lab",
+    "crates/james-interop",
+    "crates/james-agents",
     "crates/james-platform",
     "crates/james-desktop",
     "tools/notices",

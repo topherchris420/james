@@ -9,6 +9,7 @@ mod evidence;
 mod evidence_view;
 mod floating;
 mod guide;
+mod lab_interop_view;
 mod lab_view;
 mod markdown;
 mod media_now;
@@ -22,6 +23,7 @@ mod settings_page;
 mod setup;
 mod shepherd_view;
 mod shortcuts;
+mod team_view;
 mod theme;
 mod timing;
 mod voice;
@@ -527,15 +529,17 @@ enum Page {
     Lab,
     Settings,
     Shepherd,
+    Team,
 }
 impl Page {
-    const ALL: [(Self, &'static str, egui::Key); 6] = [
+    const ALL: [(Self, &'static str, egui::Key); 7] = [
         (Self::Chat, "Conversation", egui::Key::Num1),
         (Self::Screen, "Screen context", egui::Key::Num2),
         (Self::Actions, "Computer control", egui::Key::Num3),
         (Self::Lab, "R.A.I.N. Lab", egui::Key::Num4),
         (Self::Settings, "Settings", egui::Key::Num5),
         (Self::Shepherd, "Shepherd", egui::Key::Num6),
+        (Self::Team, "Team", egui::Key::Num7),
     ];
 }
 /// How a status message should look.
@@ -793,6 +797,8 @@ struct JamesApp {
     action_y: u32,
     lab: lab_view::LabState,
     shepherd: shepherd_view::ShepherdState,
+    team: team_view::TeamState,
+    lab_interop: lab_interop_view::InteropState,
     recovery: review::Recovery,
     voice: voice::Phase,
     /// When the last spoken voice turn happened, while a conversation is live.
@@ -946,6 +952,8 @@ impl JamesApp {
             action_y: 0,
             lab: lab_view::LabState::new(saved.lab_port),
             shepherd: shepherd_view::ShepherdState::new(),
+            team: team_view::TeamState::new(),
+            lab_interop: lab_interop_view::InteropState::default(),
             recovery,
             voice: voice::Phase::Off,
             voice_alive: None,
@@ -3532,6 +3540,7 @@ impl JamesApp {
         self.poll_displays();
         self.lab.poll();
         self.shepherd.poll();
+        self.team.poll();
         let dropped = ctx.input(|input| input.raw.dropped_files.clone());
         if !dropped.is_empty() {
             if self.busy() {
@@ -3582,6 +3591,9 @@ impl JamesApp {
         if self.busy()
             || self.lab.connected
             || self.shepherd.connected
+            || self.team.active()
+            || self.lab_interop.busy()
+            || (self.page == Page::Team && self.team.started())
             || self.info_worker.is_some()
             || self.lab.finding()
         {
@@ -3627,9 +3639,13 @@ impl JamesApp {
                     Page::Chat => {}
                     Page::Screen => pages::screen(self, ui, ctx),
                     Page::Actions => pages::actions(self, ui),
-                    Page::Lab => lab_view::ui(self, ui),
+                    Page::Lab => {
+                        lab_view::ui(self, ui);
+                        lab_interop_view::ui(self, ui);
+                    }
                     Page::Settings => pages::settings(self, ui),
                     Page::Shepherd => shepherd_view::ui(self, ui),
+                    Page::Team => team_view::ui(self, ui),
                 });
         });
         self.dialogs(ctx);

@@ -1,0 +1,5 @@
+{
+  "schema": "rain-interop-error/v1",
+  "code": "unauthorized",
+  "message": "A valid read token is required."
+}

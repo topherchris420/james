@@ -1,0 +1,108 @@
+{
+  "schema": "agent-interop-canonical-fixtures/v1",
+  "cases": [
+    {
+      "name": "integers",
+      "value": [
+        0,
+        1,
+        -1,
+        42,
+        9007199254740991,
+        -9007199254740991
+      ],
+      "canonical": "[0,1,-1,42,9007199254740991,-9007199254740991]",
+      "sha256": "0339c6206cc3dd2c9dd28b6fbd5d8d1bba2eac60315c3605c0cd897f24d26b6c"
+    },
+    {
+      "name": "negative zero",
+      "value": 0,
+      "canonical": "0",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "name": "fractions",
+      "value": [
+        0.1,
+        0.5,
+        1.5,
+        -2.25,
+        3.141592653589793,
+        0.000025
+      ],
+      "canonical": "[0.1,0.5,1.5,-2.25,3.141592653589793,0.000025]",
+      "sha256": "9c7c78e7cd58a3ecaa5886b2b7e38a539e3823d2c5b480d9137dc06e0ddd1d5d"
+    },
+    {
+      "name": "exponent boundaries",
+      "value": [
+        1e+21,
+        100000000000000000000,
+        1e-7,
+        0.000001,
+        1.5e-7,
+        1.23e-18
+      ],
+      "canonical": "[1e+21,100000000000000000000,1e-7,0.000001,1.5e-7,1.23e-18]",
+      "sha256": "26bab01bd27cc1248ab7ee1f1e52cb3befc5f5effa843071e050dc99143e08f3"
+    },
+    {
+      "name": "large and tiny",
+      "value": [
+        1.7976931348623157e+308,
+        5e-324,
+        123456789012345680000
+      ],
+      "canonical": "[1.7976931348623157e+308,5e-324,123456789012345680000]",
+      "sha256": "24b404d200024cd91f1a372e47c44357e0c501e76ef49e6d0823695f7f7a171d"
+    },
+    {
+      "name": "float that is an integer",
+      "value": [
+        1,
+        100,
+        1000000000000000,
+        10000000000000000
+      ],
+      "canonical": "[1,100,1000000000000000,10000000000000000]",
+      "sha256": "fbc31b4c2074ca1a8c0f7c9e6fc01ae5b24e222a5a0b84db2d4361939ee8ae06"
+    },
+    {
+      "name": "key order is UTF-16",
+      "value": {
+        "b": 1,
+        "a": 2,
+        "B": 3,
+        "": 4,
+        "😀": 5,
+        "é": 6,
+        "": 7
+      },
+      "canonical": "{\"\":7,\"B\":3,\"a\":2,\"b\":1,\"é\":6,\"😀\":5,\"\":4}",
+      "sha256": "cd59964dbe16fa824b240d5b299ac84abb2916df43ec3c65c0b9acd713a4a4fd"
+    },
+    {
+      "name": "string escapes",
+      "value": "quote\" backslash\\ nl\n cr\r tab\t bs\b ff\f nul\u0000 unit\u001f del ls  ps  é 😀",
+      "canonical": "\"quote\\\" backslash\\\\ nl\\n cr\\r tab\\t bs\\b ff\\f nul\\u0000 unit\\u001f del ls  ps  é 😀\"",
+      "sha256": "cd134ab483a95f56f374198a1009a0f252b392bc02e667bbc56b8a1872ac573e"
+    },
+    {
+      "name": "nesting",
+      "value": {
+        "z": [
+          null,
+          true,
+          false,
+          {
+            "y": [],
+            "x": {}
+          }
+        ],
+        "a": ""
+      },
+      "canonical": "{\"a\":\"\",\"z\":[null,true,false,{\"x\":{},\"y\":[]}]}",
+      "sha256": "13302a2b50c84194b970c07e7578a2859ff34c840ca3166c26a5bfa0174aac3b"
+    }
+  ]
+}

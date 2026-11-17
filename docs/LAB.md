@@ -129,3 +129,36 @@ No tokens or credentials are sent, and there is no remote or cloud Lab.
   for the page and its offline back-off.
 - **Reproduce**: start the Lab, then
   `cargo run -p james-lab --example inspect -- 5173`.
+
+
+## Optional evidence interface (agent-interop/v1)
+
+*Unreleased.* A Lab whose operator sets `RAIN_INTEROP_READ_TOKEN` (and
+optionally `RAIN_INTEROP_PROPOSE_TOKEN`) serves three routes to loopback
+clients only, on its local dev and preview servers. The contract is
+[`docs/interop/agent-interop-v1/`](interop/agent-interop-v1/README.md),
+vendored byte for byte in both repositories and pinned by
+`AGENT_INTEROP_V1_MANIFEST_SHA256`.
+
+| James sends | Needs | James checks |
+| --- | --- | --- |
+| `GET /api/rain/interop/v1/status` | read token | schema and version; lists sealed episodes and their digests |
+| `GET /api/rain/interop/v1/evidence?episode=<id>` | read token | recomputes the record's SHA-256 with the shared canonical JSON and requires it to equal the digest the status listed |
+| `POST /api/rain/interop/v1/proposals` | proposal token **and** your approval of the exact proposal digest on the Lab page | refuses a receipt that does not say `"authorizes_execution": false` |
+
+Tokens stay in James's memory and are never written to `session.json`.
+Nothing from this section reaches the model, the Team or the action
+reviewer. A digest shows a record is intact, not that it is true; a
+process that controls the Lab's port can serve any self-consistent record.
+
+Try it from a terminal against a running Lab:
+
+```bash
+JAMES_LAB_READ_TOKEN=<read token> cargo run -p james-lab --example interop -- 4173
+```
+
+The recorded run on 17 November 2026 against Lop Nur Twin's preview server
+is in [`docs/team-demo/lab-interop-run.txt`](team-demo/lab-interop-run.txt):
+James verified and explained the Lab's assumption-correction episode, sent
+one approved proposal (queued, nothing authorized), and refused to send a
+second without a proposal token.

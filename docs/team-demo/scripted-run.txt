@@ -1,0 +1,65 @@
+James team demonstration
+  model:     scripted policy · demo team
+  workspace: <temp>/workspace
+  journal:   <scratch>/demoA-scripted/team/journal.jsonl
+
+You → coordinator (T-000001): Read the project notes in docs/ and produce notes/brief.md: a short brief of what must happen before release, with every point cited as [path:line]. Have the reviewer check the citations before the wr…
+
+  #7   T-000001 created for coordinator by person
+  #10  coordinator [scripted] asks researcher: Read every file under docs/ and report what must happen before release. Quote ea…
+  #11  T-000002 created for researcher by coordinator
+  #15  researcher [scripted] lists docs
+  #16  host → researcher: list_files returned: known-issues.md (151 bytes) release.md (138 bytes) style.md (26 bytes)
+  #18  researcher [scripted] reads docs/known-issues.md
+  #19  host → researcher: read_file returned: docs/known-issues.md (sha256 b9b245968ec6) 1| # Known issues 2| 3| On …
+  #21  researcher [scripted] reads docs/release.md
+  #22  host → researcher: read_file returned: docs/release.md (sha256 550c62c72464) 1| # Release checklist 2| 3| The…
+  #24  researcher [scripted] reads docs/style.md
+  #25  host → researcher: read_file returned: docs/style.md (sha256 8f07dee42b0e) 1| # Style 2| 3| Use plain words.
+  #27  researcher [scripted] remembers: Release blockers found in docs/: 5 items (see the researcher's report).
+  #28  memory M-000001 written
+  #31  researcher [scripted] finishes: - "On macOS the first launch must be allowed in Privacy settings." [docs/known-i…
+  #32  T-000002 succeeded
+  #36  coordinator [scripted] asks writer: Draft a release brief from these findings. Keep every citation. Finish with the …
+  #37  T-000003 created for writer by coordinator
+  #41  writer [scripted] finishes: # Before release - "On macOS the first launch must be allowed in Privacy settin…
+  #42  T-000003 succeeded
+  #46  coordinator [scripted] asks reviewer: Check every citation in this draft against the files. # Before release - "On ma…
+  #47  T-000004 created for reviewer by coordinator
+  #51  reviewer [scripted] checks citations
+  #52  host → reviewer: verify_citations returned: 5 citations checked by the host: 5 hold, 0 fail.
+  #54  reviewer [scripted] finishes: 5 citations checked by the host: 5 hold, 0 fail.
+  #55  T-000004 succeeded
+  #59  coordinator [scripted] asks writer: The reviewer confirmed the citations. Propose notes/brief.md with exactly this c…
+  #60  T-000005 created for writer by coordinator
+  #64  writer [scripted] proposes writing notes/brief.md (400 bytes)
+  #65  T-000005 is waiting for your approval
+
+┌─ Approval needed (A-000001) ─ writer wants to write notes/brief.md
+│  exact action sha256 7fc2e7c4cb69de393c0745349c253a5e32e352d14df146d67ea709f263ae6cdd
+│  previous file: (none; a new file)
+│  # Before release
+│  
+│  - "On macOS the first launch must be allowed in Privacy settings." [docs/known-issues.md:3]
+│  - "LM Studio validation is incomplete and must be finished before release." [docs/known-issues.md:4]
+│  - "The installer must be signed before release." [docs/release.md:3]
+│  - "Screen-reader testing is still open." [docs/release.md:4]
+│  - "The changelog needs a dated entry." [docs/release.md:5]
+└─ Approved by command-line flag
+   → applied
+
+  #68  approval applied: Wrote notes/brief.md (sha256 4b629fdf632d).
+  #71  writer [scripted] finishes: applied: Wrote notes/brief.md (sha256 4b629fdf632d).
+  #72  T-000005 succeeded
+  #76  coordinator [scripted] finishes: The researcher read the docs, the writer drafted a cited brief, the reviewer's h…
+  #77  T-000001 succeeded
+
+Result (succeeded, words by scripted):
+The researcher read the docs, the writer drafted a cited brief, the reviewer's host check passed, and the writer's file proposal went to you. Outcome: applied: Wrote notes/brief.md (sha256 4b629fdf632d).
+
+Memory kept, with provenance:
+  M-000001 [the whole team] by researcher (scripted) from ["docs/known-issues.md@b9b245968e", "docs/release.md@550c62c724", "docs/style.md@8f07dee42b"]: Release blockers found in docs/: 5 items (see the researcher's report).
+
+notes/brief.md on disk: written
+Tasks in the tree: 5; model calls: 16; unusable replies refused: 0
+Journal chain verified: 77 records, head 59356e21bbb4f1e4

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-interop/v1/rain-interop-proposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "from", "title", "question", "hypothesis", "rationale", "generation", "approval", "sha256"],
+  "properties": {
+    "schema": { "const": "rain-interop-proposal/v1" },
+    "from": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["system", "agent_id"],
+      "properties": {
+        "system": { "const": "james-desktop" },
+        "agent_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$" }
+      }
+    },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "question": { "type": "string", "minLength": 1, "maxLength": 600 },
+    "hypothesis": { "type": "string", "minLength": 1, "maxLength": 600 },
+    "rationale": { "type": "string", "maxLength": 2000 },
+    "generation": { "enum": ["model", "scripted", "person"] },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "action_sha256", "decided_at"],
+      "properties": {
+        "request_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
+        "action_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "decided_at": { "type": "string", "maxLength": 24 }
+      }
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

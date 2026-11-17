@@ -1708,6 +1708,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
+name = "james-agents"
+version = "0.4.0-preview.5"
+dependencies = [
+ "james-interop",
+ "james-loopback",
+ "james-models",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "james-core"
 version = "0.4.0-preview.5"
 
@@ -1720,6 +1731,7 @@ dependencies = [
  "egui_kittest",
  "global-hotkey",
  "image",
+ "james-agents",
  "james-core",
  "james-lab",
  "james-loopback",
@@ -1732,10 +1744,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "james-interop"
+version = "0.4.0-preview.5"
+dependencies = [
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "james-lab"
 version = "0.4.0-preview.5"
 dependencies = [
+ "james-agents",
+ "james-interop",
  "james-loopback",
+ "james-models",
  "serde",
  "serde_json",
  "socket2",

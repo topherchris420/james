@@ -81,3 +81,16 @@ Release packages are unsigned unless a maintainer configures certificates (see [
 ## Reporting
 
 No production version is supported. Use [GitHub private vulnerability reporting](https://github.com/topherchris420/james/security/advisories/new) for a private reproduction. Do not post credentials, screenshots, or private research in public issues.
+
+
+## The Team and the Lab evidence interface (unreleased)
+
+The Team's limits (closed action list, capabilities, workspace confinement,
+bounded delegation, digest-bound approvals, scoped memory) are enforced by
+James's code, not by an OS sandbox; a model reply is never executed, but a
+file you approve can still do harm when another program opens it. The team
+journal and its blobs are plain files under your account and are not
+encrypted. Lab interop tokens are held in memory only and sent only to a
+loopback port; a token is a shared secret, not identity, and a digest does
+not prove a record true. See [docs/TEAM.md](docs/TEAM.md) and
+[docs/LAB.md](docs/LAB.md#optional-evidence-interface-agent-interopv1).

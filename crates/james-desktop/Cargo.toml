@@ -13,6 +13,7 @@ name = "james"
 path = "src/main.rs"
 
 [dependencies]
+james-agents = { path = "../james-agents" }
 james-core = { path = "../james-core" }
 james-platform = { path = "../james-platform" }
 james-lab = { path = "../james-lab" }

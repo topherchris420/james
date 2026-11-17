@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-interop/v1/rain-interop-status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "system", "interop_version", "lab", "scopes_enabled", "episodes", "proposals_pending", "limitations"],
+  "properties": {
+    "schema": { "const": "rain-interop-status/v1" },
+    "system": { "const": "rain-lab" },
+    "interop_version": { "const": "agent-interop/v1" },
+    "lab": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "dirty"],
+      "properties": {
+        "commit": { "type": ["string", "null"], "pattern": "^[a-f0-9]{7,40}$" },
+        "dirty": { "type": ["boolean", "null"] }
+      }
+    },
+    "scopes_enabled": { "type": "array", "maxItems": 2, "items": { "enum": ["read", "propose"] } },
+    "episodes": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["episode_id", "title", "outcome", "evidence_sha256"],
+        "properties": {
+          "episode_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$" },
+          "title": { "type": "string", "maxLength": 160 },
+          "outcome": { "enum": ["supported", "refuted", "inconclusive", "contested"] },
+          "evidence_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    },
+    "proposals_pending": { "type": "integer", "minimum": 0 },
+    "limitations": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 400 } }
+  }
+}

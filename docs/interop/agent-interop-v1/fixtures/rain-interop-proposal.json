@@ -1,0 +1,18 @@
+{
+  "schema": "rain-interop-proposal/v1",
+  "from": {
+    "system": "james-desktop",
+    "agent_id": "researcher"
+  },
+  "title": "Does damping shift the response peak?",
+  "question": "How far below the natural frequency is the RMS displacement peak as damping grows?",
+  "hypothesis": "The peak moves lower as the damping ratio increases.",
+  "rationale": "Seen in the fixture episode; untested beyond it.",
+  "generation": "person",
+  "approval": {
+    "request_id": "A-000002",
+    "action_sha256": "86ba617bded91773b3b4160935c5fffacd56ece370c3926167a5122dd68955c1",
+    "decided_at": "2026-11-16T12:00:00Z"
+  },
+  "sha256": "d3162ca0619d67be974838a09dec080b156f6689289a766207ec2ac2567cc7e0"
+}

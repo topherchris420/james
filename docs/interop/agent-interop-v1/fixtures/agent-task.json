@@ -1,0 +1,21 @@
+{
+  "schema": "agent-task/v1",
+  "system": "james-desktop",
+  "task_id": "T-000002",
+  "parent_task_id": "T-000001",
+  "root_task_id": "T-000001",
+  "depth": 1,
+  "created_by": "coordinator",
+  "assignee": "researcher",
+  "objective": "List the files under docs/ and quote the lines about setup.",
+  "budget": {
+    "max_depth": 1,
+    "max_steps": 8,
+    "max_model_calls": 4,
+    "max_tokens": null,
+    "deadline": null
+  },
+  "state": "queued",
+  "created_at": "2026-11-16T12:00:00Z",
+  "sha256": "b176b99b834858c7f6248e926f98f64b59853edfae6c8fe5fa0da916a88fc958"
+}

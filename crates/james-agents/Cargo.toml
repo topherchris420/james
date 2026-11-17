@@ -1,0 +1,18 @@
+[package]
+name = "james-agents"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "James's local multi-agent runtime: persistent assistants, a hash-chained journal, scoped memory, bounded delegation and approval gates"
+publish = false
+
+[dependencies]
+james-interop = { path = "../james-interop" }
+james-loopback = { path = "../james-loopback" }
+james-models = { path = "../james-models" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[lints]
+workspace = true
