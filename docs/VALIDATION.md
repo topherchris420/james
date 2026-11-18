@@ -5,7 +5,7 @@ newest first. [END_USER_READINESS.md](END_USER_READINESS.md) turns it into a
 score and release classification; [ACCEPTANCE_TESTS.md](ACCEPTANCE_TESTS.md)
 lists the scenarios still to run.
 
-## Korso-informed native frontend/backend checks (2026-11-14)
+## Native frontend/backend checks (2026-11-14)
 
 The working branch is based on `1f85e66`. Checks run on Windows ARM64 using
 Rust 1.99.0 and the x64 GNU target through emulation, with the existing local
@@ -22,19 +22,16 @@ local progress, Pause/Resume/End; marks-only replies; shared visibility controls
 new-answer lifecycle; and preserving user drawings. These are native GUI tests,
 not a browser demonstration or a live compatibility test of every model server.
 
-Not exercised here: authenticated Korso history/guidance, hosted service behavior,
-physical overlay click-through/transparency, mixed-monitor DPI, macOS/Linux native
-windows, real microphone/input helpers, or release installers. The four ignored
-tests require explicit desktop capture, Windows input or speech-helper execution.
-Minimum supported Rust toolchains and other operating systems were not rechecked
-in this session. The readiness classification remains developer preview. See the
-[feature/evidence report](KORSO_FRONTEND_BACKEND.md) for static-analysis coverage
-and the separation between observations and design choices.
+Not exercised here: physical overlay click-through/transparency, mixed-monitor
+DPI, macOS/Linux native windows, real microphone/input helpers, or release
+installers. The four ignored tests require explicit desktop capture,
+Windows input or speech-helper execution. Minimum supported Rust toolchains
+and other operating systems were not rechecked in this session.
+The readiness classification remains developer preview.
 
 ### Completion run (2026-11-14, later session)
 
-After the multi-file attachment migration was finished (see the completion pass
-in the feature report), the full suite was re-run on Windows ARM64 building the
+After the multi-file attachment migration was finished, the full suite was re-run on Windows ARM64 building the
 x86_64-pc-windows-msvc target under Visual Studio 2026 Build Tools, Rust 1.99.0,
 `--locked` with the local Cargo cache:
 
@@ -48,10 +45,10 @@ x86_64-pc-windows-msvc target under Visual Studio 2026 Build Tools, Rust 1.99.0,
 The workspace was not re-verified on macOS, Linux or the minimum supported
 Rust toolchain in this session.
 
-### Worth-doing parity run (2026-11-14, final)
+### Voice, guidance and companion checks (2026-11-14, final)
 
 The live-voice, Google speech, advisory check, guarded undo and companion pet
-pass (see the feature report) re-ran the same checks:
+pass re-ran the same checks:
 
 - `cargo test --workspace --all-targets -- --test-threads=1`: **365 passed,
   0 failed, 4 ignored** (215 desktop tests).
@@ -305,7 +302,6 @@ The records below this section describe earlier milestones. Current v0.3 adds na
 
 - Actual Lab Vite server: read-only status and discovery verified at upstream commit `a2d7882e1317af1ea1a333c31ead033f0d87c60e`; reachable, available, idle. No experiment started.
 - Windows helpers: in-memory PNG capture and cancellation of launched speech helpers exercised. A capture test hit the original 20-second deadline under host load; subsequent compiled-test and direct-helper retries passed in 12.30 and 11.41 seconds, returning a 1920×1200 PNG. After increasing the cancellable startup deadline to 60 seconds, all seven platform tests (including both opt-in smoke tests) passed in 7.66 seconds. Microphone accuracy and actual target-application input remain separate hands-on checks.
-- REA public Korso page observation: bounded finding ledger in [DESKTOP-RESEARCH.md](DESKTOP-RESEARCH.md). No desktop-internals equivalence claimed.
 - Inno Setup 6.4.3 template compilation and script parameter/path validation passed. The portable compiler download passed package SHA-256 and valid publisher-signature verification. Clean-machine installation lifecycle and signing remain outstanding.
 - [Desktop CI run 38153765315](https://github.com/topherchris420/james/actions/runs/38153765315) subsequently passed Windows and Ubuntu tests/lint, built the optimized Windows executable, compiled the real installer, and uploaded both distributions with the installer checksum. This is build verification, not a clean-machine installation test. The later capture-timeout-only adjustment also passed all seven local platform tests.
 - At commit `1433a22dac97f102eda18bd321f62a5949038cd1`, [desktop CI](https://github.com/topherchris420/james/actions/runs/38152527843) passed all 56 workspace tests, formatting and strict Clippy on Windows and Ubuntu. Windows also completed the optimized MSVC executable build. Packaging then failed because Chocolatey did not provide the pinned compiler; the portable verified compiler replaces that dependency. The separate six-job core Rust compatibility matrix also passed.

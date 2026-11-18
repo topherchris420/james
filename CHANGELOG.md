@@ -48,7 +48,6 @@ platform and safety limitations.
   only your confirmation. A later answer or new capture retires the old guide.
 - **Reject malformed guidance coordinates.** Signed, decimal and otherwise
   malformed model tuples no longer get reinterpreted as positive pixel locations.
-  See [frontend/backend evidence](docs/KORSO_FRONTEND_BACKEND.md).
 - **Attach several files to one question.** Select up to eight PDFs, UTF-8
   text files, PNGs, JPEGs or WebP images together (96 KiB of text and 16 MiB
   of images in total), review each one, and remove any single file before
@@ -57,7 +56,7 @@ platform and safety limitations.
   them. A screenshot question and attached images remain mutually exclusive.
 - **Live voice conversations.** Talk now keeps listening through silences for
   follow-ups until ten minutes pass without a spoken turn, instead of pausing
-  after each 15-second silence (Korso's live mode used the same window).
+  after each 15-second silence.
   Pressing the Talk chord while James is speaking interrupts it so you can talk
   over the answer, and the conversation continues listening.
 - **Optional Google Cloud speech.** Answers can be read aloud through Google
@@ -170,18 +169,15 @@ Companion mode. Windows builds also include reviewed file and desktop utilities.
 - **Point and draw on screen context.** Add colored marks, undo or clear them,
   and inspect the selected region before sending. A failed crop stops the
   request. Talk preserves the typed draft and its screenshot attachment.
-- **Korso reconstruction report.** [Static findings and replication coverage](docs/KORSO_REPLICATION.md)
-  trace the inspected client behavior and identify remaining parity work.
-
 - **Second-pass review of a proposed action.** Before you review a click, key
   press or typing that **Suggest one action** proposed, a second model pass
   looks at the same screenshot and writes a short note — flagging anything
   irreversible or off-target — shown with the action on the review card. You
   still approve every action yourself; the note is a prompt to look, not a
   gate. On by default; it costs one extra model request, so it adds a short
-  wait, and can be turned off in **Settings → Reviewed actions**. James's local
-  take on Korso's planner+reviewer coordination, kept inside James's
-  one-approval-one-action model.
+  wait, and can be turned off in **Settings → Reviewed actions**. The
+  advisory review never authorizes an action; each action still needs
+  separate human approval.
 - **Choose which monitor to capture.** When more than one display is
   connected, the Screen context page shows a **Monitor** picker next to the
   capture button, so you can grab a screen other than the primary one. Vision

@@ -1,6 +1,6 @@
 # James requirements
 
-Status: original Phase 1 specification, 2026-10-11; the **Current state** column was updated for 0.4.0 on 2026-10-12. Proposed acceptance criteria are not implemented features. Trace reference-derived motivation through [RESEARCH.md](RESEARCH.md); architecture decisions through [ARCHITECTURE.md](ARCHITECTURE.md).
+Status: original Phase 1 specification, 2026-10-11; the **Current state** column was updated for 0.4.0 on 2026-10-12. Proposed acceptance criteria are not implemented features. See [ARCHITECTURE.md](ARCHITECTURE.md) for architecture decisions and [VALIDATION.md](VALIDATION.md) for recorded checks.
 
 | ID | Requirement | Acceptance evidence | Current state |
 | --- | --- | --- | --- |
@@ -27,7 +27,7 @@ Use a conventional James conversation window with an expandable execution timeli
 
 The timeline shows queued, waiting for review, running, cancellation requested, completed, failed, and uncertain operations. “Stop” requests cancellation; it does not falsely report a committed side effect as undone. A separate recovery panel identifies unresolved operations after restart. Provider settings expose model capabilities, endpoint location, inference locality, and explicit cloud opt-in.
 
-These are original interface choices; no Korso tab, artwork, pet, tour, typography, sounds, or screen arrangement is reproduced.
+These are James interface design choices; actual implementation and acceptance evidence are tracked separately.
 
 ## Delivery boundary
 

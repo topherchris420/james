@@ -97,7 +97,3 @@ history search. They test application behavior, not whether a real model follows
 the citation instructions. Real local-model answer quality and physical Windows
 and macOS usability still require independent trials.
 
-Korso's [security page](https://korsoai.com/security), updated November 6, 2026,
-states that its desktop app was discontinued November 3. Earlier Korso workflows
-are a historical design reference; these changes make no claim of measured
-product superiority or access to Korso's replacement product.

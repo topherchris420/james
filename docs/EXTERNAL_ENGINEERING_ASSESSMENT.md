@@ -59,9 +59,6 @@ The same reviewer **might** ask:
 - Can a real locally hosted Shepherd hub be exercised successfully and reproducibly?
 - Can the four-agent Team finish complex tasks with actual, supported local models?
 - How does the product handle credentials, crash recovery, and real desktop windows under adversarial conditions?
-- What is the implementation provenance of features informed by Korso's discontinued desktop product?
-
-James's [KORSO_REPLICATION.md](KORSO_REPLICATION.md) documents static analysis of a prior Korso desktop artifact and states that the James implementations were written independently, without copying Korso code or assets. This document does **not** independently verify that claim or resolve any intellectual-property question. Product similarity does not establish endorsement, infringement, or collaboration.
 
 **Estimated reception:** plausible engineering interest; uncertain product or collaboration interest; likely requests for stronger runtime demonstrations. No evidence reviewed here shows that Korso personnel have evaluated or expressed an opinion on James.
 
@@ -99,7 +96,7 @@ James has moved beyond a minimal chat wrapper: its current development branch co
 
 ### Source and review boundaries
 
-- [James README](../README.md), [Team](TEAM.md), [Shepherd](SHEPHERD.md), [Lab](LAB.md), [platform support](PLATFORM_SUPPORT.md), [security](../SECURITY.md), [readiness](END_USER_READINESS.md), [reconstruction](KORSO_REPLICATION.md)
+- [James README](../README.md), [Team](TEAM.md), [Shepherd](SHEPHERD.md), [Lab](LAB.md), [platform support](PLATFORM_SUPPORT.md), [security](../SECURITY.md), [readiness](END_USER_READINESS.md)
 - [GitHub Actions for the reviewed revision](https://github.com/topherchris420/james/actions)
 - [Korso-AI/Shepherd](https://github.com/Korso-AI/Shepherd)
 

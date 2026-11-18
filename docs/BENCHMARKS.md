@@ -1,6 +1,6 @@
 # James benchmark and validation protocol
 
-Status: **proposed protocol**, 2026-10-11. No comparative James/Korso benchmark results are established here. Phase 1 core tests validate only their exercised policy/lifecycle contracts; they do not demonstrate desktop reliability, sandboxing, local inference, or product superiority.
+Status: **proposed protocol**, 2026-10-11. No comparative product benchmark results are established here. Phase 1 core tests validate only their exercised policy/lifecycle contracts; they do not demonstrate desktop reliability, sandboxing, local inference, or product superiority.
 
 ## Questions to answer
 
@@ -35,7 +35,7 @@ Tests should assert consequences at the dispatch contract, not merely compare ge
 Freeze the task corpus, scoring rubric, fixtures, success criteria, and analysis before comparative runs. Record:
 
 - James commit, build profile, dependencies, executable hash, and enabled features.
-- Korso executable/version/hash where available, investigation evidence identifiers, and observable configuration.
+- Comparator executable/version/hash where available, permitted test evidence identifiers, and observable configuration.
 - OS/build, CPU, RAM, GPU/driver, VRAM, storage, and power profile.
 - Provider/server version, endpoint, inference locality, model identifier/digest, quantization, context length, sampling settings, and tool-call template where known.
 - Tool/extension versions, fixture hashes, permissions, network conditions, concurrency, and task budgets.

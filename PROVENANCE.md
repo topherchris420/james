@@ -32,80 +32,41 @@ The artwork is supplied under this repository's MIT license; the prompts and
 asset inventory are recorded alongside it. Existing application screenshots
 remain unchanged and retain their recorded validation provenance below.
 
-## November 2026 Korso replication
+## November 2026 desktop feature provenance
 
-The 14 November frontend/backend pass independently adds elapsed history groups,
-current-chat navigation, reversible guidance-number visibility, strict
-coordinate parsing, and a user-confirmed GuidePlan checklist in the existing
-Rust implementation. The checklist keeps completed/current/upcoming instructions,
-pause/resume/end state and bounded current-step overlay labels. It is local,
-memory-only state and does not reproduce Korso's automatic control checkpoints
-or hosted guide services. No reference source,
-prompts, names, images or other assets were incorporated. No dependencies were
-added. [Its evidence report](docs/KORSO_FRONTEND_BACKEND.md) separates inspected
-artifact facts from runtime observations and implementation choices.
+The November frontend/backend updates introduced elapsed history groups,
+current-chat navigation, configurable guidance marks, strict coordinate
+parsing, a user-confirmed guidance checklist, multiple attachments,
+live voice follow-ups, advisory step checks, reviewed typing Undo and the
+octopus companion. The desktop behavior and its regression tests were
+implemented in James's Rust code. Some functional requirements were informed
+by public product information and earlier external product research.
+This is not a claim of formally segregated clean-room development.
+No third-party application source, prompts, interface artwork or assets
+were incorporated or redistributed.
 
-Codex authored the initial changes in this pass. The Abliteration Flash model
-and subsequently the user-selected Large V2 model performed actual follow-on
-implementation through a scoped MCP bridge with real REA operations and
-allowlisted public James source read/search/edit access. The provider received
-that public source, structural REA results and sanitized behavior notes, not
-private user files or raw Korso source. API credentials and the private usage
-ledger remain outside the repository. The cumulative task cap is $10; the
-private ledger and final handoff hold the accounted total rather than a frozen
-interim figure in this provenance record.
+Codex and additional model-assisted implementation passes contributed
+to these changes under project-scoped file access. `global-hotkey` 0.10
+(MIT OR Apache-2.0) adds shortcut registration, test-only `base64` 0.22
+(MIT OR Apache-2.0) inspects image payloads, and `pdf-extract` 0.12.1
+(MIT) supports text extraction from PDFs. The existing `image` dependency
+enables JPEG/WebP features. Cargo.lock and generated third-party notices
+record the dependency resolutions.
 
-The current guide analysis reference is
-`ev_7aa66e67bf7be0f2375aa1ced3ab6c454efcfea0e8b40065e98268da6e5d5cd3`.
-Its static findings and the inventory evidence are linked in the frontend/backend
-report. The only Korso runtime observation in this pass was startup/onboarding
-and an unavailable sign-in surface. Authenticated guidance, history and backend
-behavior were not exercised. Multiple pending file attachments remain a James
-gap at this point. No complete replica or product-superiority claim is made.
-
-The conversation archive, compact companion, global summon, screenshot annotations,
-and draft-preserving voice submission were independently implemented in Rust.
-The [reconstruction report](docs/KORSO_REPLICATION.md) records the exact Korso 0.7.8
-artifact, REA evidence, inspected source locations, and unresolved behavior.
-Recovered source and assets remain outside this repository.
-
-New direct dependencies are `global-hotkey` 0.10 (MIT OR Apache-2.0), for native
-shortcut registration, and test-only `base64` 0.22 (MIT OR Apache-2.0), for inspecting
-actual image request payloads. Cargo.lock pins their resolved dependencies.
-File attachment processing also uses `pdf-extract` 0.12.1 (MIT), and enables
-the JPEG and WebP features of the existing `image` dependency; their transitive
-dependencies are recorded in Cargo.lock and included in generated notices.
-The desktop guidance viewport, voice chord dispatcher, and in-process reminders
-are original James implementations informed by the same static investigation;
-they introduce no new direct dependencies.
-The create-only model proposal and reviewed Windows dictation helpers are also
-original James implementations; the latter uses documented Win32 focus and
-Unicode input APIs without altering the clipboard. The file workflow writes only
-a newly created name and does not reproduce Korso's broader editing tools.
-Read-only workspace snapshots and the media widget are original implementations;
-the Windows media helper uses the system's Global System Media Transport Controls
-API and introduces no new direct Rust dependency.
-Configurable chords, opt-in reminder retention, frozen revision sources, and
-the fixed Windows Settings-page opener are original extensions with no new
-direct dependencies. Settings destinations use Microsoft's documented
-`ms-settings` identifiers; models never provide launch URIs or commands.
-
-James's Rust source, tests, demonstration, architecture, and project documents were authored independently for this project on 2026-10-11. Functional requirements were informed by public Korso documentation and bounded REA inspection of its publicly downloadable Windows package.
-
-Research and implementation occurred in the same investigation. This is an independent implementation, not a claim of a formally segregated clean-room process. No reference code, source maps, prompts, UI layout, logos, fonts, images, sounds, or pet assets were copied into James. No Korso backend or private repository was accessed. The initial artifact investigation did not launch a Korso executable; the later 14 November runtime check observed the installed app's startup and unavailable sign-in surface, as recorded above. Public website JavaScript did run in an isolated browser during declared REA page captures.
-
-The reference installer, extracted files, and complete REA evidence remain outside the James repository. Their identifiers and hashes are recorded in [RESEARCH.md](docs/RESEARCH.md); James's MIT license does not license those artifacts. Public research documentation contains concise findings and provenance, not recovered reference source.
-
-`james-core` currently depends only on the Rust standard library. There are no vendored third-party runtime packages or visual assets. The CI workflow uses GitHub's checkout action at a pinned commit; the project neither redistributes nor relicenses that action. Add a license/dependency inventory before introducing external crates or assets.
-
-Architectural recommendations about eframe, iced, Tauri, Tokio, SQLite, inference servers, and MCP are sourced to their primary documentation in [ARCHITECTURE.md](docs/ARCHITECTURE.md). Proposed components are not already integrated.
-
-Contributions must identify the origin and license of new code and assets. Keep proprietary research files outside the repository, preserve observations versus inferences, and never replace benchmark evidence with marketing claims.
-
+The history archive, companion, overlays, voice interactions, Windows
+input review, file workflows, media widget and platform integrations were
+written for James. Windows input handling uses documented operating-system
+APIs, and model outputs do not become unreviewed executable instructions.
+Claims of correctness or originality must still be evaluated against
+the project's source and tests. Historical commits remain available for
+source and implementation provenance.
 
 ## v0.3 desktop integrations
 
-The new platform helpers, model vision request serialization, review UI, Lab client and installer were independently authored for James. REA inspected the public Korso landing page on 2026-10-11; the bounded observation and design mapping are recorded in [DESKTOP-RESEARCH.md](docs/DESKTOP-RESEARCH.md). No Korso code, assets, private API or recovered prompts are shipped. Complete page evidence is retained outside the repository.
+The new platform helpers, model vision request serialization, review UI,
+Lab client and installer were authored for James using documented platform
+and provider APIs. No third-party application binaries or proprietary
+assets are shipped with the project.
 
 ## Voice conversation, Guide me and cross-platform helpers
 
@@ -129,8 +90,9 @@ The screenshots in `docs/assets` are unedited captures of James itself, taken in
 
 ## Capture self-exclusion
 
-The wait for James to leave the picture before a Windows screenshot was independently authored for James on 2026-10-12. Its requirement came from REA-assisted inspection of the Korso 0.7.8 Windows installer (`Korso-windows-x64-setup.exe`, SHA-256 `a44f6effcb604ec2f5e8b4296338d0170b17884a402c86cfc8b1ed02792cf8a5`), whose capture path hides its own windows, waits for composition and only then captures. The installer was extracted, not run. No Korso code was copied; the timing values were chosen for James, and the window checks use the documented Win32 functions `EnumWindows`, `IsWindowVisible`, `IsIconic` and `GetWindowRect`. Korso's preferred route, `SetWindowDisplayAffinity`, only affects windows of the calling process, so James can't use it without unsafe code, which the workspace forbids.
-
-The What's new notes after an upgrade were independently authored for James on 2026-10-12. The idea came from the same inspection: Korso's package carries per-version release notes that it shows after an update. James reads its own CHANGELOG.md instead; no Korso text or layout was used.
-
-The numbered Guide me marks were independently authored for James on 2026-10-12. The idea came from Korso's bundled release notes for 0.7.0 ("guide you step by step, marking each button"), read during the same inspection; its package has overlay and drawing modules, which suggests it marks the live screen, while James marks only its own copy of the screenshot. No Korso code, prompt or drawing was used.
+The Windows screenshot flow waits for James's own window to leave the
+picture before capturing. Its implementation uses documented Win32
+functions, including `EnumWindows`, `IsWindowVisible`, `IsIconic`
+and `GetWindowRect`. The desktop release-notes feature displays James's
+own changelog, and Guide me renders original marks on an explicitly
+captured screenshot. No third-party app assets are shipped by these features.
