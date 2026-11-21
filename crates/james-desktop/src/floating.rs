@@ -1,5 +1,6 @@
 //! A small, movable companion window and an in-process timer.
 use crate::edge_dock::{self, Edge, Monitor};
+use crate::octopus::{Mood, Octopus};
 use crate::session::{self, SavedReminder};
 use eframe::egui::{self, ViewportBuilder, ViewportClass, ViewportCommand, ViewportId};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -12,6 +13,7 @@ type DockResult = (
 
 pub struct Floating {
     pub visible: bool,
+    octopus: Octopus,
     minutes: u32,
     deadline: Option<Instant>,
     reminder_text: String,
@@ -37,6 +39,7 @@ impl Default for Floating {
     fn default() -> Self {
         Self {
             visible: false,
+            octopus: Octopus::default(),
             minutes: 5,
             deadline: None,
             reminder_text: String::new(),
@@ -96,48 +99,105 @@ impl Floating {
     pub fn take_changed(&mut self) -> bool {
         std::mem::take(&mut self.changed)
     }
-    /// A tiny octopus lives in the companion. It reflects local timer state,
-    /// never an AI action, and remains recognizable without emoji fonts.
-    pub fn pet_line(&self) -> &'static str {
-        if let Some(deadline) = self.deadline {
-            if deadline.saturating_duration_since(Instant::now()).is_zero() {
-                return "Octopus is ringing the bell";
-            }
-            return "Octopus is watching your timer";
+    pub fn launcher(&mut self, ui: &mut egui::Ui) -> bool {
+        let clicked = ui
+            .button(if self.visible {
+                "Hide octopus"
+            } else {
+                "Octopus"
+            })
+            .on_hover_text("Show or hide the floating octopus, timer and reminders")
+            .clicked();
+        if clicked {
+            self.visible = !self.visible;
+            ui.ctx().request_repaint();
         }
-        "Octopus is resting"
+        clicked
     }
 
-    /// Paint a small octopus directly with egui so every supported platform
-    /// can render it without font/emoji fallback or external image assets.
-    fn paint_octopus(&self, ui: &mut egui::Ui) {
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(34.0, 32.0), egui::Sense::hover());
-        let painter = ui.painter_at(rect);
-        let center = rect.center();
-        let color = match self.deadline {
-            Some(deadline) if deadline <= Instant::now() => egui::Color32::from_rgb(217, 106, 109),
-            Some(_) => egui::Color32::from_rgb(67, 157, 186),
-            None => egui::Color32::from_rgb(153, 125, 199),
-        };
+    fn remaining(&self, now: Instant) -> Option<Duration> {
+        self.deadline
+            .map(|deadline| deadline.saturating_duration_since(now))
+    }
 
-        // Eight curved-looking, rounded arms, drawn first behind the mantle.
-        for arm in 0..8 {
-            let lane = arm as f32 - 3.5;
-            let base = egui::pos2(center.x + lane * 1.5, center.y + 3.0);
-            let elbow = egui::pos2(center.x + lane * 2.5, center.y + 9.0 + (arm % 2) as f32);
-            let tip = egui::pos2(center.x + lane * 3.7, center.y + 7.0 - (arm % 3) as f32);
-            painter.add(egui::Shape::line(
-                vec![base, elbow, tip],
-                egui::Stroke::new(2.6_f32, color),
-            ));
-            painter.circle_filled(tip, 1.3, color);
+    fn show_timer(&mut self, ui: &mut egui::Ui, remaining: Option<Duration>) {
+        match remaining {
+            Some(left) if left.is_zero() => {
+                ui.horizontal_wrapped(|ui| {
+                    ui.strong("Timer finished");
+                    if ui.add(crate::theme::primary(ui, "Dismiss")).clicked() {
+                        self.deadline = None;
+                    }
+                });
+            }
+            Some(left) => {
+                let seconds = left.as_secs() + u64::from(left.subsec_nanos() > 0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{}:{:02}", seconds / 60, seconds % 60))
+                            .size(23.0)
+                            .monospace(),
+                    );
+                    if ui.button("Cancel timer").clicked() {
+                        self.deadline = None;
+                    }
+                });
+                let fraction = left.as_secs_f32() / (self.minutes as f32 * 60.0);
+                ui.add(egui::ProgressBar::new(fraction).desired_height(4.0));
+                ui.ctx().request_repaint_after(Duration::from_secs(1));
+            }
+            None => {
+                ui.horizontal_wrapped(|ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut self.minutes)
+                            .range(1..=1440)
+                            .suffix(" min"),
+                    )
+                    .widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::WidgetType::DragValue,
+                            true,
+                            "Timer minutes",
+                        )
+                    });
+                    if ui.add(crate::theme::primary(ui, "Start timer")).clicked() {
+                        self.deadline = Some(
+                            Instant::now() + Duration::from_secs(u64::from(self.minutes) * 60),
+                        );
+                    }
+                });
+            }
         }
+    }
 
-        painter.circle_filled(egui::pos2(center.x, center.y - 4.0), 10.0, color);
-        for dx in [-3.8, 3.8] {
-            let eye = egui::pos2(center.x + dx, center.y - 5.5);
-            painter.circle_filled(eye, 2.6, egui::Color32::WHITE);
-            painter.circle_filled(eye, 1.2, egui::Color32::from_rgb(35, 43, 59));
+    fn reminder_rows(&mut self, ui: &mut egui::Ui, now: SystemTime, due: bool) {
+        let mut remove = None;
+        for (index, reminder) in self
+            .reminders
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| (r.due <= now) == due)
+        {
+            ui.horizontal_wrapped(|ui| {
+                if due {
+                    ui.strong(format!("Due: {}", reminder.text));
+                } else {
+                    let minutes = reminder
+                        .due
+                        .duration_since(now)
+                        .unwrap_or_default()
+                        .as_secs()
+                        .div_ceil(60);
+                    ui.label(format!("{} · {minutes} min", reminder.text));
+                }
+                if ui.small_button("Remove").clicked() {
+                    remove = Some(index);
+                }
+            });
+        }
+        if let Some(index) = remove {
+            self.reminders.remove(index);
+            self.changed = true;
         }
     }
     pub fn tick(&mut self, ctx: &egui::Context) {
@@ -231,124 +291,143 @@ impl Floating {
         self.reminder_text.clear();
         true
     }
+    fn reminder_editor(&mut self, ui: &mut egui::Ui, now: SystemTime) {
+        if ui
+            .checkbox(
+                &mut self.remember_reminders,
+                "Save reminders on this computer",
+            )
+            .changed()
+        {
+            self.changed = true;
+        }
+        ui.add(
+            egui::TextEdit::singleline(&mut self.reminder_text)
+                .hint_text("Reminder text")
+                .char_limit(MAX_REMINDER_CHARS)
+                .desired_width(ui.available_width()),
+        )
+        .widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Reminder text")
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.add(
+                egui::DragValue::new(&mut self.reminder_minutes)
+                    .range(1..=1440)
+                    .prefix("In ")
+                    .suffix(" min"),
+            );
+            let can_add =
+                !self.reminder_text.trim().is_empty() && self.reminders.len() < MAX_REMINDERS;
+            if ui
+                .add_enabled(can_add, egui::Button::new("Add reminder"))
+                .clicked()
+            {
+                self.add_reminder(now);
+            }
+        });
+        self.reminder_rows(ui, now, false);
+        ui.small("Due reminders open this companion while James is running. Saved reminders resume when James reopens. No system notifications are sent.");
+    }
+
+    fn content(
+        &mut self,
+        ui: &mut egui::Ui,
+        status: &str,
+        native: bool,
+        reduce_motion: bool,
+    ) -> (bool, bool) {
+        let actions = ui
+            .horizontal_wrapped(|ui| {
+                ui.label(egui::RichText::new("Octopus").size(20.0).strong());
+                let open = ui.button("Open James").clicked();
+                let hide = ui.button("Hide window").clicked();
+                (open, hide)
+            })
+            .inner;
+        if status != "Off" {
+            ui.small(status);
+        }
+        let now = SystemTime::now();
+        self.reminder_rows(ui, now, true);
+        let remaining = self.remaining(Instant::now());
+        let mood = Mood::from_remaining(remaining);
+        self.octopus.portrait(ui, mood, reduce_motion);
+        ui.strong(mood.description());
+        self.show_timer(ui, remaining);
+        ui.small("Timer runs while James is open.");
+        if cfg!(windows) && native {
+            ui.horizontal_wrapped(|ui| {
+                let enabled = self.dock_pending.is_none();
+                if ui
+                    .add_enabled(enabled, egui::Button::new("Dock left"))
+                    .clicked()
+                {
+                    self.request_dock(ui.ctx(), Edge::Left);
+                }
+                if ui
+                    .add_enabled(enabled, egui::Button::new("Dock right"))
+                    .clicked()
+                {
+                    self.request_dock(ui.ctx(), Edge::Right);
+                }
+            });
+            if let Some(error) = &self.dock_error {
+                ui.small(error);
+            }
+        }
+        ui.separator();
+        egui::CollapsingHeader::new("Reminders")
+            .show_unindented(ui, |ui| self.reminder_editor(ui, now));
+        if self.reminders.iter().any(|r| !r.announced) {
+            ui.ctx().request_repaint_after(Duration::from_secs(1));
+        }
+        if cfg!(windows) {
+            self.media.show(ui);
+        }
+        actions
+    }
+
     /// Returns true when the person asks to bring the main window forward.
-    pub fn show(&mut self, ctx: &egui::Context, status: &str, capture_in_progress: bool) -> bool {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        status: &str,
+        capture_in_progress: bool,
+        reduce_motion: bool,
+    ) -> bool {
         if !self.visible || capture_in_progress {
+            self.octopus = Octopus::default();
             return false;
         }
-        let mut open_main = false;
-        let mut close = false;
+
         let builder = ViewportBuilder::default()
             .with_title("James companion")
-            .with_inner_size([300.0, 310.0])
+            .with_inner_size([324.0, if cfg!(windows) { 425.0 } else { 362.0 }])
             .with_min_inner_size([210.0, 140.0])
             .with_always_on_top()
             .with_taskbar(false);
-        ctx.show_viewport_immediate(
+        let (open_main, close) = ctx.show_viewport_immediate(
             ViewportId::from_hash_of("james-floating"),
             builder,
             |ctx, class| {
-                let content = |ui: &mut egui::Ui,
-                               state: &mut Self,
-                               open_main: &mut bool,
-                               close: &mut bool| {
-                    ui.horizontal(|ui| {
-                        ui.strong("James");
-                        if ui.button("Open").clicked() {
-                            *open_main = true;
-                        }
-                        if ui.button("Close tab").clicked() {
-                            *close = true;
-                        }
-                    });
-                    ui.small(status);
-                    ui.horizontal(|ui| {
-                        state.paint_octopus(ui);
-                        ui.label(egui::RichText::new(state.pet_line()).weak());
-                    });
-                    if cfg!(windows) && class != ViewportClass::Embedded {
-                        ui.horizontal(|ui| {
-                            let enabled = state.dock_pending.is_none();
-                            if ui.add_enabled(enabled, egui::Button::new("Dock left")).clicked() { state.request_dock(ctx, Edge::Left); }
-                            if ui.add_enabled(enabled, egui::Button::new("Dock right")).clicked() { state.request_dock(ctx, Edge::Right); }
-                        });
-                        if let Some(error) = &state.dock_error { ui.small(error); }
-                    }
-                    ui.separator();
-                    if let Some(deadline) = state.deadline {
-                        let left = deadline.saturating_duration_since(Instant::now());
-                        if left.is_zero() {
-                            ui.strong("Timer finished");
-                            if ui.button("Dismiss").clicked() {
-                                state.deadline = None;
-                            }
-                        } else {
-                            let seconds = left.as_secs().saturating_add(1);
-                            ui.label(format!("Timer: {}:{:02}", seconds / 60, seconds % 60));
-                            if ui.button("Cancel timer").clicked() {
-                                state.deadline = None;
-                            }
-                            ctx.request_repaint_after(Duration::from_secs(1));
-                        }
-                    } else {
-                        ui.horizontal(|ui| {
-                            ui.add(
-                                egui::DragValue::new(&mut state.minutes)
-                                    .range(1..=1440)
-                                    .suffix(" min"),
-                            );
-                            if ui.button("Start timer").clicked() {
-                                state.deadline = Some(
-                                    Instant::now()
-                                        + Duration::from_secs(u64::from(state.minutes) * 60),
-                                );
-                            }
-                        });
-                    }
-                    ui.small("Timer runs while James is open.");
-                    ui.separator();
-                    ui.strong("Reminders");
-                    if ui.checkbox(&mut state.remember_reminders, "Save reminders on this computer").changed() { state.changed = true; }
-                    let reminder_input = ui.add(egui::TextEdit::singleline(&mut state.reminder_text)
-                        .hint_text("Reminder text")
-                        .char_limit(MAX_REMINDER_CHARS));
-                    reminder_input.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Reminder text"));
-                    ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(&mut state.reminder_minutes).range(1..=1440).prefix("In ").suffix(" min"));
-                        let can_add = !state.reminder_text.trim().is_empty() && state.reminders.len() < MAX_REMINDERS;
-                        if ui.add_enabled(can_add, egui::Button::new("Add reminder")).clicked() {
-                            state.add_reminder(SystemTime::now());
-                        }
-                    });
-                    let mut remove = None;
-                    for (index, reminder) in state.reminders.iter().enumerate() {
-                        ui.horizontal_wrapped(|ui| {
-                            if SystemTime::now() >= reminder.due {
-                                ui.strong(format!("Due: {}", reminder.text));
-                            } else {
-                                let remaining = reminder.due.duration_since(SystemTime::now()).unwrap_or_default().as_secs().div_ceil(60);
-                                ui.label(format!("{} · {remaining} min", reminder.text));
-                            }
-                            if ui.small_button("Remove").clicked() { remove = Some(index); }
-                        });
-                    }
-                    if let Some(index) = remove { state.reminders.remove(index); state.changed = true; }
-                    if !state.reminders.is_empty() { ctx.request_repaint_after(Duration::from_secs(1)); }
-                    ui.small("Due reminders open this companion while James is running. Saved reminders resume when James reopens. No system notifications are sent.");
-                    ui.separator();
-                    state.media.show(ui);
-                };
                 if class == ViewportClass::Embedded {
                     egui::Window::new("James companion")
-                        .show(ctx, |ui| content(ui, self, &mut open_main, &mut close));
+                        .default_size([308.0, 350.0])
+                        .vscroll(true)
+                        .show(ctx, |ui| self.content(ui, status, false, reduce_motion))
+                        .and_then(|window| window.inner)
+                        .unwrap_or_default()
                 } else {
                     self.finish_dock(ctx);
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        egui::ScrollArea::vertical().show(ui, |ui| content(ui, self, &mut open_main, &mut close));
-                    });
-                    if ctx.input(|i| i.viewport().close_requested()) {
-                        close = true;
-                    }
+                    let (open, hide) = egui::CentralPanel::default()
+                        .show(ctx, |ui| {
+                            egui::ScrollArea::vertical()
+                                .show(ui, |ui| self.content(ui, status, true, reduce_motion))
+                                .inner
+                        })
+                        .inner;
+                    (open, hide || ctx.input(|i| i.viewport().close_requested()))
                 }
             },
         );
@@ -368,15 +447,15 @@ mod tests {
     use super::*;
     #[test]
     fn the_octopus_reflects_the_timer() {
-        let state = Floating::default();
-        assert_eq!(state.pet_line(), "Octopus is resting");
-        let mut state = Floating {
-            deadline: Some(Instant::now() + Duration::from_secs(30)),
-            ..Floating::default()
-        };
-        assert_eq!(state.pet_line(), "Octopus is watching your timer");
-        state.deadline = Some(Instant::now() - Duration::from_secs(1));
-        assert_eq!(state.pet_line(), "Octopus is ringing the bell");
+        let now = Instant::now();
+        let mut state = Floating::default();
+        assert_eq!(Mood::from_remaining(state.remaining(now)), Mood::Rest);
+        state.deadline = Some(now + Duration::from_secs(30));
+        assert_eq!(Mood::from_remaining(state.remaining(now)), Mood::Watch);
+        assert_eq!(
+            Mood::from_remaining(state.remaining(now + Duration::from_secs(30))),
+            Mood::Bell
+        );
     }
     #[test]
     fn restored_overdue_reminders_open_once_and_unsaved_text_is_omitted() {

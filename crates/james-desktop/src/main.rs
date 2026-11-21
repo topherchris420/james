@@ -14,6 +14,7 @@ mod lab_view;
 mod markdown;
 mod media_now;
 mod media_widget;
+mod octopus;
 mod overlay;
 mod pages;
 mod review;
@@ -3239,6 +3240,9 @@ impl JamesApp {
                             }
                         }
                         ui.separator();
+                        if self.floating.launcher(ui) {
+                            ui.close_menu();
+                        }
                         chat::connection_badge(self, ui);
                     });
                     if ui.button("Full window").clicked() {
@@ -3278,6 +3282,7 @@ impl JamesApp {
                 {
                     self.set_compact(ctx, !self.compact);
                 }
+                self.floating.launcher(ui);
                 if !self.compact {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         chat::connection_badge(self, ui);
@@ -3578,7 +3583,10 @@ impl JamesApp {
         self.overlay.show(ctx, capturing);
         let status = self.worker.as_ref().map_or(self.voice.label(), |w| w.label);
         self.floating.tick(ctx);
-        if self.floating.show(ctx, status, capturing) {
+        if self
+            .floating
+            .show(ctx, status, capturing, self.prefs.reduce_motion)
+        {
             if self.scheduled.take().is_some() {
                 self.info("Action countdown cancelled when you opened James.");
             }

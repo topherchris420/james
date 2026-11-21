@@ -5,6 +5,19 @@ newest first. [END_USER_READINESS.md](END_USER_READINESS.md) turns it into a
 score and release classification; [ACCEPTANCE_TESTS.md](ACCEPTANCE_TESTS.md)
 lists the scenarios still to run.
 
+## Floating octopus (2026-11-21)
+
+The native Linux binary ran on an X11 virtual display. The toolbar opened the
+floating window with the model disconnected. A one-minute timer changed the
+lavender resting pose to the blue hourglass, counted down, then displayed the
+coral bell. Dismiss restored the resting pose. The screenshot combines three
+captures of that window at 2× display scale. [Companion captures](assets/james-octopus.webp).
+
+The dark, high-contrast window showed an overdue reminder above the portrait
+with the reminder editor folded. At 210 points wide, the header wrapped and
+scrolling reached the timer and reminders. Keyboard greeting and timer-state
+checks also run in the desktop accessibility-tree tests.
+
 ## Native frontend/backend checks (2026-11-14)
 
 The working branch is based on `1f85e66`. Checks run on Windows ARM64 using

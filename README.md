@@ -40,7 +40,11 @@ James connects to a model server running on your computer: **Ollama, LM Studio, 
 | **Taking a deliberate next step** | On Windows, review one proposed click, key, or text entry before allowing it. Guidance and spoken replies never authorize input. |
 | **A team for bigger tasks** *(unreleased)* | Give a task to four persistent assistants — Coordinator, Researcher, Writer, Reviewer — that delegate within bounds, read only the folder you choose, keep notes you can inspect or forget, and write a file only after you approve its exact content. [The Team](docs/TEAM.md). |
 
-The octopus is a small local status indicator: lavender while resting, blue while watching a timer, and coral when it finishes. The sculptural character above is its campaign interpretation; the app uses a simple illustrated companion.
+**Floating octopus** *(unreleased)*. Select **Octopus** in the toolbar to open the desktop companion. It rests in lavender, watches a brass hourglass while the timer runs, and lifts a handbell when time is up. Click the portrait or focus **Wave hello** and press Space to get a wave back.
+
+<p align="center">
+<img src="docs/assets/james-octopus.webp" alt="Three Linux captures of the floating companion. A lavender octopus at rest, a blue octopus watching the countdown, and a coral octopus holding a bell after the timer finishes." width="900" />
+</p>
 
 <a id="what-preview5-adds"></a>
 <a id="what-preview4-adds"></a>
