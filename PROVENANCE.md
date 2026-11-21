@@ -1,5 +1,13 @@
 # Source provenance
 
+## Floating companion sculpture (2026-11-21)
+
+The desktop octopus, hourglass and bell were modeled for James in Blender.
+The procedural source defines the eight arm paths, skin, eyes, stoneware glaze,
+props, lighting and greeting poses. It produces the WebP sheets bundled in
+`crates/james-desktop/assets/octopus`. The sculpt and renders share the
+repository's MIT license. [Blender source and rebuild command](scripts/render-companion.py).
+
 ## November 2026 Team and agent-interop/v1
 
 `james-agents`, `james-interop`, the Team page and the Lab interop client

@@ -11,6 +11,8 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ## Unreleased
 
+- Open the sculpted floating octopus from the toolbar. It waves back, watches the timer beside an hourglass and raises a bell at the deadline. Reduced motion uses a held greeting pose. Due reminders appear above the portrait.
+
 - **Team (Ctrl+7).** Four persistent assistants work on tasks you give them
   through `james-agents`: bounded delegation, workspace-confined reads,
   host-checked citations, scoped memory with provenance and Forget, routines,

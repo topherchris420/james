@@ -996,6 +996,7 @@ fn every_character_the_interface_uses_can_be_drawn() {
         include_str!("../chat.rs"),
         include_str!("../guide.rs"),
         include_str!("../floating.rs"),
+        include_str!("../octopus.rs"),
         include_str!("../setup.rs"),
         include_str!("../pages.rs"),
         include_str!("../lab_view.rs"),
@@ -1353,17 +1354,34 @@ fn image_attachment_is_sent_as_an_image_and_conflicts_with_screenshot() {
 fn floating_companion_starts_and_cancels_a_timer() {
     let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
     let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
-    h.state_mut().floating.visible = true;
+    h.get_by_label("Octopus").click();
     h.run();
+    assert!(h.query_by_label("Octopus is resting").is_some());
     h.get_by_label("Start timer").click();
     h.run();
-    assert!(h.query_by_label("Cancel timer").is_some());
+    assert!(h.query_by_label("Octopus is watching your timer").is_some());
     h.get_by_label("Cancel timer").click();
     h.run();
     assert!(h.query_by_label("Start timer").is_some());
-    h.get_by_label("Close tab").click();
+    h.get_by_label("Hide window").click();
     h.run();
     assert!(!h.state().floating.visible);
+}
+
+#[test]
+fn the_octopus_greets_from_the_keyboard_without_changing_the_timer() {
+    let mut app = james(None);
+    app.prefs.reduce_motion = true;
+    let mut h = harness(app);
+    h.get_by_label("Octopus").click();
+    frames(&mut h, 3);
+    h.get_by_label("Wave hello").focus();
+    h.step();
+    h.press_key(egui::Key::Space);
+    frames(&mut h, 2);
+    assert!(h.query_by_label("Octopus waves back. Wave again").is_some());
+    assert!(h.query_by_label("Octopus is resting").is_some());
+    assert!(h.query_by_label("Start timer").is_some());
 }
 
 #[test]
@@ -1374,6 +1392,8 @@ fn floating_companion_adds_and_removes_a_reminder() {
     // The companion's text field can request selection repaints, so advance a
     // fixed number of frames instead of waiting for the UI to settle.
     h.run_steps(2);
+    h.get_by_label("Reminders").click();
+    frames(&mut h, 8);
     h.get_by_label("Reminder text").click();
     h.get_by_label("Reminder text").type_text("Check the oven");
     // A focused text field can keep requesting selection/caret repaints.
@@ -1419,6 +1439,8 @@ fn reminders_save_only_after_opt_in_and_can_be_removed_from_disk() {
     // Text selection and caret rendering can request extra repaints on Windows
     // and macOS. Render the companion without waiting for the UI to go idle.
     h.run_steps(2);
+    h.get_by_label("Reminders").click();
+    frames(&mut h, 8);
     h.get_by_label("Reminder text").click();
     h.get_by_label("Reminder text").type_text("Local reminder");
     // Editing the focused field can request continuing text-selection repaints,

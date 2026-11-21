@@ -159,6 +159,14 @@ setup again from **Settings → Help, updates and about**.
 
 ## 4. Things to try
 
+- **Keep a timer on your desk** *(unreleased)*. Choose **Octopus** in the toolbar
+  or the compact **Pages** menu. Set the minutes and choose **Start timer**.
+  The octopus watches an hourglass until the countdown ends, then holds up a
+  bell. **Dismiss** returns it to rest. Click the portrait or focus **Wave hello**
+  and press Space. With **Reduce motion** turned on, it holds up an arm for a
+  moment. Expand **Reminders** to add a reminder. Keep James running for timers
+  and reminders.
+
 - **Find a saved conversation.** Open **History** and search saved titles and
   messages. Results show elapsed save times and are grouped into under 24 hours,
   the previous week, and older chats; missing or future times are labelled
