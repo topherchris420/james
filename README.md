@@ -26,6 +26,10 @@ James connects to a model server running on your computer: **Ollama, LM Studio, 
 > [!NOTE]
 > **Developer preview · v0.4.0-preview.5.** The current release includes live Talk follow-ups, multiple attachments, guided step checks, guarded Windows typing Undo, and the companion octopus. Platform support varies; physical Windows/macOS use, accessibility, and independent security validation remain incomplete. Read the [release notes](CHANGELOG.md#040-preview5--2026-11-15) and [platform evidence](docs/PLATFORM_SUPPORT.md).
 
+## Your model. Your question. Your decision.
+
+Explore with a model of your choosing, influence the inquiry by selecting which context to share, and inspect the answer with checkable sources and deliberate follow-up. James is a companion for reasoning, not an automatic authority. [Experience design](docs/EXPERIENCE_DESIGN.md).
+
 <a id="01-the-apparatus"></a>
 
 ## Meet your desktop companion
