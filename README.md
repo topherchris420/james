@@ -2,8 +2,6 @@
 
 # James
 
-<img src="docs/assets/marketing/james-hero.webp" alt="James. Intelligence. At your side. Your model. Your context. Your call. A lavender octopus on a soft white background." width="1200" />
-
 **An open-source desktop AI companion. Built around the model you choose.**
 
 Chat, talk, explore your screen, and work with documents — with context you can inspect and computer input you review.
@@ -17,7 +15,9 @@ Chat, talk, explore your screen, and work with documents — with context you ca
 
 Windows · macOS · Linux &nbsp; / &nbsp; Native Rust desktop &nbsp; / &nbsp; No James account required
 
-<sub>Campaign illustrations are concept artwork. The recorded application screenshot appears below. [Artwork provenance](docs/assets/marketing/README.md).</sub>
+<img src="docs/assets/james-conversation.png" alt="Recorded James desktop conversation on Linux, with Gemma 3 4B served by Ollama. The interface shows conversation, screen context, computer control, Lab and settings navigation." width="1000" />
+
+<sub>Actual application capture from the 12 October 2026 Linux validation session; the interface predates preview.5. The model's answer is a demonstration, not a verified scientific finding. <a href="docs/VALIDATION.md#end-user-release-session-2026-10-12">Read the session record</a>.</sub>
 
 </div>
 
@@ -66,13 +66,11 @@ An answer is more useful when you can see what went into it.
 
 Source attachments belong to one question; reattach them for a source-based follow-up. Model answers that quote a source still follow your conversation-history setting. [How request evidence works](docs/REQUEST_EVIDENCE.md).
 
-### See the app
+### Campaign illustration
 
-<p align="center">
-<img src="docs/assets/james-conversation.png" alt="Recorded James desktop conversation on Linux, with Gemma 3 4B served by Ollama. The interface shows conversation, screen context, computer control, Lab and settings navigation." width="1000" />
-</p>
+<img src="docs/assets/marketing/james-hero.webp" alt="James. Intelligence. At your side. Your model. Your context. Your call. A lavender octopus on a soft white background." width="1200" />
 
-<p align="center"><sub>Actual application capture from the 12 October 2026 Linux validation session; the interface predates preview.5. The model's answer is a demonstration, not a verified scientific finding. <a href="docs/VALIDATION.md#end-user-release-session-2026-10-12">Read the session record</a>.</sub></p>
+*Concept artwork. [Artwork provenance](docs/assets/marketing/README.md).*
 
 <a id="03-first-operation"></a>
 
