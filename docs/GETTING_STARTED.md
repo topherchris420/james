@@ -161,7 +161,7 @@ setup again from **Settings → Help, updates and about**.
 
 **A first investigation:** Ask a question using your chosen model, inspect the source or screen context you explicitly shared, then decide whether the answer deserves a follow-up or a correction. James helps you explore; it does not establish that an answer is true. You retain control of context, storage, and any computer input.
 
-- **Keep a timer on your desk** *(unreleased)*. Choose **Octopus** in the toolbar
+- **Keep a timer on your desk** *(preview.6)*. Choose **Octopus** in the toolbar
   or the compact **Pages** menu. Set the minutes and choose **Start timer**.
   The octopus watches an hourglass until the countdown ends, then holds up a
   bell. **Dismiss** returns it to rest. Click the portrait or focus **Wave hello**

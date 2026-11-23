@@ -133,7 +133,7 @@ No tokens or credentials are sent, and there is no remote or cloud Lab.
 
 ## Optional evidence interface (agent-interop/v1)
 
-*Unreleased.* A Lab whose operator sets `RAIN_INTEROP_READ_TOKEN` (and
+*Introduced in v0.4.0-preview.6.* A compatible Lab whose operator sets `RAIN_INTEROP_READ_TOKEN` (and
 optionally `RAIN_INTEROP_PROPOSE_TOKEN`) serves three routes to loopback
 clients only, on its local dev and preview servers. The contract is
 [`docs/interop/agent-interop-v1/`](interop/agent-interop-v1/README.md),

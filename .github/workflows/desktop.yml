@@ -8,7 +8,7 @@ permissions:
   contents: read
 jobs:
   desktop:
-    if: github.event_name != 'create' || github.ref == 'refs/heads/release/v0.4.0-preview.5'
+    if: github.event_name != 'create' || github.ref == 'refs/heads/release/v0.4.0-preview.6'
     strategy:
       fail-fast: false
       matrix:
@@ -136,7 +136,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   linux-package:
-    if: github.event_name != 'create' || github.ref == 'refs/heads/release/v0.4.0-preview.5'
+    if: github.event_name != 'create' || github.ref == 'refs/heads/release/v0.4.0-preview.6'
     # Built on Ubuntu 22.04: a binary built on a newer system requires that
     # system's glibc and would not start on Ubuntu 22.04, Mint 21 or Debian 12.
     # Run directly on Jammy to use the runner's network for package downloads.
@@ -217,7 +217,7 @@ jobs:
     # Preview.5 has a single explicit branch trigger for tag creation via CI.
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-      (github.event_name == 'create' && github.ref == 'refs/heads/release/v0.4.0-preview.5')
+      (github.event_name == 'create' && github.ref == 'refs/heads/release/v0.4.0-preview.6')
     needs: [desktop, linux-package]
     runs-on: ubuntu-latest
     permissions:

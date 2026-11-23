@@ -83,7 +83,7 @@ Release packages are unsigned unless a maintainer configures certificates (see [
 No production version is supported. Use [GitHub private vulnerability reporting](https://github.com/topherchris420/james/security/advisories/new) for a private reproduction. Do not post credentials, screenshots, or private research in public issues.
 
 
-## The Team and the Lab evidence interface (unreleased)
+## The Team and the Lab evidence interface (preview.6)
 
 The Team's limits (closed action list, capabilities, workspace confinement,
 bounded delegation, digest-bound approvals, scoped memory) are enforced by

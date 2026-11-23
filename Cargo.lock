@@ -1709,7 +1709,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "james-agents"
-version = "0.4.0-preview.5"
+version = "0.4.0-preview.6"
 dependencies = [
  "james-interop",
  "james-loopback",
@@ -1720,11 +1720,11 @@ dependencies = [
 
 [[package]]
 name = "james-core"
-version = "0.4.0-preview.5"
+version = "0.4.0-preview.6"
 
 [[package]]
 name = "james-desktop"
-version = "0.4.0-preview.5"
+version = "0.4.0-preview.6"
 dependencies = [
  "base64",
  "eframe",
@@ -1745,7 +1745,7 @@ dependencies = [
 
 [[package]]
 name = "james-interop"
-version = "0.4.0-preview.5"
+version = "0.4.0-preview.6"
 dependencies = [
  "serde_json",
  "sha2",
@@ -1753,7 +1753,7 @@ dependencies = [
 
 [[package]]
 name = "james-lab"
-version = "0.4.0-preview.5"
+version = "0.4.0-preview.6"
 dependencies = [
  "james-agents",
  "james-interop",
@@ -1766,14 +1766,14 @@ dependencies = [
 
 [[package]]
 name = "james-loopback"
-version = "0.4.0-preview.5"
+version = "0.4.0-preview.6"
 dependencies = [
  "socket2",
 ]
 
 [[package]]
 name = "james-models"
-version = "0.4.0-preview.5"
+version = "0.4.0-preview.6"
 dependencies = [
  "base64",
  "james-loopback",
@@ -1784,14 +1784,14 @@ dependencies = [
 
 [[package]]
 name = "james-notices"
-version = "0.4.0-preview.5"
+version = "0.4.0-preview.6"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "james-platform"
-version = "0.4.0-preview.5"
+version = "0.4.0-preview.6"
 dependencies = [
  "base64",
  "serde",

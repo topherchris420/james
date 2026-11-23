@@ -45,6 +45,11 @@
     <display_length compare="ge">760</display_length>
   </requires>
   <releases>
+    <release version="0.4.0~preview.6" type="development" date="2026-11-23">
+      <description>
+        <p>The interactive floating octopus, a bounded four-assistant Team workspace with reviewed writes, and opt-in R.A.I.N. Lab evidence interoperability. Developer preview; validation limitations remain.</p>
+      </description>
+    </release>
     <release version="0.4.0~preview.5" type="development" date="2026-11-15">
       <description>
         <p>Live Talk follow-ups, multiple attachments, guided checks, guarded typing undo on Windows, and the companion octopus. Cloud speech is optional.</p>
