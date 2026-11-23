@@ -6,12 +6,12 @@
 
 Chat, talk, explore your screen, and work with documents — with context you can inspect and computer input you review.
 
-[![Developer preview](https://img.shields.io/badge/preview-0.4.0--preview.5-997dc7?style=flat-square)](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.5)
+[![Developer preview](https://img.shields.io/badge/preview-0.4.0--preview.6-997dc7?style=flat-square)](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.6)
 [![MIT license](https://img.shields.io/badge/license-MIT-35343a?style=flat-square)](LICENSE)
 [![Core CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/ci.yml?branch=main&style=flat-square&label=core%20CI)](https://github.com/topherchris420/james/actions/workflows/ci.yml)
 [![Desktop CI](https://img.shields.io/github/actions/workflow/status/topherchris420/james/desktop.yml?branch=main&style=flat-square&label=desktop%20CI)](https://github.com/topherchris420/james/actions/workflows/desktop.yml)
 
-**[Download James](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.5)** · **[Get started](#get-started)** · [Explore the features](#meet-your-desktop-companion) · [Data & control](#your-context-your-call) · [Build from source](#under-the-hood)
+**[Download James](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.6)** · **[Get started](#get-started)** · [Explore the features](#meet-your-desktop-companion) · [Data & control](#your-context-your-call) · [Build from source](#under-the-hood)
 
 Windows · macOS · Linux &nbsp; / &nbsp; Native Rust desktop &nbsp; / &nbsp; No James account required
 
@@ -24,7 +24,7 @@ Windows · macOS · Linux &nbsp; / &nbsp; Native Rust desktop &nbsp; / &nbsp; No
 James connects to a model server running on your computer: **Ollama, LM Studio, or llama.cpp**. Choose a model, bring the context that matters, and keep the conversation close to your work. Developed by [Vers3Dynamics](https://vers3dynamics.com/), with optional read-only connections to R.A.I.N. Lab and a local Shepherd hub.
 
 > [!NOTE]
-> **Developer preview · v0.4.0-preview.5.** The current release includes live Talk follow-ups, multiple attachments, guided step checks, guarded Windows typing Undo, and the companion octopus. Platform support varies; physical Windows/macOS use, accessibility, and independent security validation remain incomplete. Read the [release notes](CHANGELOG.md#040-preview5--2026-11-15) and [platform evidence](docs/PLATFORM_SUPPORT.md).
+> **Developer preview · v0.4.0-preview.6.** The current release adds the sculpted floating octopus, the bounded four-assistant Team workspace, and opt-in Lab evidence interoperability to the earlier chat, voice, document, and guidance features. Team automation depends on your chosen model and is not independently validated on real workflows. Platform support varies; physical Windows/macOS use, accessibility, and independent security validation remain incomplete. Read the [release notes](CHANGELOG.md#040-preview6--2026-11-23) and [platform evidence](docs/PLATFORM_SUPPORT.md).
 
 ## Your model. Your question. Your decision.
 
@@ -42,19 +42,22 @@ Explore with a model of your choosing, influence the inquiry by selecting which 
 | **A conversation out loud** | Use Talk, Dictate, and read aloud. Live Talk accepts follow-ups and lets you interrupt spoken replies with the Talk shortcut. Voice setup depends on your platform. |
 | **Keeping your place** | Summon a compact conversation view or open the floating octopus companion with a timer and reminders. Timers and reminder delivery require James to stay open. |
 | **Taking a deliberate next step** | On Windows, review one proposed click, key, or text entry before allowing it. Guidance and spoken replies never authorize input. |
-| **A team for bigger tasks** *(unreleased)* | Give a task to four persistent assistants — Coordinator, Researcher, Writer, Reviewer — that delegate within bounds, read only the folder you choose, keep notes you can inspect or forget, and write a file only after you approve its exact content. [The Team](docs/TEAM.md). |
+| **A team for bigger tasks** *(preview.6)* | Give a task to four persistent assistants — Coordinator, Researcher, Writer, Reviewer — that delegate within bounds, read only the folder you choose, keep notes you can inspect or forget, and write a file only after you approve its exact content. [The Team](docs/TEAM.md). |
 
-**Floating octopus** *(unreleased)*. Select **Octopus** in the toolbar to open the desktop companion. It rests in lavender, watches a brass hourglass while the timer runs, and lifts a handbell when time is up. Click the portrait or focus **Wave hello** and press Space to get a wave back.
+**Floating octopus** *(preview.6)*. Select **Octopus** in the toolbar to open the desktop companion. It rests in lavender, watches a brass hourglass while the timer runs, and lifts a handbell when time is up. Click the portrait or focus **Wave hello** and press Space to get a wave back.
 
 <p align="center">
 <img src="docs/assets/james-octopus.webp" alt="Three Linux captures of the floating companion. A lavender octopus at rest, a blue octopus watching the countdown, and a coral octopus holding a bell after the timer finishes." width="900" />
 </p>
 
+<a id="what-preview6-adds"></a>
 <a id="what-preview5-adds"></a>
 <a id="what-preview4-adds"></a>
 <a id="on-main-after-preview4-unreleased"></a>
 
-**New in preview.5:** live Talk follow-ups, optional Google Cloud speech on Windows/macOS, multiple attachments, **Check it worked** for guidance, and guarded typing Undo on Windows. Step checks are advisory; Undo is a one-shot backspace attempt, not a general rollback. [Full changelog](CHANGELOG.md) · [Desktop guide](docs/DESKTOP.md).
+**New in preview.6:** the interactive sculpted octopus with timer, reminders and a wave; **Team (Ctrl+7)** with four bounded assistants, scoped memory, inspected tasks, and exact-content file approval; and **Lab evidence interoperability** for compatible, explicitly enabled R.A.I.N. Lab instances. These features remain experimental and under your control. [Full changelog](CHANGELOG.md) · [Team guide](docs/TEAM.md) · [Lab guide](docs/LAB.md).
+
+**Also in preview.5:** live Talk follow-ups, optional Google Cloud speech on Windows/macOS, multiple attachments, **Check it worked** for guidance, and guarded typing Undo on Windows. Step checks are advisory; Undo is a one-shot backspace attempt, not a general rollback.
 
 ## Ask. Inspect. Decide.
 
@@ -84,14 +87,14 @@ You need **James + a running model server + a downloaded model**. James does not
 
 ### 1. Download the preview
 
-Choose a package from [v0.4.0-preview.5](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.5).
+Choose a package from [v0.4.0-preview.6](https://github.com/topherchris420/james/releases/tag/v0.4.0-preview.6).
 
 | Your computer | Release asset |
 | --- | --- |
-| Windows 10/11, x64 | `James-0.4.0-preview.5-windows-x64-setup.exe` or `…-portable.exe` |
-| macOS 11+, Apple silicon or Intel | `James-0.4.0-preview.5-macos-universal.zip` |
-| Ubuntu 22.04+, Debian 12+, Mint 21+, x64 | `james_0.4.0-preview.5_amd64.deb` |
-| Other Linux x64, glibc 2.35+ | `James-0.4.0-preview.5-linux-x86_64.tar.gz` |
+| Windows 10/11, x64 | `James-0.4.0-preview.6-windows-x64-setup.exe` or `…-portable.exe` |
+| macOS 11+, Apple silicon or Intel | `James-0.4.0-preview.6-macos-universal.zip` |
+| Ubuntu 22.04+, Debian 12+, Mint 21+, x64 | `james_0.4.0-preview.6_amd64.deb` |
+| Other Linux x64, glibc 2.35+ | `James-0.4.0-preview.6-linux-x86_64.tar.gz` |
 
 Windows and macOS downloads are unsigned. Check `SHA256SUMS.txt` and the available build-provenance attestations on the release. These verify integrity and build origin, not software safety. **Windows ARM has no native package; x64 emulation is untested.** [Installation details](docs/INSTALLER.md) · [Platform support](docs/PLATFORM_SUPPORT.md).
 

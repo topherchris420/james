@@ -1,6 +1,6 @@
 # The Team
 
-Status: on `main` after 0.4.0-preview.5, unreleased. Code:
+Status: included in `v0.4.0-preview.6` (developer preview); real-model task success still depends on the selected model. Code:
 [`crates/james-agents`](../crates/james-agents) (runtime),
 [`crates/james-desktop/src/team_view.rs`](../crates/james-desktop/src/team_view.rs)
 (Team page, Ctrl+7), [`crates/james-interop`](../crates/james-interop) (the

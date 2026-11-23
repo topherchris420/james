@@ -11,6 +11,12 @@ workflow described in [docs/INSTALLER.md](docs/INSTALLER.md). Versions before
 
 ## Unreleased
 
+No changes recorded yet.
+
+## 0.4.0-preview.6 — 2026-11-23
+
+This developer preview packages the previously unreleased sculpted floating octopus, bounded four-assistant Team workspace, and optional Lab evidence interoperability from `main`. Team assistants require a model chosen by the user; reviewed writes still require exact-content approval. Lab interoperability requires an explicitly enabled compatible Lab and a user-provided token. Automated checks do not substitute for live-model, real-device, or independent security validation.
+
 - Open the sculpted floating octopus from the toolbar. It waves back, watches the timer beside an hourglass and raises a bell at the deadline. Reduced motion uses a held greeting pose. Due reminders appear above the portrait.
 
 - **Team (Ctrl+7).** Four persistent assistants work on tasks you give them
