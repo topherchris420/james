@@ -1541,8 +1541,12 @@ fn settings_model_proposal_is_isolated_and_only_prepares_a_review() {
 
 #[test]
 fn desktop_guidance_refuses_an_embedded_or_unsupported_viewport() {
-    let port = ollama(|_| ndjson(&["Hello"], Duration::ZERO));
-    let mut h = harness(james_on(port, Some("gemma3:4b"), SetupStep::Done));
+    // A model probe or monitor picker can change the widget tree between
+    // querying the button and dispatching its AccessKit click.
+    let mut app = james_on(closed_port(), None, SetupStep::Done);
+    app.displays = Some(Vec::new());
+    let mut h = harness(app);
+    h.ctx.set_embed_viewports(true);
     with_screen(&mut h);
     h.state_mut().page = Page::Screen;
     h.state_mut().annotations.push(screen_context::Stroke {
@@ -1556,9 +1560,12 @@ fn desktop_guidance_refuses_an_embedded_or_unsupported_viewport() {
     h.get_by_label("Show marks on desktop").click();
     h.run_steps(2);
     assert!(!h.state().overlay.is_open());
-    assert!(
-        h.state().status.contains("native window") || h.state().status.contains("Windows only")
-    );
+    let expected = if cfg!(windows) {
+        "Desktop guidance requires a native window."
+    } else {
+        "Desktop guidance is currently available on Windows only."
+    };
+    assert_eq!(h.state().status, expected);
 }
 
 #[test]
